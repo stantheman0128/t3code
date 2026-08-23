@@ -1,9 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  grokCompleteCostUsd,
+  GROK_COST_USD_TICKS_PER_DOLLAR,
   initialCodexScanState,
   parseClaudeLine,
   parseCodexLine,
+  parseGrokLine,
   totalTokens,
 } from "./usageTranscripts.ts";
 
@@ -233,6 +236,62 @@ describe("parseCodexLine", () => {
       );
       expect(record).not.toBeNull();
     });
+  });
+});
+
+describe("parseGrokLine", () => {
+  it("extracts PromptUsage from a turn_completed ACP envelope", () => {
+    const line = JSON.stringify({
+      timestamp: "2026-08-01T05:00:00.000Z",
+      method: "_x.ai/session/update",
+      params: {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "turn_completed",
+          promptId: "prompt-1",
+          usage: {
+            model: "grok-4.6",
+            inputTokens: 1200,
+            cachedReadTokens: 200,
+            cacheCreationTokens: 0,
+            outputTokens: 80,
+            reasoningTokens: 30,
+            costUsdTicks: GROK_COST_USD_TICKS_PER_DOLLAR * 0.5,
+          },
+        },
+      },
+    });
+    const record = parseGrokLine(line);
+    expect(record?.provider).toBe("grok");
+    expect(record?.model).toBe("grok-4.6");
+    expect(record?.sessionId).toBe("sess-1");
+    expect(record?.totals.uncachedInputTokens).toBe(1000);
+    expect(record?.totals.cachedInputTokens).toBe(200);
+    expect(record?.totals.outputTokens).toBe(80);
+    expect(record?.totals.reasoningTokens).toBe(30);
+    expect(record?.reportedCostUsd).toBe(0.5);
+    expect(record?.dedupeKey).toBe("sess-1:prompt-1");
+  });
+
+  it("uses agentTimestampMs when timestamp is unix seconds", () => {
+    const line = JSON.stringify({
+      timestamp: 1785696759,
+      method: "_x.ai/session/update",
+      params: {
+        sessionId: "sess-2",
+        _meta: { agentTimestampMs: 1_785_696_759_883 },
+        update: {
+          sessionUpdate: "turn_completed",
+          usage: { inputTokens: 10, outputTokens: 5 },
+        },
+      },
+    });
+    const record = parseGrokLine(line);
+    expect(record?.timestampMs).toBe(1_785_696_759_000); // unix seconds * 1000
+  });
+
+  it("does not invent $0 for incomplete bills", () => {
+    expect(grokCompleteCostUsd({ usageIsIncomplete: true, costUsdTicks: 0 })).toBeNull();
   });
 });
 

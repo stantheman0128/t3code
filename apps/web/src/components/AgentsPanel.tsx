@@ -522,10 +522,15 @@ export function AgentsPanel({
   model,
   environmentId = null,
   threadId = null,
+  onStopAll,
+  isStopping = false,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
   threadId?: ThreadId | null;
+  /** Stops the parent session fleet (Claude stopTask + turn interrupt). */
+  onStopAll?: () => void;
+  isStopping?: boolean;
 }) {
   if (!model.hasAgents) {
     return (
@@ -574,7 +579,19 @@ export function AgentsPanel({
           {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
           {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
         </span>
-        <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
+        <span className="flex items-center gap-2">
+          {onStopAll && model.runningCount + model.waitingCount + model.idleCount > 0 ? (
+            <button
+              type="button"
+              className="rounded-sm border border-border/70 px-1.5 py-0.5 text-[.65rem] hover:bg-muted/60 disabled:opacity-50"
+              disabled={isStopping}
+              onClick={onStopAll}
+            >
+              {isStopping ? "Stopping…" : "Stop all"}
+            </button>
+          ) : null}
+          <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
+        </span>
       </footer>
     </div>
   );

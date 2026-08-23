@@ -5987,6 +5987,8 @@ function ChatViewContent(props: ChatViewProps) {
         model={agentPanelModel}
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
+        onStopAll={isWorking ? onInterrupt : handleStopBackgroundWork}
+        isStopping={isStoppingBackgroundWork}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&

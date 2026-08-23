@@ -217,10 +217,12 @@ export const make = Effect.gen(function* () {
     const claudeHome = yield* resolveClaudeHomePath(settings.providers.claudeAgent);
     const claudeDir = yield* resolveClaudeTranscriptDir(claudeHome);
     const codexLayout = yield* resolveCodexHomeLayout(settings.providers.codex);
+    const grokHome = process.env.GROK_HOME?.trim() || path.join(NodeOS.homedir(), ".grok");
 
     return [
       { provider: "claude" as const, dir: claudeDir },
       { provider: "codex" as const, dir: path.join(codexLayout.sharedHomePath, "sessions") },
+      { provider: "grok" as const, dir: path.join(grokHome, "sessions") },
     ];
   });
 

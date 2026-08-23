@@ -139,3 +139,15 @@ Use a totally separate `CODEX_HOME path` only when you want a separate Codex wor
 
 That means separate sessions and less account switching inside old threads. Most dual-account users
 should use the shared-home plus shadow-home setup instead.
+
+## Usage
+
+The Usage page still scans Codex session transcripts for token cost, the same as Claude and Grok.
+It also asks the running Codex app for your live Plus or Pro windows. When that succeeds, the
+Codex row shows how much of the 5h and weekly windows you have used. Quota is not mixed into the
+dollar totals, because those totals are raw API-equivalent cost, not Plus or Pro billing.
+
+## Stopping One Agent
+
+When Codex has live child agents, the Agents panel on web and desktop can stop one child without
+stopping the parent turn. Composer Stop still stops the whole session.

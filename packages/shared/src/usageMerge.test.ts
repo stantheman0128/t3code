@@ -1,5 +1,6 @@
 import {
   USAGE_CONTRACT_VERSION,
+  type CodexAccountUsageSnapshot,
   type EnvironmentId,
   type UsageBucket,
   type UsageDay,
@@ -8,7 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import { collectMissingSourceMessages, mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
 
 function bucket(overrides: Partial<UsageBucket> = {}): UsageBucket {
   return {
@@ -40,8 +41,11 @@ function summary(
     homePath: string;
     volumeId?: string;
     distinctSessions?: number;
+    status?: UsageSummary["sources"][number]["status"];
+    message?: string | null;
   }[],
   contractVersion: number = USAGE_CONTRACT_VERSION,
+  extras: { readonly codexAccount?: CodexAccountUsageSnapshot } = {},
 ): UsageSummary {
   return {
     contractVersion,
@@ -57,15 +61,31 @@ function summary(
         resolvedHomePath: source.homePath,
         volumeId: source.volumeId ?? `vol-${source.hostId}`,
       },
-      status: "ok" as const,
-      scannedFiles: 1,
+      status: source.status ?? ("ok" as const),
+      scannedFiles: source.status === "missing" ? 0 : 1,
       skippedFiles: 0,
       malformedRecords: 0,
-      distinctSessions: source.distinctSessions ?? 1,
-      message: null,
+      distinctSessions: source.distinctSessions ?? (source.status === "missing" ? 0 : 1),
+      message: source.message ?? null,
     })),
     pricing: { status: "fresh", source: "litellm", fetchedAt: null, knownModels: 10 },
     scanDurationMs: 1,
+    ...(extras.codexAccount ? { codexAccount: extras.codexAccount } : {}),
+  };
+}
+
+function okCodexAccount(): CodexAccountUsageSnapshot {
+  return {
+    status: "ok",
+    planType: "plus",
+    primaryUsedPercent: 42,
+    primaryWindowMinutes: 300,
+    primaryResetsAt: 1,
+    secondaryUsedPercent: 18,
+    secondaryWindowMinutes: 10_080,
+    secondaryResetsAt: 2,
+    lifetimeTokens: 12_000_000,
+    message: null,
   };
 }
 
@@ -254,5 +274,54 @@ describe("mergeUsage", () => {
     const merged = mergeUsage([], USAGE_CONTRACT_VERSION);
     expect(merged.costUsd).toBe(0);
     expect(merged.daily).toHaveLength(0);
+    expect(merged.codexAccount).toBeNull();
+  });
+
+  it("keeps the first ok Codex account snapshot", () => {
+    const first = okCodexAccount();
+    const second: CodexAccountUsageSnapshot = { ...first, planType: "pro" };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket({ provider: "codex", model: "gpt-5.4" })],
+            [{ provider: "codex", hostId: "mac", homePath: "/a/.codex" }],
+            USAGE_CONTRACT_VERSION,
+            { codexAccount: first },
+          ),
+        ),
+        environment(
+          "env-b",
+          summary(
+            [bucket({ provider: "codex", model: "gpt-5.4" })],
+            [{ provider: "codex", hostId: "desk", homePath: "/b/.codex" }],
+            USAGE_CONTRACT_VERSION,
+            { codexAccount: second },
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(merged.codexAccount).toEqual(first);
+  });
+
+  it("collects unique missing-source messages", () => {
+    const usage = summary(
+      [bucket()],
+      [
+        { provider: "claude", hostId: "mac", homePath: "/a/.claude" },
+        {
+          provider: "cursor",
+          hostId: "mac",
+          homePath: "/a/.cursor",
+          status: "missing",
+          message: "Cursor does not write local usage transcripts.",
+        },
+      ],
+    );
+    expect(collectMissingSourceMessages([usage])).toEqual([
+      "Cursor does not write local usage transcripts.",
+    ]);
   });
 });

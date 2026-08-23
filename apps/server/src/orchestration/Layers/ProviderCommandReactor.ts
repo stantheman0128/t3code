@@ -1203,6 +1203,13 @@ const make = Effect.gen(function* () {
       });
     }
 
+    if (event.payload.taskId !== undefined) {
+      yield* providerService.interruptTask({
+        threadId: event.payload.threadId,
+        taskId: event.payload.taskId,
+      });
+      return;
+    }
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
     yield* providerService.interruptTurn({ threadId: event.payload.threadId });
   });

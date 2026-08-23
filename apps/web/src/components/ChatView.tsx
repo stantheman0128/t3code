@@ -20,6 +20,7 @@ import {
   ProviderInteractionMode,
   ProviderDriverKind,
   RuntimeMode,
+  RuntimeTaskId,
   TerminalOpenInput,
 } from "@t3tools/contracts";
 import {
@@ -4289,6 +4290,28 @@ function ChatViewContent(props: ChatViewProps) {
     // disable B's Stop button (review finding).
     setIsStoppingBackgroundWork(false);
   }, [activeThreadId]);
+  const handleStopAgent = useCallback(
+    async (agentId: string) => {
+      if (!activeThread) return;
+      const result = await interruptThreadTurn({
+        environmentId,
+        input: {
+          threadId: activeThread.id,
+          taskId: RuntimeTaskId.make(agentId),
+        },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to stop that agent.",
+        );
+      }
+    },
+    [activeThread, environmentId, interruptThreadTurn, setThreadError],
+  );
+  const canStopAgent =
+    activeProviderStatus?.driver === "claudeAgent" || activeProviderStatus?.driver === "codex";
   const handleStopBackgroundWork = useCallback(async () => {
     if (!activeThread) return;
     setIsStoppingBackgroundWork(true);
@@ -5988,6 +6011,8 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
         onStopAll={isWorking ? onInterrupt : handleStopBackgroundWork}
+        {...(canStopAgent ? { onStopAgent: handleStopAgent } : {})}
+        canStopAgent={canStopAgent}
         isStopping={isStoppingBackgroundWork}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&

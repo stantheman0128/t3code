@@ -4472,6 +4472,52 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
   );
 
+  const interruptTask: ClaudeAdapterShape["interruptTask"] = Effect.fn("interruptTask")(
+    function* (threadId, taskId) {
+      const context = yield* requireSession(threadId);
+      if (!context.query.stopTask) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "interruptTask",
+          issue: "This Claude session cannot stop a single agent.",
+        });
+      }
+      const nativeTaskId = String(taskId);
+      if (!context.liveTaskIds.has(nativeTaskId)) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "interruptTask",
+          issue: `No live agent '${nativeTaskId}'.`,
+        });
+      }
+      const stopAcknowledged = yield* Effect.tryPromise({
+        try: () => context.query.stopTask!(nativeTaskId),
+        catch: () => undefined,
+      }).pipe(
+        Effect.timeoutOption("3 seconds"),
+        Effect.orElseSucceed(() => Option.none()),
+      );
+      if (Option.isNone(stopAcknowledged) || !context.liveTaskIds.delete(nativeTaskId)) {
+        return;
+      }
+      const stamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "task.completed",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        createdAt: stamp.createdAt,
+        threadId: context.session.threadId,
+        ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+        payload: {
+          taskId: RuntimeTaskId.make(nativeTaskId),
+          status: "stopped",
+          ...taskLinkageFor(context.taskAgents, nativeTaskId),
+        },
+        providerRefs: nativeProviderRefs(context),
+      });
+    },
+  );
+
   const readThread: ClaudeAdapterShape["readThread"] = Effect.fn("readThread")(
     function* (threadId) {
       const context = yield* requireSession(threadId);
@@ -4576,6 +4622,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    interruptTask,
     readThread,
     rollbackThread,
     respondToRequest,

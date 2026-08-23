@@ -7,13 +7,16 @@ import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
   enumerateDays,
+  formatCodexAccountLine,
   formatCount,
   formatDayShort,
+  formatOptionalUsd,
   formatPercent,
   formatTokens,
   formatUsd,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
+import { collectMissingSourceMessages } from "@t3tools/shared/usageMerge";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
@@ -162,6 +165,10 @@ export function UsagePage() {
 
                     {orderedProviders.map((provider) => {
                       const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+                      const codexLine =
+                        provider.provider === "codex" && merged.codexAccount
+                          ? formatCodexAccountLine(merged.codexAccount)
+                          : null;
                       return (
                         <div key={provider.provider} className="flex flex-col gap-1.5">
                           <div className="flex items-baseline justify-between">
@@ -189,6 +196,9 @@ export function UsagePage() {
                               ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
                               : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
                           </span>
+                          {codexLine ? (
+                            <span className="text-xs text-muted-foreground">{codexLine}</span>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -351,7 +361,7 @@ export function UsagePage() {
                                   key={provider}
                                   className="py-2 text-right text-muted-foreground tabular-nums"
                                 >
-                                  {formatUsd(day.byProvider.get(provider)?.costUsd ?? 0)}
+                                  {formatOptionalUsd(day.byProvider.get(provider)?.costUsd)}
                                 </td>
                               ))}
                               <td className="py-2 text-right text-foreground tabular-nums">
@@ -407,10 +417,11 @@ function Metric({
 }
 
 /**
- * Says plainly when the totals are incomplete: an environment that failed, or
- * one whose transcripts another environment already reported. Environments
- * that are still answering never reach this notice; the page shows the
- * loading skeleton until every one is terminal.
+ * Says plainly when the totals are incomplete: an environment that failed,
+ * one whose transcripts another environment already reported, or a provider
+ * with no local usage files. Environments that are still answering never
+ * reach this notice; the page shows the loading skeleton until every one is
+ * terminal.
  */
 function UsageCoverageNotice({
   environments,
@@ -425,7 +436,17 @@ function UsageCoverageNotice({
   const stale = environments.filter((environment) =>
     staleEnvironments.includes(environment.environmentId),
   );
-  if (failed.length === 0 && stale.length === 0 && duplicateSources.length === 0) {
+  const missingSources = collectMissingSourceMessages(
+    environments.flatMap((environment) =>
+      environment.summary === null ? [] : [environment.summary],
+    ),
+  );
+  if (
+    failed.length === 0 &&
+    stale.length === 0 &&
+    duplicateSources.length === 0 &&
+    missingSources.length === 0
+  ) {
     return null;
   }
 
@@ -445,6 +466,9 @@ function UsageCoverageNotice({
           {duplicateSources.join(", ")}
         </span>
       ) : null}
+      {missingSources.map((message) => (
+        <span key={message}>{message}</span>
+      ))}
     </div>
   );
 }

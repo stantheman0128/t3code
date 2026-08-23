@@ -13,6 +13,7 @@ import {
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
   RuntimeMode,
+  RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -137,6 +138,7 @@ export interface CodexSessionRuntimeShape {
     input: CodexSessionRuntimeSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly interruptTask: (taskId: RuntimeTaskId) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly readThread: Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
   readonly rollbackThread: (
     numTurns: number,
@@ -1798,6 +1800,25 @@ export const makeCodexSessionRuntime = (
               ? { resumeCursor: { threadId: resumedProviderThreadId } }
               : {}),
           } satisfies ProviderTurnStartResult;
+        }),
+      interruptTask: (taskId) =>
+        Effect.gen(function* () {
+          const liveChildTurns = yield* Ref.get(collabChildLiveTurnsRef);
+          const childTurnId = liveChildTurns.get(String(taskId));
+          if (!childTurnId) {
+            return;
+          }
+          yield* client
+            .request("turn/interrupt", {
+              threadId: String(taskId),
+              turnId: childTurnId,
+            })
+            .pipe(Effect.timeoutOption("3 seconds"), Effect.ignore);
+          yield* Ref.update(collabChildLiveTurnsRef, (current) => {
+            const next = new Map(current);
+            next.delete(String(taskId));
+            return next;
+          });
         }),
       interruptTurn: (turnId) =>
         Effect.gen(function* () {

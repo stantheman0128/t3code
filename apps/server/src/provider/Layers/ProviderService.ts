@@ -13,6 +13,7 @@ import {
   ModelSelection,
   NonNegativeInt,
   ThreadId,
+  ProviderInterruptTaskInput,
   ProviderInterruptTurnInput,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
@@ -811,6 +812,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const interruptTask: ProviderServiceMethod<"interruptTask"> = Effect.fn("interruptTask")(
+    function* (rawInput) {
+      const input = yield* decodeInputOrValidationError({
+        operation: "ProviderService.interruptTask",
+        schema: ProviderInterruptTaskInput,
+        payload: rawInput,
+      });
+      const routed = yield* resolveRoutableSession({
+        threadId: input.threadId,
+        operation: "ProviderService.interruptTask",
+        allowRecovery: true,
+      });
+      if (routed.adapter.interruptTask === undefined) {
+        return yield* new ProviderValidationError({
+          operation: "ProviderService.interruptTask",
+          issue: "This provider cannot stop a single agent.",
+        });
+      }
+      yield* routed.adapter.interruptTask(routed.threadId, input.taskId);
+    },
+  );
+
   const respondToRequest: ProviderServiceMethod<"respondToRequest"> = Effect.fn("respondToRequest")(
     function* (rawInput) {
       const input = yield* decodeInputOrValidationError({
@@ -1129,6 +1152,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    interruptTask,
     respondToRequest,
     respondToUserInput,
     stopSession,

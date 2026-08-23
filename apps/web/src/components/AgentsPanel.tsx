@@ -20,6 +20,7 @@ import type {
 import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
+  isActiveSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
@@ -136,8 +137,19 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
   );
 }
 
-/** Flat, non-interactive agent status line. No unfold. */
-function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+function agentRowStopProps(
+  agent: RuntimeSubagent,
+  onStopAgent: ((agentId: string) => void) | undefined,
+  canStopAgent: boolean,
+): { onStop: () => void } | Record<string, never> {
+  if (!canStopAgent || !onStopAgent || !isActiveSubagentStatus(agent.status)) {
+    return {};
+  }
+  return { onStop: () => onStopAgent(agent.id) };
+}
+
+/** Flat agent status line. Stop is optional and only for live children. */
+function AgentRow({ agent, onStop }: { agent: RuntimeSubagent; onStop?: () => void }) {
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -167,6 +179,15 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
       </span>
       <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
         <span className="inline-flex items-center gap-1">
+          {onStop ? (
+            <button
+              type="button"
+              className="rounded-sm border border-border/70 px-1 py-0.5 text-[.65rem] hover:bg-muted/60"
+              onClick={onStop}
+            >
+              Stop
+            </button>
+          ) : null}
           <AgentElapsed agent={agent} />
           {agent.status === "completed" ? (
             <Check aria-hidden className="size-3 text-success" />
@@ -315,9 +336,13 @@ function WorkflowScriptView({
 function PhaseSection({
   phase,
   defaultOpen = false,
+  onStopAgent,
+  canStopAgent,
 }: {
   phase: AgentPanelWorkflowGroup["phases"][number];
   defaultOpen?: boolean;
+  onStopAgent?: (agentId: string) => void;
+  canStopAgent?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen || phase.state === "running");
   const previousState = useRef(phase.state);
@@ -366,7 +391,15 @@ function PhaseSection({
           </span>
         ) : null}
       </button>
-      {open ? phase.members.map((member) => <AgentRow key={member.id} agent={member} />) : null}
+      {open
+        ? phase.members.map((member) => (
+            <AgentRow
+              key={member.id}
+              agent={member}
+              {...agentRowStopProps(member, onStopAgent, canStopAgent === true)}
+            />
+          ))
+        : null}
     </div>
   );
 }
@@ -377,11 +410,15 @@ function ExpandedWorkflowSection({
   environmentId,
   threadId,
   onCollapse,
+  onStopAgent,
+  canStopAgent,
 }: {
   group: AgentPanelWorkflowGroup;
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
   onCollapse: () => void;
+  onStopAgent?: (agentId: string) => void;
+  canStopAgent?: boolean;
 }) {
   const [scriptOpen, setScriptOpen] = useState(false);
   const members = workflowMembers(group);
@@ -436,10 +473,20 @@ function ExpandedWorkflowSection({
         />
       ) : null}
       {group.phases.map((phase) => (
-        <PhaseSection key={phase.index} phase={phase} defaultOpen={!workflowIsLive(group)} />
+        <PhaseSection
+          key={phase.index}
+          phase={phase}
+          defaultOpen={!workflowIsLive(group)}
+          {...(onStopAgent ? { onStopAgent } : {})}
+          {...(canStopAgent !== undefined ? { canStopAgent } : {})}
+        />
       ))}
       {group.unphasedMembers.map((member) => (
-        <AgentRow key={member.id} agent={member} />
+        <AgentRow
+          key={member.id}
+          agent={member}
+          {...agentRowStopProps(member, onStopAgent, canStopAgent === true)}
+        />
       ))}
       {group.phases.length === 0 && group.unphasedMembers.length === 0 ? (
         <AgentRow agent={group.workflow} />
@@ -500,10 +547,14 @@ function WorkflowSection({
   group,
   environmentId,
   threadId,
+  onStopAgent,
+  canStopAgent,
 }: {
   group: AgentPanelWorkflowGroup;
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
+  onStopAgent?: (agentId: string) => void;
+  canStopAgent?: boolean;
 }) {
   const [open, setOpen] = useState(() => workflowIsLive(group));
   return open ? (
@@ -512,6 +563,8 @@ function WorkflowSection({
       environmentId={environmentId}
       threadId={threadId}
       onCollapse={() => setOpen(false)}
+      {...(onStopAgent ? { onStopAgent } : {})}
+      {...(canStopAgent !== undefined ? { canStopAgent } : {})}
     />
   ) : (
     <CollapsedWorkflowSection group={group} onExpand={() => setOpen(true)} />
@@ -523,6 +576,8 @@ export function AgentsPanel({
   environmentId = null,
   threadId = null,
   onStopAll,
+  onStopAgent,
+  canStopAgent = false,
   isStopping = false,
 }: {
   model: AgentPanelModel;
@@ -530,6 +585,9 @@ export function AgentsPanel({
   threadId?: ThreadId | null;
   /** Stops the parent session fleet (Claude stopTask + turn interrupt). */
   onStopAll?: () => void;
+  /** Stops one live child when the provider supports it. */
+  onStopAgent?: (agentId: string) => void;
+  canStopAgent?: boolean;
   isStopping?: boolean;
 }) {
   if (!model.hasAgents) {
@@ -555,6 +613,8 @@ export function AgentsPanel({
               group={group}
               environmentId={environmentId}
               threadId={threadId}
+              {...(onStopAgent ? { onStopAgent } : {})}
+              canStopAgent={canStopAgent}
             />
           ))}
           {model.directAgents.length > 0 ? (
@@ -563,7 +623,11 @@ export function AgentsPanel({
                 Direct spawns
               </div>
               {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  {...agentRowStopProps(agent, onStopAgent, canStopAgent)}
+                />
               ))}
             </section>
           ) : null}

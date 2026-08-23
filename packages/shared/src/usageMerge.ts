@@ -7,6 +7,7 @@
  * @module usageMerge
  */
 import type {
+  CodexAccountUsageSnapshot,
   EnvironmentId,
   UsageBucket,
   UsageProviderKind,
@@ -70,6 +71,7 @@ export interface MergedUsage {
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly staleEnvironments: readonly EnvironmentId[];
+  readonly codexAccount: CodexAccountUsageSnapshot | null;
 }
 
 /**
@@ -177,6 +179,7 @@ const EMPTY_MERGED: MergedUsage = {
   duplicateSources: [],
   contributingEnvironments: [],
   staleEnvironments: [],
+  codexAccount: null,
 };
 
 /**
@@ -349,5 +352,30 @@ export function mergeUsage(
     duplicateSources: duplicates,
     contributingEnvironments,
     staleEnvironments,
+    codexAccount:
+      current.find((environment) => environment.summary.codexAccount?.status === "ok")?.summary
+        .codexAccount ?? null,
   };
+}
+
+/**
+ * Unique missing-source messages, in first-seen order. Cursor has no local
+ * transcripts, so the page says so instead of filling the column with $0.
+ */
+export function collectMissingSourceMessages(
+  summaries: readonly UsageSummary[],
+): readonly string[] {
+  const messages: string[] = [];
+  const seen = new Set<string>();
+  for (const summary of summaries) {
+    for (const source of summary.sources) {
+      if (source.status !== "missing" || source.message === null || source.message.length === 0) {
+        continue;
+      }
+      if (seen.has(source.message)) continue;
+      seen.add(source.message);
+      messages.push(source.message);
+    }
+  }
+  return messages;
 }

@@ -12,6 +12,7 @@
  * @module ProviderService
  */
 import type {
+  ProviderInterruptTaskInput,
   ProviderInterruptTurnInput,
   ProviderInstanceId,
   ProviderRespondToRequestInput,
@@ -56,6 +57,13 @@ export interface ProviderServiceShape {
    */
   readonly interruptTurn: (
     input: ProviderInterruptTurnInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
+   * Stop one live child agent when the adapter supports it.
+   */
+  readonly interruptTask: (
+    input: ProviderInterruptTaskInput,
   ) => Effect.Effect<void, ProviderServiceError>;
 
   /**

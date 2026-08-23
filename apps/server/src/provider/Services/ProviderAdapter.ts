@@ -18,6 +18,7 @@ import type {
   ProviderSessionStartInput,
   ThreadId,
   ProviderTurnStartResult,
+  RuntimeTaskId,
   TurnId,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
@@ -67,6 +68,16 @@ export interface ProviderAdapterShape<TError> {
    * Interrupt an active turn.
    */
   readonly interruptTurn: (threadId: ThreadId, turnId?: TurnId) => Effect.Effect<void, TError>;
+
+  /**
+   * Stop one live child agent. Optional: most providers can only interrupt
+   * the whole session. Claude uses SDK stopTask; Codex interrupts the child
+   * collab thread.
+   */
+  readonly interruptTask?: (
+    threadId: ThreadId,
+    taskId: RuntimeTaskId,
+  ) => Effect.Effect<void, TError>;
 
   /**
    * Respond to an interactive approval request.

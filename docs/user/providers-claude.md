@@ -208,3 +208,9 @@ If the preset needs different Claude files, give it a different `CLAUDE_CONFIG_D
 different API keys, base URLs, or router settings, use Environment variables.
 
 Do not put environment variable assignments in `Launch arguments`.
+
+## Stopping One Agent
+
+When a Claude thread has live subagents, the Agents panel on web and desktop can stop one child
+without stopping the parent turn. That uses Claude Code's per-task stop. Composer Stop still
+stops every live child, then the parent turn.

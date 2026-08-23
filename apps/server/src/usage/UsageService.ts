@@ -32,6 +32,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { ServerConfig } from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -52,6 +53,7 @@ import {
   type ScanCache,
 } from "./usageScanCache.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
+import { readLiveCodexAccountUsage } from "./codexAccountUsageLive.ts";
 
 const LITELLM_RATES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
@@ -122,6 +124,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
+  const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
@@ -382,6 +385,23 @@ export const make = Effect.gen(function* () {
       });
     }
 
+    const cursorHome = path.join(NodeOS.homedir(), ".cursor");
+    const cursorVolumeId = yield* Effect.promise(() => readDirectoryVolumeId(cursorHome));
+    sources.push({
+      fingerprint: {
+        hostId,
+        provider: "cursor",
+        resolvedHomePath: cursorHome,
+        volumeId: cursorVolumeId,
+      },
+      status: "missing",
+      scannedFiles: 0,
+      skippedFiles: 0,
+      malformedRecords: 0,
+      distinctSessions: 0,
+      message: "Cursor does not write local usage transcripts.",
+    });
+
     const pruned = pruneScanCache(fileCache, {
       livePaths,
       walkedRoots,
@@ -392,6 +412,15 @@ export const make = Effect.gen(function* () {
     yield* persistScanCache();
 
     const aggregated = aggregator.finish();
+    const settings = yield* settingsService.getSettings.pipe(
+      Effect.catchCause(() => Effect.succeed(null)),
+    );
+    const codexAccount =
+      settings === null
+        ? undefined
+        : yield* readLiveCodexAccountUsage(settings.providers.codex, config.cwd).pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+          );
     const readAt = yield* DateTime.now;
     const finishedAtMs = yield* Clock.currentTimeMillis;
 
@@ -413,6 +442,7 @@ export const make = Effect.gen(function* () {
         knownModels: rates.size,
       },
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
+      ...(codexAccount?.status === "ok" ? { codexAccount } : {}),
     } satisfies UsageSummary;
   });
 

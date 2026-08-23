@@ -15,6 +15,7 @@ import {
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
+  RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -87,6 +88,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
   );
 
+  public readonly interruptTaskImpl = vi.fn(
+    (_taskId: RuntimeTaskId): Promise<void> => Promise.resolve(undefined),
+  );
+
   public readonly readThreadImpl = vi.fn(
     (): Promise<CodexThreadSnapshot> =>
       Promise.resolve({
@@ -133,6 +138,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   interruptTurn(turnId?: TurnId) {
     return Effect.promise(() => this.interruptTurnImpl(turnId));
+  }
+
+  interruptTask(taskId: RuntimeTaskId) {
+    return Effect.promise(() => this.interruptTaskImpl(taskId));
   }
 
   readThread = Effect.promise(() => this.readThreadImpl());
@@ -324,6 +333,25 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       NodeAssert.equal(result.failure._tag, "ProviderAdapterSessionNotFoundError");
       NodeAssert.equal(result.failure.provider, "codex");
       NodeAssert.equal(result.failure.threadId, "sess-missing");
+    }),
+  );
+
+  it.effect("forwards interruptTask to the session runtime", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-task-stop"),
+        runtimeMode: "full-access",
+      });
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const taskId = RuntimeTaskId.make("agent-thread-1");
+      const interruptTask = adapter.interruptTask;
+      NodeAssert.ok(interruptTask);
+      yield* interruptTask(asThreadId("sess-task-stop"), taskId);
+      NodeAssert.equal(runtime.interruptTaskImpl.mock.calls.length, 1);
+      NodeAssert.equal(runtime.interruptTaskImpl.mock.calls[0]?.[0], taskId);
     }),
   );
 

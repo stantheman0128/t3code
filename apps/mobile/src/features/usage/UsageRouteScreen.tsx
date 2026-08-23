@@ -1,7 +1,8 @@
 import { useNavigation } from "@react-navigation/native";
-import type { MergedUsage } from "@t3tools/shared/usageMerge";
+import { collectMissingSourceMessages, type MergedUsage } from "@t3tools/shared/usageMerge";
 import {
   enumerateDays,
+  formatCodexAccountLine,
   formatCount,
   formatDayShort,
   formatPercent,
@@ -254,6 +255,10 @@ function ProviderSection(props: {
     <SettingsSection title="Providers" card>
       {ordered.map((provider, index) => {
         const share = metric === "cost" ? provider.costShare : provider.tokenShare;
+        const codexLine =
+          provider.provider === "codex" && merged.codexAccount
+            ? formatCodexAccountLine(merged.codexAccount)
+            : null;
         return (
           <View
             key={provider.provider}
@@ -285,6 +290,7 @@ function ProviderSection(props: {
                 ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
                 : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
             </Text>
+            {codexLine ? <Text className="text-sm text-foreground-muted">{codexLine}</Text> : null}
           </View>
         );
       })}
@@ -405,10 +411,16 @@ function UsageCoverageNotice(props: {
     props.merged.staleEnvironments.includes(environment.environmentId),
   );
   const duplicateSources = props.merged.duplicateSources;
+  const missingSources = collectMissingSourceMessages(
+    props.environments.flatMap((environment) =>
+      environment.summary === null ? [] : [environment.summary],
+    ),
+  );
   if (
     failed.length === 0 &&
     stale.length === 0 &&
     duplicateSources.length === 0 &&
+    missingSources.length === 0 &&
     !props.isPartial
   ) {
     return null;
@@ -437,6 +449,11 @@ function UsageCoverageNotice(props: {
           {duplicateSources.join(", ")}
         </Text>
       ) : null}
+      {missingSources.map((message) => (
+        <Text key={message} className="text-sm text-foreground-muted">
+          {message}
+        </Text>
+      ))}
     </View>
   );
 }

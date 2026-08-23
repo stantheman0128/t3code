@@ -156,6 +156,25 @@ export const UsagePricing = Schema.Struct({
 });
 export type UsagePricing = typeof UsagePricing.Type;
 
+/**
+ * Live Codex plan windows from `account/rateLimits/read` plus lifetime
+ * tokens from `account/usage/read`. Separate from transcript buckets so a
+ * Plus/Pro quota is not mixed into raw API-equivalent cost.
+ */
+export const CodexAccountUsageSnapshot = Schema.Struct({
+  status: Schema.Literals(["ok", "unavailable"]),
+  planType: Schema.NullOr(TrimmedNonEmptyString),
+  primaryUsedPercent: Schema.NullOr(Schema.Number),
+  primaryWindowMinutes: Schema.NullOr(NonNegativeInt),
+  primaryResetsAt: Schema.NullOr(Schema.Number),
+  secondaryUsedPercent: Schema.NullOr(Schema.Number),
+  secondaryWindowMinutes: Schema.NullOr(NonNegativeInt),
+  secondaryResetsAt: Schema.NullOr(Schema.Number),
+  lifetimeTokens: Schema.NullOr(NonNegativeInt),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type CodexAccountUsageSnapshot = typeof CodexAccountUsageSnapshot.Type;
+
 export const UsageSummaryInput = Schema.Struct({
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
@@ -180,6 +199,11 @@ export const UsageSummary = Schema.Struct({
   pricing: UsagePricing,
   /** Wall-clock cost of the scan, surfaced in diagnostics. */
   scanDurationMs: NonNegativeInt,
+  /**
+   * Live Codex account windows. Omitted when the environment could not talk
+   * to app-server. Compatible additive field: contract version stays 3.
+   */
+  codexAccount: Schema.optionalKey(CodexAccountUsageSnapshot),
 });
 export type UsageSummary = typeof UsageSummary.Type;
 

@@ -4,7 +4,11 @@
  *
  * @module usageFormat
  */
-import { UsageDay, type UsageSummaryInput } from "@t3tools/contracts";
+import {
+  UsageDay,
+  type CodexAccountUsageSnapshot,
+  type UsageSummaryInput,
+} from "@t3tools/contracts";
 
 const CURRENCY = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -17,6 +21,11 @@ const INTEGER = new Intl.NumberFormat("en-US");
 
 export function formatUsd(value: number): string {
   return CURRENCY.format(value);
+}
+
+/** Empty cells stay blank rather than pretending the provider spent $0. */
+export function formatOptionalUsd(value: number | undefined): string {
+  return value === undefined ? "—" : formatUsd(value);
 }
 
 export function formatCount(value: number): string {
@@ -44,6 +53,34 @@ function trim(value: number): string {
 
 export function formatPercent(share: number, digits = 1): string {
   return `${(share * 100).toFixed(digits)}%`;
+}
+
+export function formatCodexWindowLabel(minutes: number | null): string | null {
+  if (minutes === null || minutes <= 0) return null;
+  if (minutes === 300) return "5h";
+  if (minutes === 10_080) return "weekly";
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
+export function formatCodexAccountLine(snapshot: CodexAccountUsageSnapshot): string | null {
+  if (snapshot.status !== "ok") return snapshot.message;
+  const parts: string[] = [];
+  if (snapshot.planType) parts.push(snapshot.planType);
+  const primaryLabel = formatCodexWindowLabel(snapshot.primaryWindowMinutes);
+  if (snapshot.primaryUsedPercent !== null) {
+    parts.push(`${primaryLabel ?? "primary"} ${Math.round(snapshot.primaryUsedPercent)}% used`);
+  }
+  const secondaryLabel = formatCodexWindowLabel(snapshot.secondaryWindowMinutes);
+  if (snapshot.secondaryUsedPercent !== null) {
+    parts.push(
+      `${secondaryLabel ?? "secondary"} ${Math.round(snapshot.secondaryUsedPercent)}% used`,
+    );
+  }
+  if (snapshot.lifetimeTokens !== null && snapshot.lifetimeTokens > 0 && parts.length === 0) {
+    parts.push(`${snapshot.lifetimeTokens.toLocaleString("en-US")} lifetime tokens`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** `2026-08-07` to `Aug 7`. */

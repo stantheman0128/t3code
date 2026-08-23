@@ -1221,12 +1221,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const getCodexGoal: ProviderServiceMethod<"getCodexGoal"> = Effect.fn("getCodexGoal")(
     function* (threadId, options) {
-      const routed = yield* resolveRoutableSession({
+      let routed = yield* resolveRoutableSession({
         threadId,
         operation: "ProviderService.getCodexGoal",
-        allowRecovery: options?.allowRecovery ?? true,
+        allowRecovery: false,
       });
-      const goal = routed.adapter.codexGoal;
+      let goal = routed.adapter.codexGoal;
       if (!goal) {
         return yield* toValidationError(
           "ProviderService.getCodexGoal",
@@ -1234,7 +1234,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         );
       }
       if (!routed.isActive) {
-        return null;
+        if (options?.allowRecovery === false) {
+          return null;
+        }
+        routed = yield* resolveRoutableSession({
+          threadId,
+          operation: "ProviderService.getCodexGoal",
+          allowRecovery: true,
+        });
+        goal = routed.adapter.codexGoal;
+        if (!goal) {
+          return yield* toValidationError(
+            "ProviderService.getCodexGoal",
+            `Provider '${routed.adapter.provider}' does not support native Codex Goals.`,
+          );
+        }
       }
       return yield* goal.get(routed.threadId);
     },
@@ -1242,17 +1256,31 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const setCodexGoal: ProviderServiceMethod<"setCodexGoal"> = Effect.fn("setCodexGoal")(
     function* (input) {
-      const routed = yield* resolveRoutableSession({
+      let routed = yield* resolveRoutableSession({
         threadId: input.threadId,
         operation: "ProviderService.setCodexGoal",
-        allowRecovery: true,
+        allowRecovery: false,
       });
-      const goal = routed.adapter.codexGoal;
+      let goal = routed.adapter.codexGoal;
       if (!goal) {
         return yield* toValidationError(
           "ProviderService.setCodexGoal",
           `Provider '${routed.adapter.provider}' does not support native Codex Goals.`,
         );
+      }
+      if (!routed.isActive) {
+        routed = yield* resolveRoutableSession({
+          threadId: input.threadId,
+          operation: "ProviderService.setCodexGoal",
+          allowRecovery: true,
+        });
+        goal = routed.adapter.codexGoal;
+        if (!goal) {
+          return yield* toValidationError(
+            "ProviderService.setCodexGoal",
+            `Provider '${routed.adapter.provider}' does not support native Codex Goals.`,
+          );
+        }
       }
       return yield* goal.set(input);
     },
@@ -1260,17 +1288,31 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const clearCodexGoal: ProviderServiceMethod<"clearCodexGoal"> = Effect.fn("clearCodexGoal")(
     function* (threadId) {
-      const routed = yield* resolveRoutableSession({
+      let routed = yield* resolveRoutableSession({
         threadId,
         operation: "ProviderService.clearCodexGoal",
-        allowRecovery: true,
+        allowRecovery: false,
       });
-      const goal = routed.adapter.codexGoal;
+      let goal = routed.adapter.codexGoal;
       if (!goal) {
         return yield* toValidationError(
           "ProviderService.clearCodexGoal",
           `Provider '${routed.adapter.provider}' does not support native Codex Goals.`,
         );
+      }
+      if (!routed.isActive) {
+        routed = yield* resolveRoutableSession({
+          threadId,
+          operation: "ProviderService.clearCodexGoal",
+          allowRecovery: true,
+        });
+        goal = routed.adapter.codexGoal;
+        if (!goal) {
+          return yield* toValidationError(
+            "ProviderService.clearCodexGoal",
+            `Provider '${routed.adapter.provider}' does not support native Codex Goals.`,
+          );
+        }
       }
       return yield* goal.clear(routed.threadId);
     },

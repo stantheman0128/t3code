@@ -10,7 +10,7 @@ import { buildInitialGrokProviderSnapshot, checkGrokProviderStatus } from "./Gro
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
-describe("buildInitialGrokProviderSnapshot", () => {
+it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
   it.effect("returns a disabled snapshot when settings.enabled is false", () =>
     Effect.gen(function* () {
       const snapshot = yield* buildInitialGrokProviderSnapshot(
@@ -23,15 +23,85 @@ describe("buildInitialGrokProviderSnapshot", () => {
     }),
   );
 
-  it.effect("returns a pending snapshot by default", () =>
+  it.effect("returns a disabled snapshot by default — Grok is opt-in", () =>
     Effect.gen(function* () {
       const snapshot = yield* buildInitialGrokProviderSnapshot(decodeGrokSettings({}));
+      expect(snapshot.enabled).toBe(false);
+      expect(snapshot.status).toBe("disabled");
+    }),
+  );
+
+  it.effect("returns a pending snapshot when enabled", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* buildInitialGrokProviderSnapshot(
+        decodeGrokSettings({ enabled: true }),
+      );
       expect(snapshot.enabled).toBe(true);
       expect(snapshot.installed).toBe(true);
       expect(snapshot.status).toBe("warning");
       expect(snapshot.version).toBeNull();
       expect(snapshot.message).toContain("Checking Grok");
-      expect(snapshot.requiresNewThreadForModelChange).toBe(true);
+      expect(snapshot.requiresNewThreadForModelChange).toBe(false);
+      expect(snapshot.showInteractionModeToggle).toBe(true);
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(
+        expect.arrayContaining(["workflow pause", "workflow resume", "workflow stop"]),
+      );
+      expect(snapshot.models[0]?.capabilities?.optionDescriptors?.[0]?.id).toBe("reasoningEffort");
+    }),
+  );
+});
+
+it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot workflows", (it) => {
+  it.effect("includes project workflow slash commands on the initial snapshot", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-initial-wf-" });
+          const home = path.join(dir, "home");
+          const project = path.join(dir, "project");
+          yield* fs.makeDirectory(path.join(home, ".grok", "workflows"), { recursive: true });
+          yield* fs.makeDirectory(path.join(project, ".grok", "workflows"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(project, ".grok", "workflows", "from-project.rhai"),
+            `let meta = #{ name: "from-project", description: "project script" };\n`,
+          );
+          return yield* buildInitialGrokProviderSnapshot(decodeGrokSettings({ enabled: true }), {
+            environment: { HOME: home },
+            projectRoot: project,
+          });
+        }),
+      );
+
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(
+        expect.arrayContaining(["workflow pause", "workflow from-project"]),
+      );
+    }),
+  );
+
+  it.effect("discovers user workflow scripts from USERPROFILE when HOME is unset", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-userprofile-wf-" });
+          const home = path.join(dir, "home");
+          yield* fs.makeDirectory(path.join(home, ".grok", "workflows"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(home, ".grok", "workflows", "from-profile.rhai"),
+            `let meta = #{ name: "from-profile", description: "userprofile script" };\n`,
+          );
+          return yield* buildInitialGrokProviderSnapshot(decodeGrokSettings({ enabled: true }), {
+            environment: { USERPROFILE: home },
+          });
+        }),
+      );
+
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(
+        expect.arrayContaining(["workflow pause", "workflow from-profile"]),
+      );
     }),
   );
 });
@@ -97,6 +167,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
           return yield* checkGrokProviderStatus(
             decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
+            { HOME: dir, PATH: process.env.PATH ?? "", XAI_API_KEY: "probe-only" },
           );
         }),
       );
@@ -105,6 +176,46 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.installed).toBe(true);
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build"]);
       expect(snapshot.message).toContain("ACP startup failed");
+    }),
+  );
+
+  it.effect("discovers workflow slash commands from injected home and project roots", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-wf-" });
+          const home = path.join(dir, "home");
+          const project = path.join(dir, "project");
+          const grokPath = path.join(dir, "grok");
+          yield* fs.makeDirectory(path.join(home, ".grok", "workflows"), { recursive: true });
+          yield* fs.makeDirectory(path.join(project, ".grok", "workflows"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(home, ".grok", "workflows", "from-home.rhai"),
+            `let meta = #{ name: "from-home", description: "home script" };\n`,
+          );
+          yield* fs.writeFileString(
+            path.join(project, ".grok", "workflows", "from-project.rhai"),
+            `let meta = #{ name: "from-project", description: "project script" };\n`,
+          );
+          yield* fs.writeFileString(
+            grokPath,
+            ["#!/bin/sh", 'printf "grok-cli 0.0.99\\n"', "exit 0", ""].join("\n"),
+          );
+          yield* fs.chmod(grokPath, 0o755);
+
+          return yield* checkGrokProviderStatus(
+            decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
+            { HOME: home, PATH: process.env.PATH ?? "", XAI_API_KEY: "probe-only" },
+            project,
+          );
+        }),
+      );
+
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(
+        expect.arrayContaining(["workflow pause", "workflow from-home", "workflow from-project"]),
+      );
     }),
   );
 });

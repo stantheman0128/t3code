@@ -10,11 +10,12 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
@@ -29,66 +30,110 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
-import { makeGrokAcpRuntime, resolveGrokAcpBaseModelId } from "../acp/GrokAcpSupport.ts";
+import {
+  fallbackGrokReasoningEffortCapabilities,
+  grokDiscoveredModelCapabilities,
+  isGrokAcpAuthFailure,
+  makeGrokAcpRuntime,
+  parseGrokAcpModelMeta,
+  resolveGrokAcpBaseModelId,
+} from "../acp/GrokAcpSupport.ts";
+import {
+  grokWorkflowHomeDirFromEnvironment,
+  readGrokWorkflowSlashCommands,
+} from "../acp/GrokWorkflowCommands.ts";
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
   badgeLabel: "Early Access",
-  showInteractionModeToggle: false,
-  requiresNewThreadForModelChange: true,
+  showInteractionModeToggle: true,
+  requiresNewThreadForModelChange: false,
 } as const;
-const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [],
-});
+const FALLBACK_CAPABILITIES: ModelCapabilities = fallbackGrokReasoningEffortCapabilities();
+
+const buildGrokServerProvider = (
+  input: Parameters<typeof buildServerProvider>[0],
+  discovery: {
+    readonly environment: NodeJS.ProcessEnv;
+    readonly projectRoot?: string | undefined;
+  },
+) =>
+  Effect.gen(function* () {
+    const slashCommands =
+      input.slashCommands ??
+      (yield* readGrokWorkflowSlashCommands({
+        homeDir: grokWorkflowHomeDirFromEnvironment(discovery.environment),
+        projectRoot: discovery.projectRoot,
+      }));
+    return buildServerProvider({
+      ...input,
+      slashCommands,
+    });
+  });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
+const GROK_API_KEY_ENV = "XAI_API_KEY";
 
 const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "grok-build",
     name: "Grok Build",
     isCustom: false,
-    capabilities: EMPTY_CAPABILITIES,
+    capabilities: FALLBACK_CAPABILITIES,
   },
 ];
 
 export function buildInitialGrokProviderSnapshot(
   grokSettings: GrokSettings,
-): Effect.Effect<ServerProviderDraft> {
+  discovery?: {
+    readonly environment?: NodeJS.ProcessEnv | undefined;
+    readonly projectRoot?: string | undefined;
+  },
+): Effect.Effect<ServerProviderDraft, never, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
     const models = grokModelsFromSettings(grokSettings.customModels);
 
+    const resolvedDiscovery = {
+      environment: discovery?.environment ?? process.env,
+      projectRoot: discovery?.projectRoot,
+    };
     if (!grokSettings.enabled) {
-      return buildServerProvider({
+      return yield* buildGrokServerProvider(
+        {
+          presentation: GROK_PRESENTATION,
+          enabled: false,
+          checkedAt,
+          models,
+          probe: {
+            installed: false,
+            version: null,
+            status: "warning",
+            auth: { status: "unknown" },
+            message: "Grok is disabled in T3 Code settings.",
+          },
+        },
+        resolvedDiscovery,
+      );
+    }
+
+    return yield* buildGrokServerProvider(
+      {
         presentation: GROK_PRESENTATION,
-        enabled: false,
+        enabled: true,
         checkedAt,
         models,
         probe: {
-          installed: false,
+          installed: true,
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Grok is disabled in T3 Code settings.",
+          message: "Checking Grok CLI availability...",
         },
-      });
-    }
-
-    return buildServerProvider({
-      presentation: GROK_PRESENTATION,
-      enabled: true,
-      checkedAt,
-      models,
-      probe: {
-        installed: true,
-        version: null,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: "Checking Grok CLI availability...",
       },
-    });
+      resolvedDiscovery,
+    );
   });
 }
 
@@ -96,7 +141,7 @@ function grokModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = GROK_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);
+  return providerModelsFromSettings(builtInModels, customModels ?? [], FALLBACK_CAPABILITIES);
 }
 
 function buildGrokDiscoveredModelsFromSessionModelState(
@@ -113,11 +158,12 @@ function buildGrokDiscoveredModelsFromSessionModelState(
         return undefined;
       }
       seen.add(slug);
+      const meta = parseGrokAcpModelMeta(model._meta);
       return {
         slug,
         name: model.name.trim() || slug,
         isCustom: false,
-        capabilities: EMPTY_CAPABILITIES,
+        capabilities: grokDiscoveredModelCapabilities(meta),
       };
     })
     .filter((model): model is ServerProviderModel => model !== undefined);
@@ -129,9 +175,15 @@ const discoverGrokModelsViaAcp = (
 ) =>
   Effect.gen(function* () {
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const probeEnvironment = {
+      ...environment,
+      CI: environment.CI ?? "1",
+      NO_BROWSER: environment.NO_BROWSER ?? "1",
+      BROWSER: environment.BROWSER ?? "",
+    };
     const acp = yield* makeGrokAcpRuntime({
       grokSettings,
-      environment,
+      environment: probeEnvironment,
       childProcessSpawner,
       cwd: process.cwd(),
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
@@ -161,16 +213,20 @@ const runGrokVersionCommand = (
 export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(function* (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  projectRoot?: string,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = grokModelsFromSettings(grokSettings.customModels);
+  const discovery = { environment, projectRoot };
+  const providerDraft = (input: Parameters<typeof buildServerProvider>[0]) =>
+    buildGrokServerProvider(input, discovery);
 
   if (!grokSettings.enabled) {
-    return buildServerProvider({
+    return yield* providerDraft({
       presentation: GROK_PRESENTATION,
       enabled: false,
       checkedAt,
@@ -195,7 +251,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     yield* Effect.logWarning("Grok CLI health check failed.", {
       errorTag: error._tag,
     });
-    return buildServerProvider({
+    return yield* providerDraft({
       presentation: GROK_PRESENTATION,
       enabled: grokSettings.enabled,
       checkedAt,
@@ -213,7 +269,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   }
 
   if (Option.isNone(versionResult.success)) {
-    return buildServerProvider({
+    return yield* providerDraft({
       presentation: GROK_PRESENTATION,
       enabled: grokSettings.enabled,
       checkedAt,
@@ -236,7 +292,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       stdoutLength: versionOutput.stdout.length,
       stderrLength: versionOutput.stderr.length,
     });
-    return buildServerProvider({
+    return yield* providerDraft({
       presentation: GROK_PRESENTATION,
       enabled: grokSettings.enabled,
       checkedAt,
@@ -256,10 +312,12 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     Effect.exit,
   );
   if (Exit.isFailure(discoveryExit)) {
+    const authFailed = isGrokAcpAuthFailure(discoveryExit.cause);
     yield* Effect.logWarning("Grok ACP model discovery failed", {
       errorTag: causeErrorTag(discoveryExit.cause),
+      authFailed,
     });
-    return buildServerProvider({
+    return yield* providerDraft({
       presentation: GROK_PRESENTATION,
       enabled: grokSettings.enabled,
       checkedAt,
@@ -268,8 +326,10 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         installed: true,
         version,
         status: "error",
-        auth: { status: "unknown" },
-        message: "Grok CLI is installed but ACP startup failed. Check server logs for details.",
+        auth: { status: authFailed ? "unauthenticated" : "unknown" },
+        message: authFailed
+          ? "Grok CLI is not authenticated. Run `grok login` and try again."
+          : "Grok CLI is installed but ACP startup failed. Check server logs for details.",
       },
     });
   }
@@ -277,7 +337,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     yield* Effect.logWarning(
       `Grok ACP model discovery timed out after ${GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`,
     );
-    return buildServerProvider({
+    return yield* providerDraft({
       presentation: GROK_PRESENTATION,
       enabled: grokSettings.enabled,
       checkedAt,
@@ -297,7 +357,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       ? grokModelsFromSettings(grokSettings.customModels, discoveredModels)
       : fallbackModels;
 
-  return buildServerProvider({
+  return yield* providerDraft({
     presentation: GROK_PRESENTATION,
     enabled: grokSettings.enabled,
     checkedAt,
@@ -306,7 +366,9 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       installed: true,
       version,
       status: "ready",
-      auth: { status: "unknown" },
+      auth: environment[GROK_API_KEY_ENV]?.trim()
+        ? { status: "authenticated", type: "api_key", label: "XAI_API_KEY" }
+        : { status: "authenticated", type: "session", label: "grok.com" },
     },
   });
 });

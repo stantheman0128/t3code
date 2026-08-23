@@ -74,9 +74,18 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       detail: provider.message ?? "The provider failed its startup checks.",
     };
   }
+  // Ready + unknown auth used to read as a verification failure even when the
+  // probe fully succeeded (Grok historically hard-coded auth: unknown). Prefer
+  // a neutral ready message; authenticated / unauthenticated already handled above.
+  if (provider.status === "ready") {
+    return {
+      headline: "Available",
+      detail: provider.message ?? "Installed and ready.",
+    };
+  }
   return {
     headline: "Available",
-    detail: provider.message ?? "Installed and ready, but authentication could not be verified.",
+    detail: provider.message ?? "Installed and ready.",
   };
 }
 

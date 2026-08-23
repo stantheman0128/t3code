@@ -1441,6 +1441,10 @@ function ChatViewContent(props: ChatViewProps) {
   const feedbackUploading = feedbackSubmissions.some(
     (submission) => submission.status === "uploading",
   );
+  const [goalCommandThreadKeysInFlight, setGoalCommandThreadKeysInFlight] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const goalCommandRunning = goalCommandThreadKeysInFlight.has(routeThreadKey);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
   const [localDraftErrorsByDraftId, setLocalDraftErrorsByDraftId] = useState<
@@ -5614,6 +5618,11 @@ function ChatViewContent(props: ChatViewProps) {
         composerRef.current?.resetCursorState();
       };
       goalCommandsInFlightRef.current.add(submittedGoalCommandThreadKey);
+      setGoalCommandThreadKeysInFlight((current) => {
+        const next = new Set(current);
+        next.add(submittedGoalCommandThreadKey);
+        return next;
+      });
       try {
         if (codexGoalCommand.action === "status") {
           const result = await getCodexGoal(target);
@@ -5676,6 +5685,11 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       } finally {
         goalCommandsInFlightRef.current.delete(submittedGoalCommandThreadKey);
+        setGoalCommandThreadKeysInFlight((current) => {
+          const next = new Set(current);
+          next.delete(submittedGoalCommandThreadKey);
+          return next;
+        });
       }
     }
     if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
@@ -7200,9 +7214,11 @@ function ChatViewContent(props: ChatViewProps) {
                             sendDisabledReason={
                               feedbackUploading
                                 ? "Sending feedback"
-                                : threadDetailLoading
-                                  ? "Messages loading"
-                                  : null
+                                : goalCommandRunning
+                                  ? "Running Goal command"
+                                  : threadDetailLoading
+                                    ? "Messages loading"
+                                    : null
                             }
                             isPreparingWorktree={isPreparingWorktree}
                             externalDrawerAttached={externalComposerDrawerAttached}

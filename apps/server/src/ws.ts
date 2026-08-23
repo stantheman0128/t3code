@@ -2314,7 +2314,7 @@ const makeWsRpcLayer = (
                     return Result.failVoid;
                   }),
                 ),
-                { capacity: "unbounded" },
+                { capacity: 1, strategy: "sliding" },
               );
               const goal = yield* providerService
                 .getCodexGoal(input.threadId, { allowRecovery: false })

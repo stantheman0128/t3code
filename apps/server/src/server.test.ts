@@ -4852,11 +4852,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             const cleared = yield* client[WS_METHODS.codexGoalClear]({ threadId });
             const snapshotSeen = yield* Deferred.make<void>();
+            const updatedSeen = yield* Deferred.make<void>();
             const streamed = yield* client[WS_METHODS.subscribeCodexGoal]({ threadId }).pipe(
               Stream.tap((event) =>
                 event.type === "snapshot"
                   ? Deferred.succeed(snapshotSeen, undefined).pipe(Effect.ignore)
-                  : Effect.void,
+                  : event.type === "updated"
+                    ? Deferred.succeed(updatedSeen, undefined).pipe(Effect.ignore)
+                    : Effect.void,
               ),
               Stream.take(3),
               Stream.runCollect,
@@ -4871,6 +4874,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               threadId,
               payload: { goal: steeredGoal },
             });
+            yield* Deferred.await(updatedSeen);
             yield* PubSub.publish(events, {
               type: "thread.goal.cleared",
               eventId: EventId.make("goal-cleared-event"),
@@ -4929,7 +4933,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("subscribeCodexGoal delivers goal updates published while the snapshot loads", () =>
+  it.effect("subscribeCodexGoal buffers the latest update during snapshot loading", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("goal-race-thread");
       const events = yield* PubSub.unbounded<ProviderRuntimeEvent>({ replay: 1 });
@@ -4949,6 +4953,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ...initialGoal,
         objective: "Steered Goal",
         updatedAt: 1_777_000_020,
+      };
+      const finalGoal = {
+        ...initialGoal,
+        objective: "Final Goal",
+        updatedAt: 1_777_000_040,
       };
 
       yield* buildAppUnderTest({
@@ -4989,6 +4998,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               threadId,
               payload: { goal: steeredGoal },
             });
+            yield* PubSub.publish(events, {
+              type: "thread.goal.cleared",
+              eventId: EventId.make("goal-race-cleared-event"),
+              provider: ProviderDriverKind.make("codex"),
+              createdAt: "2026-01-01T00:00:01.000Z",
+              threadId,
+              payload: {},
+            });
+            yield* PubSub.publish(events, {
+              type: "thread.goal.updated",
+              eventId: EventId.make("goal-race-final-event"),
+              provider: ProviderDriverKind.make("codex"),
+              createdAt: "2026-01-01T00:00:02.000Z",
+              threadId,
+              payload: { goal: finalGoal },
+            });
             yield* Deferred.succeed(releaseSnapshot, undefined);
             return yield* Fiber.join(collected);
           }),
@@ -5003,7 +5028,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }
       assert.equal(updated?.type, "updated");
       if (updated?.type === "updated") {
-        assert.equal(updated.goal.objective, "Steered Goal");
+        assert.equal(updated.goal.objective, "Final Goal");
       }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

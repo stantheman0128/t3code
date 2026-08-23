@@ -184,6 +184,28 @@ describe("GrokAcpSessionExtras", () => {
     expect(incomplete?.costUsd).toBeUndefined();
   });
 
+  it("keeps context occupancy when turn_completed PromptUsage is a billed sum", () => {
+    const billed = parseXAiTurnCompletedUsage(
+      {
+        update: {
+          sessionUpdate: "turn_completed",
+          usage: {
+            inputTokens: 9_100_000,
+            outputTokens: 100_000,
+            totalTokens: 9_200_000,
+            modelCalls: 50,
+            costUsdTicks: 1_000,
+          },
+        },
+      },
+      500_000,
+      { usedTokens: 169_509, maxTokens: 500_000, lastUsedTokens: 169_509 },
+    );
+    expect(billed?.usage.usedTokens).toBe(169_509);
+    expect(billed?.usage.totalProcessedTokens).toBe(9_200_000);
+    expect(billed?.usage.maxTokens).toBe(500_000);
+  });
+
   it("maps backgrounded shells onto local_bash tasks", () => {
     const started = parseXAiBackgroundTask({
       update: {

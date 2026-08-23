@@ -78,6 +78,7 @@ import {
   type GrokToolUpdateGate,
 } from "../acp/GrokAcpToolUpdates.ts";
 import {
+  extractGrokSessionOccupancy,
   extractGrokTokenUsage,
   extractXAiAskUserQuestions,
   grokPromptCount,
@@ -600,25 +601,62 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         }
       });
 
+    const publishGrokTokenUsage = (
+      ctx: GrokSessionContext,
+      turnId: TurnId | undefined,
+      usage: ThreadTokenUsageSnapshot,
+    ) =>
+      Effect.gen(function* () {
+        ctx.lastKnownTokenUsage = usage;
+        yield* offerRuntimeEvent({
+          type: "thread.token-usage.updated",
+          ...(yield* makeEventStamp()),
+          provider: PROVIDER,
+          threadId: ctx.threadId,
+          ...(turnId ? { turnId } : {}),
+          payload: { usage },
+        });
+      });
+
+    const publishGrokSessionOccupancy = (
+      ctx: GrokSessionContext,
+      turnId: TurnId | undefined,
+      payload: unknown,
+    ) =>
+      Effect.gen(function* () {
+        const occupancy = extractGrokSessionOccupancy(payload, ctx.maxTokens);
+        if (occupancy === undefined || occupancy === ctx.lastKnownTokenUsage?.usedTokens) {
+          return;
+        }
+        yield* publishGrokTokenUsage(ctx, turnId, {
+          usedTokens: occupancy,
+          lastUsedTokens: occupancy,
+          ...(ctx.maxTokens !== undefined ? { maxTokens: ctx.maxTokens } : {}),
+          ...(ctx.lastKnownTokenUsage?.totalProcessedTokens !== undefined &&
+          ctx.lastKnownTokenUsage.totalProcessedTokens > occupancy
+            ? { totalProcessedTokens: ctx.lastKnownTokenUsage.totalProcessedTokens }
+            : {}),
+          ...(ctx.lastKnownTokenUsage?.compactsAutomatically
+            ? { compactsAutomatically: true }
+            : {}),
+        });
+      });
+
     const publishGrokPromptUsage = (
       ctx: GrokSessionContext,
       turnId: TurnId,
       result: EffectAcpSchema.PromptResponse,
     ) =>
       Effect.gen(function* () {
-        const tokenUsage = extractGrokTokenUsage(result._meta, ctx.maxTokens);
+        const tokenUsage = extractGrokTokenUsage(
+          result._meta,
+          ctx.maxTokens,
+          ctx.lastKnownTokenUsage,
+        );
         if (!tokenUsage) {
           return;
         }
-        ctx.lastKnownTokenUsage = tokenUsage;
-        yield* offerRuntimeEvent({
-          type: "thread.token-usage.updated",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId: ctx.threadId,
-          turnId,
-          payload: { usage: tokenUsage },
-        });
+        yield* publishGrokTokenUsage(ctx, turnId, tokenUsage);
       });
 
     const logNative = (threadId: ThreadId, method: string, payload: unknown) =>
@@ -887,7 +925,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 });
                 return;
               }
-              const turnCompleted = parseXAiTurnCompletedUsage(params, ctx.maxTokens);
+              const turnCompleted = parseXAiTurnCompletedUsage(
+                params,
+                ctx.maxTokens,
+                ctx.lastKnownTokenUsage,
+              );
               if (turnCompleted) {
                 ctx.lastKnownTokenUsage = {
                   ...turnCompleted.usage,
@@ -913,6 +955,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 });
                 return;
               }
+              yield* publishGrokSessionOccupancy(ctx, turnId, params);
               const background = parseXAiBackgroundTask(params);
               if (!background) {
                 return;
@@ -1265,6 +1308,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     );
                     return;
                   case "ToolCallUpdated": {
+                    yield* publishGrokSessionOccupancy(ctx, notificationTurnId, event.rawPayload);
                     const nowMs = yield* Clock.currentTimeMillis;
                     if (
                       !shouldEmitGrokToolUpdate({
@@ -1296,6 +1340,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     return;
                   }
                   case "ContentDelta":
+                    yield* publishGrokSessionOccupancy(ctx, notificationTurnId, event.rawPayload);
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
                         stamp,

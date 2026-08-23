@@ -378,6 +378,7 @@ export function grokSessionRecapEvents(recap: GrokSessionRecap): ReadonlyArray<G
 export function parseXAiTurnCompletedUsage(
   payload: unknown,
   maxTokens?: number,
+  previous?: ThreadTokenUsageSnapshot,
 ): GrokTurnCompletedUsage | undefined {
   const update = unwrapSessionUpdate(payload);
   if (!update) {
@@ -391,7 +392,7 @@ export function parseXAiTurnCompletedUsage(
   if (!usageRecord) {
     return undefined;
   }
-  const usage = extractGrokTokenUsage(usageRecord, maxTokens);
+  const usage = extractGrokTokenUsage(usageRecord, maxTokens, previous);
   if (!usage) {
     return undefined;
   }

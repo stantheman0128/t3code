@@ -39,16 +39,25 @@ const mockAgentCommand = process.execPath;
 
 async function makeMockGrokWrapper(extraEnv?: Record<string, string>) {
   const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-mock-"));
-  const wrapperPath = NodePath.join(dir, "fake-grok.sh");
-  const envExports = Object.entries(extraEnv ?? {})
-    .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
-    .join("\n");
-  const script = `#!/bin/sh
+  const isWindows = process.platform === "win32";
+  const wrapperPath = NodePath.join(dir, isWindows ? "fake-grok.cmd" : "fake-grok.sh");
+  if (isWindows) {
+    const envExports = Object.entries(extraEnv ?? {})
+      .map(([key, value]) => `set "${key}=${value.replace(/%/g, "%%")}"`)
+      .join("\r\n");
+    const script = `@echo off\r\n${envExports}\r\n"${mockAgentCommand}" "${mockAgentPath}" %*\r\n`;
+    await NodeFSP.writeFile(wrapperPath, script, "utf8");
+  } else {
+    const envExports = Object.entries(extraEnv ?? {})
+      .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
+      .join("\n");
+    const script = `#!/bin/sh
 ${envExports}
 exec ${JSON.stringify(mockAgentCommand)} ${JSON.stringify(mockAgentPath)} "$@"
 `;
-  await NodeFSP.writeFile(wrapperPath, script, "utf8");
-  await NodeFSP.chmod(wrapperPath, 0o755);
+    await NodeFSP.writeFile(wrapperPath, script, "utf8");
+    await NodeFSP.chmod(wrapperPath, 0o755);
+  }
   return wrapperPath;
 }
 
@@ -493,7 +502,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const usageEvent = yield* Deferred.await(usageUpdated).pipe(Effect.timeout("2 seconds"));
       assert.equal(usageEvent.type, "thread.token-usage.updated");
       if (usageEvent.type === "thread.token-usage.updated") {
-        assert.equal(usageEvent.payload.usage.usedTokens, 17);
+        assert.equal(usageEvent.payload.usage.usedTokens, 14);
         assert.equal(usageEvent.payload.usage.inputTokens, 10);
       }
 
@@ -1338,6 +1347,56 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect("sends session/set_model _meta.reasoningEffort when sendTurn changes effort", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-effort-send-turn");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-effort-turn-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
+      });
+
+      yield* waitForFileContent(requestLogPath, 80, "session/new");
+      const beforeTurn = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const setModelBeforeTurn = beforeTurn.filter((line) => line.method === "session/set_model");
+      assert.equal(setModelBeforeTurn.length, 0);
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "raise effort",
+        attachments: [],
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
+          options: [{ id: "reasoningEffort", value: "xhigh" }],
+        },
+      });
+
+      yield* waitForFileContent(requestLogPath, 80, "session/set_model");
+      const lines = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const setModel = lines.find((line) => line.method === "session/set_model");
+      assert.isDefined(setModel);
+      assert.equal(
+        (setModel?.params as { _meta?: { reasoningEffort?: string } } | undefined)?._meta
+          ?.reasoningEffort,
+        "xhigh",
+      );
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("emits token usage from the Grok prompt result", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-usage");
@@ -1361,7 +1420,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const event = yield* Deferred.await(usage);
       assert.equal(event.type, "thread.token-usage.updated");
       if (event.type === "thread.token-usage.updated") {
-        assert.equal(event.payload.usage.usedTokens, 17);
+        assert.equal(event.payload.usage.usedTokens, 14);
         assert.equal(event.payload.usage.inputTokens, 10);
       }
 

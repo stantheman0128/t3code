@@ -60,18 +60,22 @@ scripts override user scripts of the same name.
 
 ## Usage
 
-After each prompt T3 reads Grok's prompt `_meta.usage` (including the official PromptUsage
-totals / `cached_read_tokens` shape) and emits `thread.token-usage.updated`. Workflow child
-tokens are added as they arrive.
+After each prompt T3 reads Grok's prompt usage, including the official PromptUsage
+totals / cache-read shape, and updates the thread. Workflow child tokens are added as
+they arrive. Grok's billed token total for a prompt is the sum of every model round
+in that turn. The Context Window meter shows how full the live window is, not that
+billed sum, so a long tool loop cannot read as 100% when the window is 500k and spend
+is millions. Billed tokens still appear as total processed when they are larger than
+the window.
 
 The Usage page scans `~/.grok/sessions/**/updates.jsonl` the same way it reads Claude and
 Codex transcripts. Complete PromptUsage rows contribute token totals and, when
 `costUsdTicks` is present and the bill is not marked incomplete, a dollar amount
 (1e10 ticks = $1). Incomplete bills stay on the token side and never become $0.
 
-Live turns do the same: a complete `turn_completed` PromptUsage row updates the
-context window and, when the bill is complete, attaches `totalCostUsd` to the
-turn. Auto-compact notifications fill the context-window meter
+Live turns do the same: a complete `turn_completed` PromptUsage row updates cost
+and processed totals. Occupancy on the meter stays the live window size. When the
+bill is complete, T3 attaches `totalCostUsd` to the turn. Auto-compact notifications fill the context-window meter
 (`compactsAutomatically`) and mark the thread compacted, matching Claude's
 compact boundary. Session recap lands on thread metadata, not the title.
 Hook runs and background shells use the same `hook.*` and `local_bash` task

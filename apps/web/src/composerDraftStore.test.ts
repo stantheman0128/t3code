@@ -24,9 +24,11 @@ const CODEX_INSTANCE = ProviderInstanceId.make("codex");
 const CODEX_SECONDARY_INSTANCE = ProviderInstanceId.make("codex_secondary");
 const CLAUDE_AGENT_INSTANCE = ProviderInstanceId.make("claudeAgent");
 const CURSOR_INSTANCE = ProviderInstanceId.make("cursor");
+const GROK_INSTANCE = ProviderInstanceId.make("grok");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
+const GROK_DRIVER = ProviderDriverKind.make("grok");
 
 type ProviderOptionSelectionBag = ReadonlyArray<ProviderOptionSelection>;
 type ProviderOptionSelectionsByProvider = Partial<Record<string, ProviderOptionSelectionBag>>;
@@ -1414,6 +1416,37 @@ describe("composerDraftStore modelSelection", () => {
         "claude-opus-4-6",
         toSelections({ effort: "max" }),
       ).options,
+    );
+  });
+
+  it("stores Grok reasoning effort through the bag options API", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setModelOptions(threadRef, providerModelOptions({ grok: { reasoningEffort: "xhigh" } }));
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[GROK_INSTANCE],
+    ).toEqual(modelSelection(GROK_DRIVER, "grok-build", { reasoningEffort: "xhigh" }));
+  });
+
+  it("keeps Grok reasoning effort when set through the traits picker API", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setProviderModelOptions(
+      threadRef,
+      GROK_DRIVER,
+      toSelections({ reasoningEffort: "low" }),
+      {
+        model: "grok-build",
+        persistSticky: true,
+      },
+    );
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[GROK_INSTANCE],
+    ).toEqual(modelSelection(GROK_DRIVER, "grok-build", { reasoningEffort: "low" }));
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider[GROK_INSTANCE]).toEqual(
+      modelSelection(GROK_DRIVER, "grok-build", { reasoningEffort: "low" }),
     );
   });
 

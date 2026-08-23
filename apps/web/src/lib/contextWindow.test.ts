@@ -66,6 +66,7 @@ describe("contextWindow", () => {
     expect(formatContextWindowTokens(1400)).toBe("1.4k");
     expect(formatContextWindowTokens(14_000)).toBe("14k");
     expect(formatContextWindowTokens(258_000)).toBe("258k");
+    expect(formatContextWindowTokens(9_200_000)).toBe("9.2m");
   });
 
   it("includes total processed tokens when available", () => {

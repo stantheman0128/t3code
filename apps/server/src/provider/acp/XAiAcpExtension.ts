@@ -603,10 +603,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function looksLikeGrokBilledSum(tokens: number, maxTokens: number | undefined): boolean {
+  return maxTokens !== undefined && maxTokens > 0 && tokens > maxTokens;
+}
+
+/**
+ * Live window occupancy Grok stamps on ACP `session/update` `_meta.totalTokens`.
+ * PromptUsage `totalTokens` is billed (sum of model rounds) and must not go
+ * through this helper.
+ */
+export function extractGrokSessionOccupancy(
+  payload: unknown,
+  maxTokens?: number,
+): number | undefined {
+  const record = asRecord(payload);
+  if (!record) {
+    return undefined;
+  }
+  const meta = asRecord(record._meta) ?? asRecord(asRecord(record.params)?._meta);
+  const occupancy = readTokenCount(meta?.totalTokens, meta?.total_tokens);
+  if (occupancy === undefined || occupancy <= 0) {
+    return undefined;
+  }
+  if (looksLikeGrokBilledSum(occupancy, maxTokens)) {
+    return undefined;
+  }
+  return occupancy;
+}
+
 /** Pulls a T3 usage snapshot from a Grok prompt result or prompt-complete payload. */
 export function extractGrokTokenUsage(
   payload: unknown,
   maxTokens?: number,
+  previous?: ThreadTokenUsageSnapshot,
 ): ThreadTokenUsageSnapshot | undefined {
   const usage = usageRecordFromUnknown(payload);
   if (!usage) {
@@ -637,30 +666,100 @@ export function extractGrokTokenUsage(
     usage.cached_read_tokens,
     usage.cachedReadTokens,
   );
-  const usedTokens = readTokenCount(
-    usage.usedTokens,
-    usage.used_tokens,
-    usage.totalTokens,
-    usage.total_tokens,
+  const billedTokens = readTokenCount(usage.totalTokens, usage.total_tokens);
+  const modelCalls = readTokenCount(
+    usage.modelCalls,
+    usage.model_calls,
+    usage.numTurns,
+    usage.num_turns,
   );
+  const explicitOccupancy = readTokenCount(
+    usage.contextTokens,
+    usage.context_tokens,
+    usage.windowTokens,
+    usage.window_tokens,
+  );
+  const reportedUsed = readTokenCount(usage.usedTokens, usage.used_tokens);
+  const partsOccupancy =
+    inputTokens !== undefined || outputTokens !== undefined
+      ? (inputTokens ?? 0) + (outputTokens ?? 0)
+      : undefined;
+  const billed =
+    billedTokens ??
+    (partsOccupancy !== undefined && partsOccupancy > 0 ? partsOccupancy : undefined);
 
-  const inferredUsed =
-    usedTokens ??
-    (inputTokens !== undefined || outputTokens !== undefined
-      ? (inputTokens ?? 0) + (outputTokens ?? 0) + (reasoningOutputTokens ?? 0)
-      : undefined);
-  if (inferredUsed === undefined || inferredUsed <= 0) {
+  const previousOccupancy =
+    previous?.usedTokens !== undefined &&
+    previous.usedTokens > 0 &&
+    !looksLikeGrokBilledSum(previous.usedTokens, maxTokens)
+      ? previous.usedTokens
+      : undefined;
+  const billedLooksSum = billed !== undefined && looksLikeGrokBilledSum(billed, maxTokens);
+
+  let occupancy = explicitOccupancy;
+  if (occupancy === undefined && billedLooksSum && previousOccupancy !== undefined) {
+    occupancy = previousOccupancy;
+  }
+  if (
+    occupancy === undefined &&
+    modelCalls !== undefined &&
+    modelCalls > 1 &&
+    billed !== undefined &&
+    billed > 0
+  ) {
+    occupancy = Math.max(1, Math.round(billed / modelCalls));
+  }
+  if (
+    occupancy === undefined &&
+    partsOccupancy !== undefined &&
+    partsOccupancy > 0 &&
+    !looksLikeGrokBilledSum(partsOccupancy, maxTokens)
+  ) {
+    occupancy = partsOccupancy;
+  }
+  if (
+    occupancy === undefined &&
+    reportedUsed !== undefined &&
+    reportedUsed > 0 &&
+    !looksLikeGrokBilledSum(reportedUsed, maxTokens)
+  ) {
+    occupancy = reportedUsed;
+  }
+  if (
+    occupancy === undefined &&
+    billed !== undefined &&
+    billed > 0 &&
+    !looksLikeGrokBilledSum(billed, maxTokens)
+  ) {
+    occupancy = billed;
+  }
+  if (occupancy !== undefined && looksLikeGrokBilledSum(occupancy, maxTokens)) {
+    occupancy = previousOccupancy;
+  }
+  if (occupancy === undefined && billedLooksSum) {
+    occupancy = previousOccupancy;
+  }
+  if (occupancy === undefined || occupancy <= 0) {
     return undefined;
   }
 
+  const processed =
+    billed !== undefined && billed > occupancy
+      ? billed
+      : previous?.totalProcessedTokens !== undefined && previous.totalProcessedTokens > occupancy
+        ? previous.totalProcessedTokens
+        : undefined;
+
   return {
-    usedTokens: inferredUsed,
+    usedTokens: occupancy,
+    lastUsedTokens: occupancy,
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
     ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
     ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
-    lastUsedTokens: inferredUsed,
+    ...(processed !== undefined ? { totalProcessedTokens: processed } : {}),
+    ...(previous?.compactsAutomatically ? { compactsAutomatically: true } : {}),
     ...(inputTokens !== undefined ? { lastInputTokens: inputTokens } : {}),
     ...(outputTokens !== undefined ? { lastOutputTokens: outputTokens } : {}),
     ...(reasoningOutputTokens !== undefined

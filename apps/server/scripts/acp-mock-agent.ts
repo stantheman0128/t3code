@@ -19,6 +19,7 @@ const emitInterleavedAssistantToolCalls =
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
 const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION === "1";
+const emitUsage = process.env.T3_ACP_EMIT_USAGE === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
 const hangPromptForever = process.env.T3_ACP_HANG_PROMPT_FOREVER === "1";
@@ -279,7 +280,21 @@ function modeState(): AcpSchema.SessionModeState {
 }
 
 const grokAcpModels: ReadonlyArray<AcpSchema.ModelInfo> = [
-  { modelId: "grok-build", name: "Grok Build" },
+  {
+    modelId: "grok-build",
+    name: "Grok Build",
+    _meta: {
+      supportsReasoningEffort: true,
+      reasoningEffort: "high",
+      reasoningEfforts: [
+        { id: "xhigh", label: "Extra High" },
+        { id: "high", label: "High", default: true },
+        { id: "medium", label: "Medium" },
+        { id: "low", label: "Low" },
+      ],
+      totalContextTokens: 500_000,
+    },
+  },
   { modelId: "grok-mock-alt", name: "Grok Mock Alt" },
 ];
 
@@ -771,6 +786,22 @@ const program = Effect.gen(function* () {
         });
 
         return { stopReason: "end_turn" };
+      }
+
+      if (emitUsage) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "hello from mock" },
+          },
+        });
+        return {
+          stopReason: "end_turn",
+          _meta: {
+            usage: { input_tokens: 10, output_tokens: 4, reasoning_tokens: 3 },
+          },
+        };
       }
 
       if (emitXAiAskUserQuestion) {

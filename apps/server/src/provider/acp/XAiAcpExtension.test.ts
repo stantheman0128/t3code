@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import {
+  extractGrokSessionOccupancy,
   extractGrokTokenUsage,
   extractXAiAskUserQuestions,
   grokPromptCount,
@@ -385,7 +386,7 @@ describe("Grok rewind and usage helpers", () => {
         usage: { input_tokens: 10, output_tokens: 4, reasoning_tokens: 3 },
       }),
     ).toMatchObject({
-      usedTokens: 17,
+      usedTokens: 14,
       inputTokens: 10,
       outputTokens: 4,
       reasoningOutputTokens: 3,
@@ -408,6 +409,70 @@ describe("Grok rewind and usage helpers", () => {
       outputTokens: 5,
       cachedInputTokens: 8,
     });
+  });
+
+  it("does not treat PromptUsage totalTokens as context-window occupancy", () => {
+    // Real Grok turn_completed: billed tokens are the sum of every model
+    // round in the prompt. Occupancy is about one window, ~total/modelCalls.
+    const snapshot = extractGrokTokenUsage(
+      {
+        usage: {
+          inputTokens: 2_299_997,
+          outputTokens: 6_065,
+          totalTokens: 2_306_062,
+          cachedReadTokens: 2_005_376,
+          reasoningTokens: 4_620,
+          modelCalls: 21,
+        },
+      },
+      500_000,
+    );
+    expect(snapshot?.usedTokens).toBe(Math.round(2_306_062 / 21));
+    expect(snapshot?.usedTokens).toBeLessThanOrEqual(500_000);
+    expect(snapshot?.totalProcessedTokens).toBe(2_306_062);
+    expect(snapshot?.maxTokens).toBe(500_000);
+    expect(snapshot?.reasoningOutputTokens).toBe(4_620);
+  });
+
+  it("keeps live occupancy when PromptUsage is a billed sum over the window", () => {
+    const snapshot = extractGrokTokenUsage(
+      {
+        usage: {
+          inputTokens: 9_100_000,
+          outputTokens: 100_000,
+          totalTokens: 9_200_000,
+        },
+      },
+      500_000,
+      { usedTokens: 169_509, maxTokens: 500_000, lastUsedTokens: 169_509 },
+    );
+    expect(snapshot?.usedTokens).toBe(169_509);
+    expect(snapshot?.totalProcessedTokens).toBe(9_200_000);
+  });
+
+  it("does not publish a 9.2m/500k occupancy when billed tokens have no occupancy source", () => {
+    expect(
+      extractGrokTokenUsage(
+        { usage: { totalTokens: 9_200_000, inputTokens: 9_100_000, outputTokens: 100_000 } },
+        500_000,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reads live context occupancy from session/update _meta.totalTokens", () => {
+    expect(
+      extractGrokSessionOccupancy(
+        {
+          sessionId: "sess-1",
+          update: { sessionUpdate: "tool_call" },
+          _meta: { totalTokens: 169_509 },
+        },
+        500_000,
+      ),
+    ).toBe(169_509);
+    expect(
+      extractGrokSessionOccupancy({ _meta: { totalTokens: 9_200_000 } }, 500_000),
+    ).toBeUndefined();
   });
 });
 

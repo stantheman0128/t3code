@@ -13,6 +13,11 @@ You can also set `XAI_API_KEY` in the server environment instead of running `gro
 Background provider checks start ACP with browser login disabled (`CI` / `NO_BROWSER`). If
 authenticate fails, Settings shows an unauthenticated status and asks you to run `grok login`.
 
+Settings shows the grok.com login email from `~/.grok/auth.json` when you signed in with
+`grok login`. Team accounts show as Grok Team. There is no separate SuperGrok/Plus line like
+Claude or Codex, because the Grok CLI does not report a plan name. The Early Access badge is
+only a label; it does not hide the account.
+
 In T3 Code Settings, the default Grok provider can stay like this:
 
 ```text

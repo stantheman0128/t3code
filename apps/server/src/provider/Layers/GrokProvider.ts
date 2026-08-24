@@ -42,6 +42,7 @@ import {
   grokWorkflowHomeDirFromEnvironment,
   readGrokWorkflowSlashCommands,
 } from "../acp/GrokWorkflowCommands.ts";
+import { readGrokAuthFromHome } from "../acp/grokAuth.ts";
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
@@ -77,6 +78,18 @@ const GROK_API_KEY_ENV = "XAI_API_KEY";
 
 const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
+    slug: "grok-4.6",
+    name: "Grok 4.6",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
+    slug: "grok-4.5",
+    name: "Grok 4.5",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
     slug: "grok-build",
     name: "Grok Build",
     isCustom: false,
@@ -99,6 +112,9 @@ export function buildInitialGrokProviderSnapshot(
       environment: discovery?.environment ?? process.env,
       projectRoot: discovery?.projectRoot,
     };
+    const loginAuth = yield* readGrokAuthFromHome(
+      grokWorkflowHomeDirFromEnvironment(resolvedDiscovery.environment),
+    );
     if (!grokSettings.enabled) {
       return yield* buildGrokServerProvider(
         {
@@ -128,7 +144,7 @@ export function buildInitialGrokProviderSnapshot(
           installed: true,
           version: null,
           status: "warning",
-          auth: { status: "unknown" },
+          auth: loginAuth ?? { status: "unknown" },
           message: "Checking Grok CLI availability...",
         },
       },
@@ -222,6 +238,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = grokModelsFromSettings(grokSettings.customModels);
   const discovery = { environment, projectRoot };
+  const loginAuth = yield* readGrokAuthFromHome(grokWorkflowHomeDirFromEnvironment(environment));
   const providerDraft = (input: Parameters<typeof buildServerProvider>[0]) =>
     buildGrokServerProvider(input, discovery);
 
@@ -366,9 +383,11 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       installed: true,
       version,
       status: "ready",
-      auth: environment[GROK_API_KEY_ENV]?.trim()
-        ? { status: "authenticated", type: "api_key", label: "XAI_API_KEY" }
-        : { status: "authenticated", type: "session", label: "grok.com" },
+      auth:
+        loginAuth ??
+        (environment[GROK_API_KEY_ENV]?.trim()
+          ? { status: "authenticated", type: "api_key", label: "XAI_API_KEY" }
+          : { status: "authenticated", type: "session", label: "grok.com" }),
     },
   });
 });

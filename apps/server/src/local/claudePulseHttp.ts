@@ -29,3 +29,8 @@ export function defaultClaudePulsePorts(preferred: number | null): number[] {
   }
   return ports;
 }
+
+/** Pulse's HttpListener is bound to localhost, not 127.0.0.1 (Windows 400). */
+export function claudePulseHookUrl(port: number, source = "t3"): string {
+  return `http://localhost:${port}/?source=${encodeURIComponent(source)}`;
+}

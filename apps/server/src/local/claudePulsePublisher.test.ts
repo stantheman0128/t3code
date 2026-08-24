@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { claudePulseHookUrl } from "./claudePulseHttp.ts";
 import {
+  isLiveAwarenessPhase,
   mapAwarenessPhaseToPulseEvent,
   parseClaudePulsePortFile,
   pulsePublishIdentity,
@@ -50,5 +52,17 @@ describe("claudePulsePublisher mapping", () => {
     );
     expect(parseClaudePulsePortFile("19281\n")).toBe(19281);
     expect(parseClaudePulsePortFile("80")).toBeNull();
+  });
+
+  it("posts to localhost, not 127.0.0.1", () => {
+    expect(claudePulseHookUrl(19280)).toBe("http://localhost:19280/?source=t3");
+    expect(claudePulseHookUrl(19280)).not.toContain("127.0.0.1");
+  });
+
+  it("treats running and waiting phases as live", () => {
+    expect(isLiveAwarenessPhase("running")).toBe(true);
+    expect(isLiveAwarenessPhase("waiting_for_approval")).toBe(true);
+    expect(isLiveAwarenessPhase("completed")).toBe(false);
+    expect(isLiveAwarenessPhase(null)).toBe(false);
   });
 });

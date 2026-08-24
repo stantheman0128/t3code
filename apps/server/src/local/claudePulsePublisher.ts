@@ -11,11 +11,14 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Duration from "effect/Duration";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
@@ -24,6 +27,7 @@ import { eventThreadId, shouldPublishAgentAwarenessEvent } from "../relay/AgentA
 import { forkParked } from "../serverActivation.ts";
 import {
   type ClaudePulseHookPayload,
+  claudePulseHookUrl,
   defaultClaudePulsePorts,
   parseClaudePulsePortFile,
   resolveClaudePulsePortFilePath,
@@ -75,6 +79,15 @@ export function pulsePublishIdentity(payload: ClaudePulseHookPayload): string {
   return `${payload.hook_event_name}:${payload.notification_type ?? ""}`;
 }
 
+export function isLiveAwarenessPhase(phase: AgentAwarenessPhase | null): boolean {
+  return (
+    phase === "starting" ||
+    phase === "running" ||
+    phase === "waiting_for_approval" ||
+    phase === "waiting_for_input"
+  );
+}
+
 export class ClaudePulsePublisher extends Context.Service<
   ClaudePulsePublisher,
   {
@@ -107,20 +120,19 @@ export const make = Effect.gen(function* () {
       const ports = yield* resolvePulsePorts;
       for (const port of ports) {
         const attempt = yield* Effect.result(
-          HttpClientRequest.post(`http://127.0.0.1:${port}/?source=t3`).pipe(
+          HttpClientRequest.post(claudePulseHookUrl(port)).pipe(
             HttpClientRequest.bodyJson(payload),
             Effect.flatMap(httpClient.execute),
+            Effect.flatMap(HttpClientResponse.filterStatusOk),
             Effect.timeout("1.5 seconds"),
           ),
         );
         if (attempt._tag === "Success") {
-          return;
+          return true;
         }
       }
-    }).pipe(
-      Effect.orElseSucceed(() => undefined),
-      Effect.asVoid,
-    );
+      return false;
+    }).pipe(Effect.orElseSucceed(() => false));
 
   const publishThread: ClaudePulsePublisher["Service"]["publishThread"] = (threadId) =>
     Effect.gen(function* () {
@@ -160,7 +172,8 @@ export const make = Effect.gen(function* () {
       const published = yield* Ref.get(publishedByThreadRef);
       if (published.get(threadId) === identity) return;
 
-      yield* postPayload(payload);
+      const posted = yield* postPayload(payload);
+      if (!posted) return;
       yield* Ref.update(publishedByThreadRef, (current) => {
         const next = new Map(current);
         next.set(threadId, identity);
@@ -173,9 +186,33 @@ export const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(publishThread);
 
+  const enqueueLiveThreads = Effect.gen(function* () {
+    const snapshot = yield* snapshotQuery.getShellSnapshot();
+    const environmentId = yield* serverEnvironment.getEnvironmentId;
+    const projects = new Map(snapshot.projects.map((project) => [project.id, project]));
+    for (const thread of snapshot.threads) {
+      const project = projects.get(thread.projectId);
+      if (project === undefined) continue;
+      const awareness = projectThreadAwareness({
+        environmentId,
+        project,
+        thread,
+      });
+      if (!isLiveAwarenessPhase(awareness?.phase ?? null)) continue;
+      yield* Ref.update(publishedByThreadRef, (current) => {
+        if (!current.has(thread.id)) return current;
+        const next = new Map(current);
+        next.delete(thread.id);
+        return next;
+      });
+      yield* worker.enqueue(thread.id);
+    }
+  }).pipe(Effect.catchCause(() => Effect.void));
+
   const start: ClaudePulsePublisher["Service"]["start"] = Effect.fn("ClaudePulsePublisher.start")(
     function* () {
       yield* Effect.logInfo("ClaudePulse local publisher enabled");
+      yield* enqueueLiveThreads;
       yield* forkParked(
         Stream.runForEach(orchestrationEngine.streamDomainEvents, (event: OrchestrationEvent) => {
           const threadId = eventThreadId(event);
@@ -184,6 +221,9 @@ export const make = Effect.gen(function* () {
           }
           return worker.enqueue(threadId);
         }),
+      );
+      yield* forkParked(
+        enqueueLiveThreads.pipe(Effect.repeat(Schedule.spaced(Duration.seconds(20)))),
       );
     },
   );

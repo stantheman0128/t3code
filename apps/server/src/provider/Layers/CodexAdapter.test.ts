@@ -92,6 +92,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     (_taskId: RuntimeTaskId): Promise<void> => Promise.resolve(undefined),
   );
 
+  public readonly applyGoalCommandImpl = vi.fn(
+    (_command: unknown): Promise<void> => Promise.resolve(undefined),
+  );
+
   public readonly readThreadImpl = vi.fn(
     (): Promise<CodexThreadSnapshot> =>
       Promise.resolve({
@@ -142,6 +146,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   interruptTask(taskId: RuntimeTaskId) {
     return Effect.promise(() => this.interruptTaskImpl(taskId));
+  }
+
+  applyGoalCommand(command: Parameters<CodexSessionRuntimeShape["applyGoalCommand"]>[0]) {
+    return Effect.promise(() => this.applyGoalCommandImpl(command));
   }
 
   readThread = Effect.promise(() => this.readThreadImpl());
@@ -352,6 +360,31 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       yield* interruptTask(asThreadId("sess-task-stop"), taskId);
       NodeAssert.equal(runtime.interruptTaskImpl.mock.calls.length, 1);
       NodeAssert.equal(runtime.interruptTaskImpl.mock.calls[0]?.[0], taskId);
+    }),
+  );
+
+  it.effect("applies /goal before sending the objective as the turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-goal"),
+        runtimeMode: "full-access",
+      });
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.sendTurnImpl.mockClear();
+      yield* adapter.sendTurn({
+        threadId: asThreadId("sess-goal"),
+        input: "/goal Keep tests green",
+        attachments: [],
+      });
+      NodeAssert.deepStrictEqual(runtime.applyGoalCommandImpl.mock.calls[0]?.[0], {
+        kind: "set",
+        objective: "Keep tests green",
+        tokenBudget: null,
+      });
+      NodeAssert.equal(runtime.sendTurnImpl.mock.calls[0]?.[0]?.input, "Keep tests green");
     }),
   );
 

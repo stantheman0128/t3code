@@ -6,6 +6,12 @@ import * as Path from "effect/Path";
 
 const SCRIPT_BYTE_CAP = 64 * 1024;
 
+export const GROK_WORKFLOW_LAUNCH_COMMAND: ServerProviderSlashCommand = {
+  name: "workflow",
+  description: "Start a Grok workflow by name",
+  input: { hint: "name" },
+};
+
 export const GROK_WORKFLOW_CONTROL_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
   {
     name: "workflow pause",
@@ -19,6 +25,30 @@ export const GROK_WORKFLOW_CONTROL_COMMANDS: ReadonlyArray<ServerProviderSlashCo
     name: "workflow stop",
     description: "Stop a Grok workflow run",
     input: { hint: "run name" },
+  },
+];
+
+export const GROK_GOAL_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
+  {
+    name: "goal",
+    description: "Set an autonomous goal Grok keeps working until evidence confirms it",
+    input: { hint: "objective" },
+  },
+  {
+    name: "goal status",
+    description: "Show the current Grok goal",
+  },
+  {
+    name: "goal pause",
+    description: "Pause the current Grok goal",
+  },
+  {
+    name: "goal resume",
+    description: "Resume a paused Grok goal",
+  },
+  {
+    name: "goal clear",
+    description: "Clear the current Grok goal",
   },
 ];
 
@@ -111,10 +141,10 @@ const readWorkflowDir = Effect.fn("grok.readWorkflowDir")(function* (
 });
 
 /**
- * Built-in `/workflow pause|resume|stop` plus `~/.grok/workflows` and
- * `<project>/.grok/workflows` scripts. Project scripts override user scripts
- * of the same command name. T3 sends the slash text as a prompt — it does not
- * host Rhai.
+ * Built-in `/workflow`, pause/resume/stop, `/goal`, plus `~/.grok/workflows`
+ * and `<project>/.grok/workflows` scripts. Project scripts override user
+ * scripts of the same command name. T3 sends the slash text as a prompt — it
+ * does not host Rhai.
  */
 export const readGrokWorkflowSlashCommands = Effect.fn("grok.readWorkflowSlashCommands")(
   function* (input: {
@@ -123,7 +153,11 @@ export const readGrokWorkflowSlashCommands = Effect.fn("grok.readWorkflowSlashCo
   }) {
     const path = yield* Path.Path;
     const byName = new Map<string, ServerProviderSlashCommand>();
+    byName.set(GROK_WORKFLOW_LAUNCH_COMMAND.name, GROK_WORKFLOW_LAUNCH_COMMAND);
     for (const command of GROK_WORKFLOW_CONTROL_COMMANDS) {
+      byName.set(command.name, command);
+    }
+    for (const command of GROK_GOAL_SLASH_COMMANDS) {
       byName.set(command.name, command);
     }
     const homeDir = trimmed(input.homeDir) ?? grokWorkflowHomeDirFromEnvironment(process.env);

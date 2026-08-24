@@ -6,6 +6,7 @@ import type {
   ServerProvider,
   ServerProviderAuth,
   ServerProviderModel,
+  ServerProviderSlashCommand,
   ServerProviderState,
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
@@ -55,6 +56,14 @@ const CURSOR_PRESENTATION = {
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
 } as const;
+
+const CURSOR_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
+  {
+    name: "goal",
+    description: "Give Cursor a long-lived objective until it is complete",
+    input: { hint: "objective" },
+  },
+];
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
@@ -84,6 +93,7 @@ export function buildInitialCursorProviderSnapshot(
     if (!cursorSettings.enabled) {
       return buildServerProvider({
         presentation: CURSOR_PRESENTATION,
+        slashCommands: CURSOR_SLASH_COMMANDS,
         enabled: false,
         checkedAt,
         models,
@@ -99,6 +109,7 @@ export function buildInitialCursorProviderSnapshot(
 
     return buildServerProvider({
       presentation: CURSOR_PRESENTATION,
+      slashCommands: CURSOR_SLASH_COMMANDS,
       enabled: true,
       checkedAt,
       models,
@@ -632,6 +643,7 @@ export function buildCursorProviderSnapshot(input: {
   const message = joinProviderMessages(input.parsed.message, input.discoveryWarning);
   return buildServerProvider({
     presentation: CURSOR_PRESENTATION,
+    slashCommands: CURSOR_SLASH_COMMANDS,
     enabled: input.cursorSettings.enabled,
     checkedAt: input.checkedAt,
     models: providerModelsFromSettings(
@@ -998,6 +1010,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   if (!cursorSettings.enabled) {
     return buildServerProvider({
       presentation: CURSOR_PRESENTATION,
+      slashCommands: CURSOR_SLASH_COMMANDS,
       enabled: false,
       checkedAt,
       models: fallbackModels,
@@ -1024,6 +1037,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
     });
     return buildServerProvider({
       presentation: CURSOR_PRESENTATION,
+      slashCommands: CURSOR_SLASH_COMMANDS,
       enabled: cursorSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -1042,6 +1056,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   if (Option.isNone(aboutProbe.success)) {
     return buildServerProvider({
       presentation: CURSOR_PRESENTATION,
+      slashCommands: CURSOR_SLASH_COMMANDS,
       enabled: cursorSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -1065,6 +1080,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   if (parameterizedModelPickerUnsupportedMessage) {
     return buildServerProvider({
       presentation: CURSOR_PRESENTATION,
+      slashCommands: CURSOR_SLASH_COMMANDS,
       enabled: cursorSettings.enabled,
       checkedAt,
       models: fallbackModels,

@@ -64,6 +64,7 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { parseCodexGoalSlash } from "./codexGoalSlash.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1804,6 +1805,20 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     );
 
     const session = yield* requireSession(input.threadId);
+    const goalCommand = input.input ? parseCodexGoalSlash(input.input) : null;
+    if (goalCommand) {
+      yield* session.runtime
+        .applyGoalCommand(goalCommand)
+        .pipe(
+          Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "thread/goal", cause)),
+        );
+    }
+    const turnInput =
+      goalCommand?.kind === "set"
+        ? goalCommand.objective
+        : goalCommand?.kind === "resume"
+          ? "Continue the current goal."
+          : input.input;
     const reasoningEffort =
       input.modelSelection?.instanceId === boundInstanceId
         ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")
@@ -1814,7 +1829,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         : undefined;
     return yield* session.runtime
       .sendTurn({
-        ...(input.input !== undefined ? { input: input.input } : {}),
+        ...(turnInput !== undefined ? { input: turnInput } : {}),
         ...(input.modelSelection?.instanceId === boundInstanceId
           ? { model: input.modelSelection.model }
           : {}),

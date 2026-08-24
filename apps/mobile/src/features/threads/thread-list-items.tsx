@@ -168,13 +168,24 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
           onPress={handleNewThread}
           style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, paddingLeft: 12 })}
         >
-          <SymbolView
-            name="plus"
-            size={compact ? 20 : 16}
-            tintColor={iconMutedColor}
-            type="monochrome"
-            weight="medium"
-          />
+          <View className="flex-row items-center gap-1">
+            <SymbolView
+              name="plus"
+              size={compact ? 20 : 16}
+              tintColor={iconMutedColor}
+              type="monochrome"
+              weight="medium"
+            />
+            <Text
+              className={
+                compact
+                  ? "text-sm font-t3-medium text-foreground-muted"
+                  : "text-xs font-t3-medium text-foreground-muted"
+              }
+            >
+              New
+            </Text>
+          </View>
         </Pressable>
       ) : null}
     </View>

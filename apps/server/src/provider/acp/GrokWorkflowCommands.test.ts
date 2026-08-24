@@ -95,7 +95,21 @@ it.layer(NodeServices.layer)("readGrokWorkflowSlashCommands", (it) => {
           homeDir: home,
           projectRoot: project,
         });
-        expect(commands.slice(0, 3)).toEqual([...GROK_WORKFLOW_CONTROL_COMMANDS]);
+        expect(commands[0]).toEqual({
+          name: "workflow",
+          description: "Start a Grok workflow by name",
+          input: { hint: "name" },
+        });
+        expect(commands).toEqual(expect.arrayContaining([...GROK_WORKFLOW_CONTROL_COMMANDS]));
+        expect(commands.map((command) => command.name)).toEqual(
+          expect.arrayContaining([
+            "goal",
+            "goal status",
+            "goal pause",
+            "goal resume",
+            "goal clear",
+          ]),
+        );
         expect(commands).toContainEqual({
           name: "workflow review-changes",
           description: "project copy",

@@ -3167,80 +3167,76 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="relative z-[1] gap-1 p-[var(--sidebar-content-inset)]">
-            <div className="flex items-center gap-1">
-              <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
-                <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-                <Input
-                  ref={threadSearchInputRef}
-                  nativeInput
-                  unstyled
-                  type="search"
-                  value={threadSearchQuery}
-                  onChange={(event) => {
-                    setThreadSearchQuery(event.currentTarget.value);
-                    setActiveSearchResultIndex(0);
-                  }}
-                  onKeyDown={handleThreadSearchKeyDown}
-                  placeholder="Search"
-                  aria-label="Search threads"
-                  role="combobox"
-                  aria-autocomplete="list"
-                  aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
-                  aria-controls={
-                    isSearchingThreads && threadSearchResults.length > 0
-                      ? "sidebar-thread-search-results"
-                      : undefined
-                  }
-                  aria-activedescendant={
-                    isSearchingThreads && threadSearchResults[activeSearchResultIndex]
-                      ? `sidebar-thread-search-result-${activeSearchResultIndex}`
-                      : undefined
-                  }
-                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
-                />
-                {isSearchingThreads ? (
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label="Clear thread search"
-                    onClick={() => {
-                      clearThreadSearch();
-                      threadSearchInputRef.current?.focus();
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-1">
+                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
+                  <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+                  <Input
+                    ref={threadSearchInputRef}
+                    nativeInput
+                    unstyled
+                    type="search"
+                    value={threadSearchQuery}
+                    onChange={(event) => {
+                      setThreadSearchQuery(event.currentTarget.value);
+                      setActiveSearchResultIndex(0);
                     }}
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
-                ) : null}
-              </div>
-              <div className="shrink-0">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="icon"
-                        type="button"
-                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={handleNewThreadClick}
-                        disabled={projects.length === 0}
-                        aria-label="New thread"
-                      />
+                    onKeyDown={handleThreadSearchKeyDown}
+                    placeholder="Search"
+                    aria-label="Search threads"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={isSearchingThreads && threadSearchResults.length > 0}
+                    aria-controls={
+                      isSearchingThreads && threadSearchResults.length > 0
+                        ? "sidebar-thread-search-results"
+                        : undefined
                     }
-                  >
-                    <SquarePenIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">
-                    {newThreadShortcutLabel
-                      ? `New thread (${newThreadShortcutLabel})`
-                      : "New thread"}
-                  </TooltipPopup>
-                </Tooltip>
+                    aria-activedescendant={
+                      isSearchingThreads && threadSearchResults[activeSearchResultIndex]
+                        ? `sidebar-thread-search-result-${activeSearchResultIndex}`
+                        : undefined
+                    }
+                    className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+                  />
+                  {isSearchingThreads ? (
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      className="size-5 shrink-0 rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                      aria-label="Clear thread search"
+                      onClick={() => {
+                        clearThreadSearch();
+                        threadSearchInputRef.current?.focus();
+                      }}
+                    >
+                      <XIcon className="size-3" />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
+              <SidebarMenuButton
+                type="button"
+                className="relative w-full justify-start gap-2 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                onClick={handleNewThreadClick}
+                disabled={projects.length === 0}
+                aria-label="New thread"
+              >
+                <SquarePenIcon className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
+                  New
+                </span>
+                {newThreadShortcutLabel ? (
+                  <span className="shrink-0 text-xs text-sidebar-muted-foreground group-data-[collapsible=icon]:hidden">
+                    {newThreadShortcutLabel}
+                  </span>
+                ) : null}
+                <span
+                  className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                  aria-hidden="true"
+                />
+              </SidebarMenuButton>
             </div>
             {projectGroups.length > 0 ? (
               <div className="flex items-center gap-1">

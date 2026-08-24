@@ -16,6 +16,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import type {
   CodexSettings,
   ServerProvider,
+  ServerProviderSlashCommand,
   ServerProviderState,
   ModelCapabilities,
   ProviderOptionDescriptor,
@@ -42,6 +43,30 @@ const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
 } as const;
+
+const CODEX_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
+  {
+    name: "goal",
+    description: "Set a durable Codex objective",
+    input: { hint: "objective" },
+  },
+  {
+    name: "goal status",
+    description: "Show the current Codex goal",
+  },
+  {
+    name: "goal pause",
+    description: "Pause the current Codex goal",
+  },
+  {
+    name: "goal resume",
+    description: "Resume a paused Codex goal",
+  },
+  {
+    name: "goal clear",
+    description: "Clear the current Codex goal",
+  },
+];
 
 export interface CodexAppServerProviderSnapshot {
   readonly account: CodexSchema.V2GetAccountResponse;
@@ -441,6 +466,7 @@ const makePendingCodexProvider = (
     if (!codexSettings.enabled) {
       return buildServerProvider({
         presentation: CODEX_PRESENTATION,
+        slashCommands: CODEX_SLASH_COMMANDS,
         enabled: false,
         checkedAt,
         models,
@@ -457,6 +483,7 @@ const makePendingCodexProvider = (
 
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
+      slashCommands: CODEX_SLASH_COMMANDS,
       enabled: true,
       checkedAt,
       models,
@@ -527,6 +554,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   if (!codexSettings.enabled) {
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
+      slashCommands: CODEX_SLASH_COMMANDS,
       enabled: false,
       checkedAt,
       models: emptyModels,
@@ -559,6 +587,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     const installed = !isCodexAppServerSpawnError(error);
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
+      slashCommands: CODEX_SLASH_COMMANDS,
       enabled: codexSettings.enabled,
       checkedAt,
       models: emptyModels,
@@ -578,6 +607,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   if (Option.isNone(probeResult.success)) {
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
+      slashCommands: CODEX_SLASH_COMMANDS,
       enabled: codexSettings.enabled,
       checkedAt,
       models: emptyModels,
@@ -597,6 +627,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
+    slashCommands: CODEX_SLASH_COMMANDS,
     enabled: codexSettings.enabled,
     checkedAt,
     models: snapshot.models,

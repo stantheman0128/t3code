@@ -53,10 +53,19 @@ T3 Code now maps those updates onto the same Agents / task surface used by Claud
 - member tokens stay on the child `typedUsage` snapshot — they do not replace the thread context window
 - standalone Grok `subagent_spawned` / `subagent_progress` / `subagent_finished` updates use the same child-task path
 
-T3 does not reimplement the Rhai host. Composer `/` lists `/workflow pause`, `/workflow resume`,
-`/workflow stop`, and each script in `~/.grok/workflows` plus the project `.grok/workflows`
-directory. Picking one sends that slash text as a prompt so the Grok CLI can run it. Project
-scripts override user scripts of the same name.
+T3 does not reimplement the Rhai host. Composer `/` lists `/workflow` to start a run by name,
+`/workflow pause`, `/workflow resume`, `/workflow stop`, `/goal` (status, pause, resume, clear),
+and each script in `~/.grok/workflows` plus the project `.grok/workflows` directory. Picking one
+sends that slash text as a prompt so the Grok CLI can run it. Project scripts override user
+scripts of the same name. If you only see pause/resume/stop, there is no `.rhai` script in those
+folders yet; use `/workflow <name>` for a built-in or add a script to launch by name.
+
+## Goals
+
+Grok's `/goal` keeps an objective across turns until an evidence check says it is done. Use it from
+the composer slash menu on a Grok thread. Goal mode must be enabled in the Grok CLI for the command
+to do anything. This is not available on other providers' native TUIs unless that CLI has `/goal`
+too; T3 lists Codex and Cursor `/goal` the same way when you are on those providers.
 
 ## Usage
 

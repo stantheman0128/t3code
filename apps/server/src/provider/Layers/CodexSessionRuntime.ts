@@ -38,6 +38,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
+import type { CodexGoalSlash } from "./codexGoalSlash.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
@@ -139,6 +140,9 @@ export interface CodexSessionRuntimeShape {
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly interruptTask: (taskId: RuntimeTaskId) => Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly applyGoalCommand: (
+    command: CodexGoalSlash,
+  ) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly readThread: Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
   readonly rollbackThread: (
     numTurns: number,
@@ -1800,6 +1804,31 @@ export const makeCodexSessionRuntime = (
               ? { resumeCursor: { threadId: resumedProviderThreadId } }
               : {}),
           } satisfies ProviderTurnStartResult;
+        }),
+      applyGoalCommand: (command) =>
+        Effect.gen(function* () {
+          const threadId = yield* readProviderThreadId;
+          switch (command.kind) {
+            case "clear":
+              yield* client.request("thread/goal/clear", { threadId });
+              return;
+            case "status":
+              yield* client.request("thread/goal/get", { threadId });
+              return;
+            case "pause":
+              yield* client.request("thread/goal/set", { threadId, status: "paused" });
+              return;
+            case "resume":
+              yield* client.request("thread/goal/set", { threadId, status: "active" });
+              return;
+            case "set":
+              yield* client.request("thread/goal/set", {
+                threadId,
+                objective: command.objective,
+                status: "active",
+                ...(command.tokenBudget !== null ? { tokenBudget: command.tokenBudget } : {}),
+              });
+          }
         }),
       interruptTask: (taskId) =>
         Effect.gen(function* () {

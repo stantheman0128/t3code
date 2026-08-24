@@ -147,6 +147,16 @@ It also asks the running Codex app for your live Plus or Pro windows. When that 
 Codex row shows how much of the 5h and weekly windows you have used. Quota is not mixed into the
 dollar totals, because those totals are raw API-equivalent cost, not Plus or Pro billing.
 
+## Goals
+
+Composer `/` lists `/goal` on a Codex thread, plus pause, resume, clear, and status. If the
+command does nothing, turn Codex goals on in `~/.codex/config.toml`:
+
+```text
+[features]
+goals = true
+```
+
 ## Stopping One Agent
 
 When Codex has live child agents, the Agents panel on web and desktop can stop one child without

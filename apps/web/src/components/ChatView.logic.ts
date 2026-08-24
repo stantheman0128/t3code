@@ -10,6 +10,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import { composeProviderSlashMessage as composeNamedProviderSlashMessage } from "@t3tools/shared/composerTrigger";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
@@ -273,6 +274,18 @@ export function cloneComposerImageForRetry(
   }
 }
 
+export interface ComposerPendingSlashCommand {
+  readonly name: string;
+  readonly hint: string | null;
+}
+
+export function composeProviderSlashMessage(
+  command: ComposerPendingSlashCommand | null | undefined,
+  prompt: string,
+): string {
+  return composeNamedProviderSlashMessage(command?.name, prompt);
+}
+
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
@@ -283,6 +296,7 @@ export function deriveComposerSendState(options: {
    * contexts do: a prompt of just element chips is still a valid send.
    */
   elementContextCount?: number;
+  slashCommandActive?: boolean;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -302,7 +316,8 @@ export function deriveComposerSendState(options: {
       trimmedPrompt.length > 0 ||
       options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0,
+      elementContextCount > 0 ||
+      options.slashCommandActive === true,
   };
 }
 

@@ -16,6 +16,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
+  composeProviderSlashMessage,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -292,6 +293,33 @@ describe("deriveComposerSendState", () => {
         elementContextCount: 0,
       }).hasSendableContent,
     ).toBe(false);
+  });
+
+  it("treats an armed provider slash command as sendable", () => {
+    expect(
+      deriveComposerSendState({
+        prompt: "",
+        imageCount: 0,
+        terminalContexts: [],
+        slashCommandActive: true,
+      }).hasSendableContent,
+    ).toBe(true);
+  });
+});
+
+describe("composeProviderSlashMessage", () => {
+  it("keeps a plain prompt when no command is armed", () => {
+    expect(composeProviderSlashMessage(null, "  hello  ")).toBe("hello");
+  });
+
+  it("sends the command name alone when the prompt is empty", () => {
+    expect(composeProviderSlashMessage({ name: "goal pause", hint: null }, "")).toBe("/goal pause");
+  });
+
+  it("puts the prompt after the command name", () => {
+    expect(
+      composeProviderSlashMessage({ name: "goal", hint: "objective" }, "keep tests green"),
+    ).toBe("/goal keep tests green");
   });
 });
 

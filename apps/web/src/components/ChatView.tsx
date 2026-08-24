@@ -282,6 +282,7 @@ import {
   buildThreadTurnInterruptInput,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
+  composeProviderSlashMessage,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
   hasEnvironmentReconnectWarningGraceElapsed,
@@ -4889,7 +4890,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
           ]
         : sendContextPreviewAnnotations;
-    const promptForSend = promptRef.current;
+    const promptForSend = composeProviderSlashMessage(sendCtx.slashCommand, promptRef.current);
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -4903,6 +4904,7 @@ function ChatViewContent(props: ChatViewProps) {
         composerElementContexts.length +
         composerPreviewAnnotations.length +
         composerReviewComments.length,
+      slashCommandActive: sendCtx.slashCommand !== null,
     });
     if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({

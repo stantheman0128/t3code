@@ -40,6 +40,21 @@ export function serializeComposerFileLink(path: string): string {
   return `[${label}](${encodeMarkdownLinkDestination(path)})`;
 }
 
+/**
+ * Prefix a composer prompt with a selected provider slash command.
+ * The UI keeps the command as a chip; send reconstitutes `/${name} …`.
+ */
+export function composeProviderSlashMessage(
+  commandName: string | null | undefined,
+  prompt: string,
+): string {
+  const body = prompt.trim();
+  if (!commandName) {
+    return body;
+  }
+  return body.length > 0 ? `/${commandName} ${body}` : `/${commandName}`;
+}
+
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { serializeComposerFileLink, serializeComposerMentionPath } from "./composerTrigger.ts";
+import {
+  composeProviderSlashMessage,
+  serializeComposerFileLink,
+  serializeComposerMentionPath,
+} from "./composerTrigger.ts";
 
 describe("serializeComposerMentionPath", () => {
   it("keeps simple mention paths unquoted", () => {
@@ -13,6 +17,20 @@ describe("serializeComposerMentionPath", () => {
 
   it("escapes quoted mention path content", () => {
     expect(serializeComposerMentionPath('docs/My "File".md')).toBe('"docs/My \\"File\\".md"');
+  });
+});
+
+describe("composeProviderSlashMessage", () => {
+  it("keeps a plain prompt when no command is armed", () => {
+    expect(composeProviderSlashMessage(null, "  hello  ")).toBe("hello");
+  });
+
+  it("sends the command name alone when the prompt is empty", () => {
+    expect(composeProviderSlashMessage("goal pause", "")).toBe("/goal pause");
+  });
+
+  it("puts the prompt after the command name", () => {
+    expect(composeProviderSlashMessage("goal", "keep tests green")).toBe("/goal keep tests green");
   });
 });
 

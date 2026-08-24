@@ -9,6 +9,7 @@ import type {
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
 import {
+  composeProviderSlashMessage,
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
@@ -34,11 +35,13 @@ import Animated, {
   FadeOutDown,
   LinearTransition,
 } from "react-native-reanimated";
+import { cn } from "../../lib/cn";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 
 import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/AppSymbol";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
 import {
   ComposerEditor,
@@ -263,6 +266,27 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
   );
 });
 
+function PendingSlashCommandChip(props: { readonly name: string; readonly onRemove: () => void }) {
+  const foregroundColor = useThemeColor("--color-foreground");
+  const borderColor = useThemeColor("--color-border");
+  const subtleColor = useThemeColor("--color-subtle");
+  const iconColor = useThemeColor("--color-icon");
+
+  return (
+    <View
+      className="flex-row items-center gap-1 rounded-md border px-1.5 py-0.5"
+      style={{ backgroundColor: subtleColor, borderColor }}
+    >
+      <Text className="text-xs font-t3-medium" style={{ color: foregroundColor }}>
+        /{props.name}
+      </Text>
+      <Pressable accessibilityLabel={`Remove /${props.name}`} hitSlop={8} onPress={props.onRemove}>
+        <SymbolView name="xmark" size={9} tintColor={String(iconColor)} />
+      </Pressable>
+    </View>
+  );
+}
+
 export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposerProps) {
   const isDarkMode = useColorScheme() === "dark";
   const foregroundColor = useThemeColor("--color-foreground");
@@ -279,7 +303,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const { onExpandedChange } = props;
 
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
-  const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
+  const [pendingSlashCommand, setPendingSlashCommand] = useState<{
+    readonly name: string;
+    readonly hint: string | null;
+  } | null>(null);
+  useEffect(() => {
+    setPendingSlashCommand(null);
+  }, [props.selectedThread.id]);
+  const hasContent =
+    props.draftMessage.trim().length > 0 ||
+    props.draftAttachments.length > 0 ||
+    pendingSlashCommand !== null;
   // Opening and closing count as active so the composer stays expanded while
   // focus moves between its native editor and the settings modal.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
@@ -528,6 +562,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
     try {
+      if (pendingSlashCommand) {
+        onChangeDraftMessage(composeProviderSlashMessage(pendingSlashCommand.name, draftMessage));
+        setPendingSlashCommand(null);
+      }
       await onSendMessage();
       // Sending a prompt starts agent work: arm the lock-screen card while the
       // app is foregrounded and the activity token can be registered. Armed
@@ -541,7 +579,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       inFlightThreadIdsRef.current.delete(threadKey);
     }
   }, [
+    draftMessage,
+    onChangeDraftMessage,
     onSendMessage,
+    pendingSlashCommand,
     props.environmentId,
     props.environmentLabel,
     props.selectedThread.id,
@@ -575,7 +616,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       } else if (item.type === "slash-command") {
         replacement = `/${item.command} `;
       } else if (item.type === "provider-slash-command") {
-        replacement = `/${item.command.name} `;
+        const result = replaceTextRange(
+          draftMessage,
+          composerTrigger.rangeStart,
+          composerTrigger.rangeEnd,
+          "",
+        );
+        setComposerSelection({ start: result.cursor, end: result.cursor });
+        onChangeDraftMessage(result.text);
+        setPendingSlashCommand({
+          name: item.command.name,
+          hint: item.command.input?.hint ?? null,
+        });
+        return;
       }
 
       const result = replaceTextRange(
@@ -705,42 +758,60 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </Animated.View>
           ) : null}
 
-          <View className={isExpanded ? undefined : "min-w-0 flex-1"}>
-            <ComposerEditor
-              ref={inputRef}
-              multiline
-              value={props.draftMessage}
-              skills={selectedProviderStatus?.skills ?? []}
-              selection={composerSelection}
-              onChangeText={props.onChangeDraftMessage}
-              onSelectionChange={handleSelectionChange}
-              onPasteImages={(uris) => void props.onNativePasteImages(uris)}
-              placeholder={props.placeholder}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              onSubmit={handleSend}
-              scrollEnabled={isExpanded}
-              // Android: collapsed single line centers natively (gravity) in
-              // a pill-height box matching the send button; iOS keeps insets.
-              singleLineCentered={!isExpanded}
-              contentInsetVertical={isExpanded || Platform.OS === "android" ? 0 : 6}
-              style={
-                isExpanded
-                  ? {
-                      minHeight: 80,
-                      maxHeight: 160,
-                      paddingHorizontal: 4,
-                      paddingVertical: 4,
-                    }
-                  : {
-                      height: 36,
-                    }
-              }
-              textStyle={{
-                ...bodyText,
-                color: foregroundColor,
-              }}
-            />
+          <View
+            className={cn(
+              isExpanded ? undefined : "min-w-0 flex-1",
+              pendingSlashCommand !== null && "flex-row items-center gap-1.5",
+            )}
+          >
+            {pendingSlashCommand !== null ? (
+              <PendingSlashCommandChip
+                name={pendingSlashCommand.name}
+                onRemove={() => setPendingSlashCommand(null)}
+              />
+            ) : null}
+            <View className="min-w-0 flex-1">
+              <ComposerEditor
+                ref={inputRef}
+                multiline
+                value={props.draftMessage}
+                skills={selectedProviderStatus?.skills ?? []}
+                selection={composerSelection}
+                onChangeText={props.onChangeDraftMessage}
+                onSelectionChange={handleSelectionChange}
+                onPasteImages={(uris) => void props.onNativePasteImages(uris)}
+                placeholder={
+                  pendingSlashCommand?.hint ??
+                  (pendingSlashCommand
+                    ? `Add arguments for /${pendingSlashCommand.name}, or send it`
+                    : props.placeholder)
+                }
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                onSubmit={handleSend}
+                scrollEnabled={isExpanded}
+                // Android: collapsed single line centers natively (gravity) in
+                // a pill-height box matching the send button; iOS keeps insets.
+                singleLineCentered={!isExpanded}
+                contentInsetVertical={isExpanded || Platform.OS === "android" ? 0 : 6}
+                style={
+                  isExpanded
+                    ? {
+                        minHeight: 80,
+                        maxHeight: 160,
+                        paddingHorizontal: 4,
+                        paddingVertical: 4,
+                      }
+                    : {
+                        height: 36,
+                      }
+                }
+                textStyle={{
+                  ...bodyText,
+                  color: foregroundColor,
+                }}
+              />
+            </View>
           </View>
           {!isExpanded && props.draftAttachments.length > 0 ? (
             <View className="flex-row gap-1 pl-1">

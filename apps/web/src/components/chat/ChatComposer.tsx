@@ -41,7 +41,12 @@ import {
   replaceTextRange,
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
-import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import {
+  deriveComposerSendState,
+  readFileAsDataUrl,
+  type ComposerPendingSlashCommand,
+} from "../ChatView.logic";
+import { ComposerPendingSlashCommandChip } from "./ComposerPendingSlashCommand";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -273,6 +278,43 @@ const extendReplacementRangeForTrailingSpace = (
   return text[rangeEnd] === " " ? rangeEnd + 1 : rangeEnd;
 };
 
+function resolveComposerEditorPlaceholder(input: {
+  readonly approvalDetail: string | null | undefined;
+  readonly isComposerApprovalState: boolean;
+  readonly isPendingAnswer: boolean;
+  readonly isPlanFollowUp: boolean;
+  readonly projectSelectionRequired: boolean;
+  readonly noProviderAvailable: boolean;
+  readonly isDisconnected: boolean;
+  readonly pendingSlashCommand: ComposerPendingSlashCommand | null;
+}): string {
+  if (input.isComposerApprovalState) {
+    return input.approvalDetail ?? "Resolve this approval request to continue";
+  }
+  if (input.isPendingAnswer) {
+    return "Type your own answer, or leave this blank to use the selected option";
+  }
+  if (input.isPlanFollowUp) {
+    return "Add feedback to refine the plan, or leave this blank to implement it";
+  }
+  if (input.projectSelectionRequired) {
+    return "Choose a project above to start a thread";
+  }
+  if (input.noProviderAvailable) {
+    return "Enable a provider in Settings to send a message";
+  }
+  if (input.isDisconnected) {
+    return "Ask for follow-up changes or attach images";
+  }
+  if (input.pendingSlashCommand?.hint) {
+    return input.pendingSlashCommand.hint;
+  }
+  if (input.pendingSlashCommand) {
+    return `Add arguments for /${input.pendingSlashCommand.name}, or send it`;
+  }
+  return "Ask anything, @tag files/folders, $use skills, or / for commands";
+}
+
 const syncTerminalContextsByIds = (
   contexts: ReadonlyArray<TerminalContextDraft>,
   ids: ReadonlyArray<string>,
@@ -476,6 +518,7 @@ export interface ChatComposerHandle {
     elementContexts: ElementContextDraft[];
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
+    slashCommand: ComposerPendingSlashCommand | null;
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
@@ -938,6 +981,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [composerTrigger, setComposerTrigger] = useState<ComposerTrigger | null>(() =>
     detectComposerTrigger(prompt, prompt.length),
   );
+  const [pendingSlashCommand, setPendingSlashCommand] =
+    useState<ComposerPendingSlashCommand | null>(null);
+  const pendingSlashTargetKey =
+    typeof composerDraftTarget === "string"
+      ? composerDraftTarget
+      : `${composerDraftTarget.environmentId}:${composerDraftTarget.threadId}`;
+  useEffect(() => {
+    setPendingSlashCommand(null);
+  }, [pendingSlashTargetKey]);
   const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
   const [composerHighlightedSearchKey, setComposerHighlightedSearchKey] = useState<string | null>(
     null,
@@ -988,6 +1040,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
 
+  useEffect(() => {
+    const surface = composerSurfaceRef.current;
+    if (!surface) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Backspace" || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      if (pendingSlashCommand === null || composerMenuOpenRef.current) {
+        return;
+      }
+      if (composerCursor !== 0) {
+        return;
+      }
+      const selection = window.getSelection();
+      if (selection !== null && !selection.isCollapsed) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingSlashCommand(null);
+    };
+    surface.addEventListener("keydown", onKeyDown, true);
+    return () => surface.removeEventListener("keydown", onKeyDown, true);
+  }, [composerCursor, pendingSlashCommand]);
+
   // ------------------------------------------------------------------
   // Derived: composer send state
   // ------------------------------------------------------------------
@@ -1001,6 +1078,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           composerElementContexts.length +
           composerPreviewAnnotations.length +
           composerReviewComments.length,
+        slashCommandActive: pendingSlashCommand !== null,
       }),
     [
       composerElementContexts.length,
@@ -1008,6 +1086,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerPreviewAnnotations.length,
       composerReviewComments.length,
       composerTerminalContexts,
+      pendingSlashCommand,
       prompt,
     ],
   );
@@ -1698,19 +1777,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "provider-slash-command") {
-        const replacement = `/${item.command.name} `;
-        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
-          snapshot.value,
-          trigger.rangeEnd,
-          replacement,
-        );
-        const applied = applyPromptReplacement(
-          trigger.rangeStart,
-          replacementRangeEnd,
-          replacement,
-          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
-        );
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
         if (applied) {
+          setPendingSlashCommand({
+            name: item.command.name,
+            hint: item.command.input?.hint ?? null,
+          });
           setComposerHighlightedItemId(null);
         }
         return;
@@ -2556,6 +2630,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const promptForState = options?.prompt ?? promptRef.current;
         const cursor = clampCollapsedComposerCursor(promptForState, options?.cursor ?? 0);
         setComposerHighlightedItemId(null);
+        setPendingSlashCommand(null);
         setComposerCursor(cursor);
         setComposerTrigger(
           options?.detectTrigger
@@ -2608,6 +2683,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         elementContexts: composerElementContextsRef.current,
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
+        slashCommand: pendingSlashCommand,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
         selectedModelSelection,
@@ -2629,6 +2705,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerElementContextsRef,
       composerPreviewAnnotations,
       composerReviewComments,
+      pendingSlashCommand,
       isConnecting,
       isComposerApprovalState,
       pendingUserInputs.length,
@@ -2821,8 +2898,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {activePendingProgress
                   ? activePendingProgress.customAnswer ||
                     "Type your own answer, or leave this blank to use the selected option"
-                  : prompt.trim() ||
-                    (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
+                  : pendingSlashCommand
+                    ? prompt.trim()
+                      ? `/${pendingSlashCommand.name} ${prompt.trim()}`
+                      : `/${pendingSlashCommand.name}`
+                    : prompt.trim() ||
+                      (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
               </button>
               <button
                 type="button"
@@ -3017,44 +3098,60 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
 
             <div className="relative">
-              <ComposerPromptEditor
-                editorRef={composerEditorRef}
-                value={
-                  isComposerApprovalState
-                    ? ""
-                    : activePendingProgress
-                      ? activePendingProgress.customAnswer
-                      : prompt
+              <div
+                className={
+                  pendingSlashCommand !== null &&
+                  !isComposerApprovalState &&
+                  pendingUserInputs.length === 0
+                    ? "flex items-start gap-1.5"
+                    : undefined
                 }
-                cursor={composerCursor}
-                terminalContexts={
-                  !isComposerApprovalState && pendingUserInputs.length === 0
-                    ? composerTerminalContexts
-                    : []
-                }
-                skills={selectedProviderStatus?.skills ?? []}
-                {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
-                onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
-                onChange={onPromptChange}
-                onCommandKeyDown={onComposerCommandKey}
-                onPaste={onComposerPaste}
-                placeholder={
-                  isComposerApprovalState
-                    ? (activePendingApproval?.detail ?? "Resolve this approval request to continue")
-                    : activePendingProgress
-                      ? "Type your own answer, or leave this blank to use the selected option"
-                      : showPlanFollowUpPrompt && activeProposedPlan
-                        ? "Add feedback to refine the plan, or leave this blank to implement it"
-                        : projectSelectionRequired
-                          ? "Choose a project above to start a thread"
-                          : noProviderAvailable
-                            ? "Enable a provider in Settings to send a message"
-                            : phase === "disconnected"
-                              ? "Ask for follow-up changes or attach images"
-                              : "Ask anything, @tag files/folders, $use skills, or / for commands"
-                }
-                disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
-              />
+              >
+                {pendingSlashCommand !== null &&
+                !isComposerApprovalState &&
+                pendingUserInputs.length === 0 ? (
+                  <ComposerPendingSlashCommandChip
+                    command={pendingSlashCommand}
+                    onRemove={() => setPendingSlashCommand(null)}
+                    className="mt-[0.35em] shrink-0"
+                  />
+                ) : null}
+                <div className="relative min-w-0 flex-1">
+                  <ComposerPromptEditor
+                    editorRef={composerEditorRef}
+                    value={
+                      isComposerApprovalState
+                        ? ""
+                        : activePendingProgress
+                          ? activePendingProgress.customAnswer
+                          : prompt
+                    }
+                    cursor={composerCursor}
+                    terminalContexts={
+                      !isComposerApprovalState && pendingUserInputs.length === 0
+                        ? composerTerminalContexts
+                        : []
+                    }
+                    skills={selectedProviderStatus?.skills ?? []}
+                    {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
+                    onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
+                    onChange={onPromptChange}
+                    onCommandKeyDown={onComposerCommandKey}
+                    onPaste={onComposerPaste}
+                    placeholder={resolveComposerEditorPlaceholder({
+                      approvalDetail: activePendingApproval?.detail,
+                      isComposerApprovalState,
+                      isPendingAnswer: Boolean(activePendingProgress),
+                      isPlanFollowUp: Boolean(showPlanFollowUpPrompt && activeProposedPlan),
+                      projectSelectionRequired,
+                      noProviderAvailable,
+                      isDisconnected: phase === "disconnected",
+                      pendingSlashCommand,
+                    })}
+                    disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                  />
+                </div>
+              </div>
               {showMobilePendingAnswerActions ? (
                 <div
                   data-chat-composer-mobile-pending-actions="true"

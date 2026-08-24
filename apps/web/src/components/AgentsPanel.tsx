@@ -4,12 +4,15 @@
  * spawn batch).
  *
  * Visualization rules (from live-test feedback):
- * - Spawn order is stable. Activity and completion update rows in place.
- * - Agent rows reserve three fixed lines for identity, activity, and metrics;
- *   changing data must never change their height.
+ * - Live agents sort above idle, then settled. First-seen order is the
+ *   tiebreaker inside a liveness band so in-flight rows do not jump.
+ * - Collapsed agent rows reserve three fixed lines for identity, activity,
+ *   and metrics. Expansion is user-driven and reveals result, error, activity,
+ *   and output path.
  * - Workflow expansion is presentation state. A live run stays expanded when
  *   it settles; older collapsed runs can still be opened at run granularity.
  * - Static status dots, DOM-write elapsed timers, plain token counters.
+ * - Per-row Stop shows a spinner until the child leaves an active status.
  */
 import { useAtomValue } from "@effect/atom-react";
 import type {
@@ -23,12 +26,15 @@ import {
   isActiveSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Bot, Braces, Check, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { ScrollArea } from "~/components/ui/scroll-area";
+
+const EMPTY_STOPPING_AGENT_IDS: ReadonlySet<string> = new Set();
 
 /**
  * In-flight states all present as Working (one steady state, per the
@@ -141,15 +147,69 @@ function agentRowStopProps(
   agent: RuntimeSubagent,
   onStopAgent: ((agentId: string) => void) | undefined,
   canStopAgent: boolean,
-): { onStop: () => void } | Record<string, never> {
+  stoppingAgentIds: ReadonlySet<string>,
+): { onStop: () => void; stopping: boolean } | Record<string, never> {
   if (!canStopAgent || !onStopAgent || !isActiveSubagentStatus(agent.status)) {
     return {};
   }
-  return { onStop: () => onStopAgent(agent.id) };
+  return { onStop: () => onStopAgent(agent.id), stopping: stoppingAgentIds.has(agent.id) };
+}
+
+function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
+  const hasDetail =
+    agent.error !== null ||
+    agent.result !== null ||
+    agent.outputFile !== null ||
+    agent.recentActivity.length > 0;
+  if (!hasDetail) {
+    return (
+      <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
+        {isActiveSubagentStatus(agent.status) ? "No output yet." : "No result recorded."}
+      </p>
+    );
+  }
+  return (
+    <div className="mb-1 ml-5 mr-1.5 space-y-1.5 rounded-md border border-border/50 bg-background/50 p-2">
+      {agent.error ? (
+        <p className="whitespace-pre-wrap break-words text-[.7rem] text-destructive-foreground">
+          {agent.error}
+        </p>
+      ) : null}
+      {agent.result ? (
+        <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">
+          {agent.result}
+        </p>
+      ) : null}
+      {agent.outputFile ? (
+        <p className="truncate font-mono text-[.65rem] text-muted-foreground">{agent.outputFile}</p>
+      ) : null}
+      {agent.recentActivity.length > 0 ? (
+        <ol className="space-y-0.5">
+          {agent.recentActivity.map((entry, index) => (
+            <li
+              key={`${entry.at}-${index}`}
+              className="min-w-0 whitespace-pre-wrap break-words font-mono text-[.65rem] text-muted-foreground"
+            >
+              {entry.summary}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
 }
 
 /** Flat agent status line. Stop is optional and only for live children. */
-function AgentRow({ agent, onStop }: { agent: RuntimeSubagent; onStop?: () => void }) {
+function AgentRow({
+  agent,
+  onStop,
+  stopping = false,
+}: {
+  agent: RuntimeSubagent;
+  onStop?: () => void;
+  stopping?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -165,48 +225,78 @@ function AgentRow({ agent, onStop }: { agent: RuntimeSubagent; onStop?: () => vo
   ].filter((value): value is string => value !== null);
 
   return (
-    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
-      <span className="col-start-1 row-start-1 flex items-center">
-        <StatusDot status={agent.status} />
-      </span>
-      <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
-        <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
-        {role ? (
-          <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
-            {role}
-          </span>
-        ) : null}
-      </span>
-      <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
-        <span className="inline-flex items-center gap-1">
-          {onStop ? (
-            <button
-              type="button"
-              className="rounded-sm border border-border/70 px-1 py-0.5 text-[.65rem] hover:bg-muted/60"
-              onClick={onStop}
-            >
-              Stop
-            </button>
-          ) : null}
-          <AgentElapsed agent={agent} />
-          {agent.status === "completed" ? (
-            <Check aria-hidden className="size-3 text-success" />
-          ) : null}
-        </span>
-      </span>
-      <span
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div
         className={cn(
-          "col-start-2 col-end-4 row-start-2 block truncate text-xs",
-          agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
+          "grid h-[3.875rem] grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1",
+          stopping && "bg-info/5",
         )}
       >
-        {activity ?? visuals.label}
-      </span>
-      <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
-        {metadata.join(" · ")}
-      </span>
-      <span className="sr-only">{visuals.label}</span>
-    </div>
+        <CollapsibleTrigger
+          aria-label={open ? "Collapse agent details" : "Expand agent details"}
+          className="col-start-1 row-start-1 flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground"
+        >
+          {open ? (
+            <ChevronDown aria-hidden className="size-3 shrink-0" />
+          ) : (
+            <ChevronRight aria-hidden className="size-3 shrink-0" />
+          )}
+          <StatusDot status={agent.status} />
+        </CollapsibleTrigger>
+        <CollapsibleTrigger className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-left">
+          <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
+          {role ? (
+            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
+              {role}
+            </span>
+          ) : null}
+        </CollapsibleTrigger>
+        <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
+          <span className="inline-flex items-center gap-1">
+            {onStop ? (
+              <button
+                type="button"
+                aria-busy={stopping}
+                disabled={stopping}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-sm border px-1 py-0.5 text-[.65rem] transition-[transform,background-color,border-color,opacity] duration-150 active:scale-95 disabled:opacity-80",
+                  stopping
+                    ? "border-info/70 bg-info/15 text-info-foreground"
+                    : "border-border/70 hover:bg-muted/60",
+                )}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onStop();
+                }}
+              >
+                {stopping ? <Loader2 aria-hidden className="size-3 animate-spin" /> : null}
+                {stopping ? "Stopping" : "Stop"}
+              </button>
+            ) : null}
+            <AgentElapsed agent={agent} />
+            {agent.status === "completed" ? (
+              <Check aria-hidden className="size-3 text-success" />
+            ) : null}
+          </span>
+        </span>
+        <CollapsibleTrigger
+          className={cn(
+            "col-start-2 col-end-4 row-start-2 block truncate text-left text-xs",
+            agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
+          )}
+        >
+          {activity ?? visuals.label}
+        </CollapsibleTrigger>
+        <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
+          {metadata.join(" · ")}
+        </span>
+        <span className="sr-only">{visuals.label}</span>
+      </div>
+      <CollapsiblePanel>
+        <AgentDetail agent={agent} />
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -338,11 +428,13 @@ function PhaseSection({
   defaultOpen = false,
   onStopAgent,
   canStopAgent,
+  stoppingAgentIds,
 }: {
   phase: AgentPanelWorkflowGroup["phases"][number];
   defaultOpen?: boolean;
   onStopAgent?: (agentId: string) => void;
   canStopAgent?: boolean;
+  stoppingAgentIds: ReadonlySet<string>;
 }) {
   const [open, setOpen] = useState(defaultOpen || phase.state === "running");
   const previousState = useRef(phase.state);
@@ -396,7 +488,7 @@ function PhaseSection({
             <AgentRow
               key={member.id}
               agent={member}
-              {...agentRowStopProps(member, onStopAgent, canStopAgent === true)}
+              {...agentRowStopProps(member, onStopAgent, canStopAgent === true, stoppingAgentIds)}
             />
           ))
         : null}
@@ -412,6 +504,7 @@ function ExpandedWorkflowSection({
   onCollapse,
   onStopAgent,
   canStopAgent,
+  stoppingAgentIds,
 }: {
   group: AgentPanelWorkflowGroup;
   environmentId: EnvironmentId | null;
@@ -419,6 +512,7 @@ function ExpandedWorkflowSection({
   onCollapse: () => void;
   onStopAgent?: (agentId: string) => void;
   canStopAgent?: boolean;
+  stoppingAgentIds: ReadonlySet<string>;
 }) {
   const [scriptOpen, setScriptOpen] = useState(false);
   const members = workflowMembers(group);
@@ -479,13 +573,14 @@ function ExpandedWorkflowSection({
           defaultOpen={!workflowIsLive(group)}
           {...(onStopAgent ? { onStopAgent } : {})}
           {...(canStopAgent !== undefined ? { canStopAgent } : {})}
+          stoppingAgentIds={stoppingAgentIds}
         />
       ))}
       {group.unphasedMembers.map((member) => (
         <AgentRow
           key={member.id}
           agent={member}
-          {...agentRowStopProps(member, onStopAgent, canStopAgent === true)}
+          {...agentRowStopProps(member, onStopAgent, canStopAgent === true, stoppingAgentIds)}
         />
       ))}
       {group.phases.length === 0 && group.unphasedMembers.length === 0 ? (
@@ -549,12 +644,14 @@ function WorkflowSection({
   threadId,
   onStopAgent,
   canStopAgent,
+  stoppingAgentIds,
 }: {
   group: AgentPanelWorkflowGroup;
   environmentId: EnvironmentId | null;
   threadId: ThreadId | null;
   onStopAgent?: (agentId: string) => void;
   canStopAgent?: boolean;
+  stoppingAgentIds: ReadonlySet<string>;
 }) {
   const [open, setOpen] = useState(() => workflowIsLive(group));
   return open ? (
@@ -565,6 +662,7 @@ function WorkflowSection({
       onCollapse={() => setOpen(false)}
       {...(onStopAgent ? { onStopAgent } : {})}
       {...(canStopAgent !== undefined ? { canStopAgent } : {})}
+      stoppingAgentIds={stoppingAgentIds}
     />
   ) : (
     <CollapsedWorkflowSection group={group} onExpand={() => setOpen(true)} />
@@ -579,6 +677,7 @@ export function AgentsPanel({
   onStopAgent,
   canStopAgent = false,
   isStopping = false,
+  stoppingAgentIds = EMPTY_STOPPING_AGENT_IDS,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
@@ -589,6 +688,7 @@ export function AgentsPanel({
   onStopAgent?: (agentId: string) => void;
   canStopAgent?: boolean;
   isStopping?: boolean;
+  stoppingAgentIds?: ReadonlySet<string>;
 }) {
   if (!model.hasAgents) {
     return (
@@ -615,6 +715,7 @@ export function AgentsPanel({
               threadId={threadId}
               {...(onStopAgent ? { onStopAgent } : {})}
               canStopAgent={canStopAgent}
+              stoppingAgentIds={stoppingAgentIds}
             />
           ))}
           {model.directAgents.length > 0 ? (
@@ -626,7 +727,7 @@ export function AgentsPanel({
                 <AgentRow
                   key={agent.id}
                   agent={agent}
-                  {...agentRowStopProps(agent, onStopAgent, canStopAgent)}
+                  {...agentRowStopProps(agent, onStopAgent, canStopAgent, stoppingAgentIds)}
                 />
               ))}
             </section>

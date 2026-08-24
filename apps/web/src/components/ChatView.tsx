@@ -149,6 +149,7 @@ import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
+  isActiveSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
@@ -4279,6 +4280,7 @@ function ChatViewContent(props: ChatViewProps) {
   const activeBackgroundLiveness =
     !isWorking && activeThread ? (activeThreadShell?.backgroundLiveness ?? null) : null;
   const [isStoppingBackgroundWork, setIsStoppingBackgroundWork] = useState(false);
+  const [stoppingAgentIds, setStoppingAgentIds] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     // "Stopping..." holds until the liveness clears; the interrupt command
     // returning only means the request was accepted.
@@ -4290,10 +4292,44 @@ function ChatViewContent(props: ChatViewProps) {
     // Per-thread state: switching threads while A's stop is pending must not
     // disable B's Stop button (review finding).
     setIsStoppingBackgroundWork(false);
+    setStoppingAgentIds(new Set());
   }, [activeThreadId]);
+  useEffect(() => {
+    setStoppingAgentIds((prev) => {
+      if (prev.size === 0) return prev;
+      const stillActive = new Set<string>();
+      const visit = (agent: {
+        id: string;
+        status: Parameters<typeof isActiveSubagentStatus>[0];
+      }) => {
+        if (isActiveSubagentStatus(agent.status)) stillActive.add(agent.id);
+      };
+      for (const agent of agentPanelModel.directAgents) visit(agent);
+      for (const group of agentPanelModel.workflows) {
+        visit(group.workflow);
+        for (const phase of group.phases) {
+          for (const member of phase.members) visit(member);
+        }
+        for (const member of group.unphasedMembers) visit(member);
+      }
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (stillActive.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [agentPanelModel]);
   const handleStopAgent = useCallback(
     async (agentId: string) => {
       if (!activeThread) return;
+      setStoppingAgentIds((prev) => {
+        if (prev.has(agentId)) return prev;
+        const next = new Set(prev);
+        next.add(agentId);
+        return next;
+      });
       const result = await interruptThreadTurn({
         environmentId,
         input: {
@@ -4301,12 +4337,20 @@ function ChatViewContent(props: ChatViewProps) {
           taskId: RuntimeTaskId.make(agentId),
         },
       });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setThreadError(
-          activeThread.id,
-          error instanceof Error ? error.message : "Failed to stop that agent.",
-        );
+      if (result._tag === "Failure") {
+        setStoppingAgentIds((prev) => {
+          if (!prev.has(agentId)) return prev;
+          const next = new Set(prev);
+          next.delete(agentId);
+          return next;
+        });
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            activeThread.id,
+            error instanceof Error ? error.message : "Failed to stop that agent.",
+          );
+        }
       }
     },
     [activeThread, environmentId, interruptThreadTurn, setThreadError],
@@ -6016,6 +6060,7 @@ function ChatViewContent(props: ChatViewProps) {
         {...(canStopAgent ? { onStopAgent: handleStopAgent } : {})}
         canStopAgent={canStopAgent}
         isStopping={isStoppingBackgroundWork}
+        stoppingAgentIds={stoppingAgentIds}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&

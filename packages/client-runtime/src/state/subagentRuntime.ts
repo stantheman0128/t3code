@@ -104,6 +104,31 @@ export function isActiveSubagentStatus(status: RuntimeSubagentStatus): boolean {
   return status === "pending" || status === "running" || status === "waiting";
 }
 
+/** 0 = still working, 1 = idle/resumable, 2 = settled. Panel lists live rows first. */
+export function agentPanelSortRank(status: RuntimeSubagentStatus): number {
+  if (isActiveSubagentStatus(status)) return 0;
+  if (status === "idle") return 1;
+  return 2;
+}
+
+/** Live first, then idle, then settled; first-seen (then id) inside a band. */
+export function compareAgentsByLiveThenSeen(a: RuntimeSubagent, b: RuntimeSubagent): number {
+  return (
+    agentPanelSortRank(a.status) - agentPanelSortRank(b.status) ||
+    a.firstSeenAt.localeCompare(b.firstSeenAt) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
+/** Live first, then idle, then settled; workflow agentIndex inside a band. */
+export function compareAgentsByLiveThenIndex(a: RuntimeSubagent, b: RuntimeSubagent): number {
+  return (
+    agentPanelSortRank(a.status) - agentPanelSortRank(b.status) ||
+    (a.agentIndex ?? 0) - (b.agentIndex ?? 0) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
 const RECENT_ACTIVITY_LIMIT = 6;
 const SUMMARY_CHAR_LIMIT = 180;
 const ROSTER_LIMIT = 100;
@@ -738,7 +763,7 @@ export function deriveAgentPanelModel({
   const workflows = source
     .filter((agent) => agent.kind === "workflow")
     .slice()
-    .sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt) || a.id.localeCompare(b.id));
+    .sort(compareAgentsByLiveThenSeen);
   const workflowIds = new Set(workflows.map((workflow) => workflow.id));
   const members = new Map<string, RuntimeSubagent[]>();
   const direct: RuntimeSubagent[] = [];
@@ -783,7 +808,7 @@ export function deriveAgentPanelModel({
       const phaseMembers = workflowMembers
         .filter((member) => member.phaseIndex === phase.index)
         .slice()
-        .sort((a, b) => (a.agentIndex ?? 0) - (b.agentIndex ?? 0));
+        .sort(compareAgentsByLiveThenIndex);
       const activeCount = phaseMembers.filter(
         // Idle members count as active for phase-liveness: a resumable Codex
         // member has not finished the phase.
@@ -815,7 +840,7 @@ export function deriveAgentPanelModel({
     const unphasedMembers = workflowMembers
       .filter((member) => member.phaseIndex === null || !knownPhaseIndices.has(member.phaseIndex))
       .slice()
-      .sort((a, b) => (a.agentIndex ?? 0) - (b.agentIndex ?? 0));
+      .sort(compareAgentsByLiveThenIndex);
 
     return { workflow, phases, unphasedMembers };
   });
@@ -839,11 +864,9 @@ export function deriveAgentPanelModel({
 
   return {
     workflows: workflowGroups,
-    // Updates and the >100-agent retention ranking must never reshuffle rows
-    // that remain visible.
-    directAgents: direct
-      .slice()
-      .sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt) || a.id.localeCompare(b.id)),
+    // Live rows float to the top; first-seen order is the tiebreaker inside
+    // a liveness band so in-flight agents do not jump among themselves.
+    directAgents: direct.slice().sort(compareAgentsByLiveThenSeen),
     runningCount,
     waitingCount,
     idleCount,

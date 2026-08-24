@@ -390,7 +390,7 @@ describe("deriveAgentPanelModel", () => {
     );
   });
 
-  it("keeps direct spawns in first-seen order as their activity changes", () => {
+  it("keeps first-seen order among live direct spawns as their activity changes", () => {
     const directRoster = fold([
       activity("task.started", { taskId: "direct-a", title: "First" }, "2026-08-01T11:00:00.000Z"),
       activity("task.started", { taskId: "direct-b", title: "Second" }, "2026-08-01T11:00:01.000Z"),
@@ -404,6 +404,102 @@ describe("deriveAgentPanelModel", () => {
     expect(
       deriveAgentPanelModel({ agents: directRoster }).directAgents.map((agent) => agent.id),
     ).toEqual(["direct-a", "direct-b"]);
+  });
+
+  it("lists live direct spawns above idle and settled ones", () => {
+    const directRoster = fold([
+      activity(
+        "task.started",
+        { taskId: "settled-first", title: "Done" },
+        "2026-08-01T11:00:00.000Z",
+      ),
+      activity(
+        "task.completed",
+        { taskId: "settled-first", status: "completed" },
+        "2026-08-01T11:00:01.000Z",
+      ),
+      activity("task.started", { taskId: "idle-mid", title: "Idle" }, "2026-08-01T11:00:02.000Z"),
+      activity("task.updated", { taskId: "idle-mid", status: "idle" }, "2026-08-01T11:00:03.000Z"),
+      activity("task.started", { taskId: "live-late", title: "Live" }, "2026-08-01T11:00:04.000Z"),
+      activity(
+        "task.started",
+        { taskId: "settled-late", title: "Done later" },
+        "2026-08-01T11:00:05.000Z",
+      ),
+      activity(
+        "task.completed",
+        { taskId: "settled-late", status: "completed" },
+        "2026-08-01T11:00:06.000Z",
+      ),
+    ]);
+
+    expect(
+      deriveAgentPanelModel({ agents: directRoster }).directAgents.map((agent) => agent.id),
+    ).toEqual(["live-late", "idle-mid", "settled-first", "settled-late"]);
+  });
+
+  it("lists live workflows above settled workflows", () => {
+    const mixed = fold([
+      activity(
+        "task.started",
+        { taskId: "wf-done", taskType: "local_workflow", title: "done" },
+        "2026-08-01T11:00:00.000Z",
+      ),
+      activity(
+        "task.completed",
+        { taskId: "wf-done", status: "completed" },
+        "2026-08-01T11:00:01.000Z",
+      ),
+      activity(
+        "task.started",
+        { taskId: "wf-live", taskType: "local_workflow", title: "live" },
+        "2026-08-01T11:00:02.000Z",
+      ),
+    ]);
+
+    expect(
+      deriveAgentPanelModel({ agents: mixed }).workflows.map((group) => group.workflow.id),
+    ).toEqual(["wf-live", "wf-done"]);
+  });
+
+  it("lists live phase members above settled members, keeping agentIndex inside a band", () => {
+    const phased = fold([
+      activity("task.started", {
+        taskId: "wf-sort",
+        taskType: "local_workflow",
+        phases: [{ index: 0, title: "Work" }],
+      }),
+      activity("task.progress", {
+        taskId: "wf-sort:wf:0",
+        title: "first-done",
+        status: "completed",
+        parentAgentId: "wf-sort",
+        agentIndex: 0,
+        phaseIndex: 0,
+      }),
+      activity("task.progress", {
+        taskId: "wf-sort:wf:1",
+        title: "second-live",
+        status: "running",
+        parentAgentId: "wf-sort",
+        agentIndex: 1,
+        phaseIndex: 0,
+      }),
+      activity("task.progress", {
+        taskId: "wf-sort:wf:2",
+        title: "third-done",
+        status: "completed",
+        parentAgentId: "wf-sort",
+        agentIndex: 2,
+        phaseIndex: 0,
+      }),
+    ]);
+
+    expect(
+      deriveAgentPanelModel({ agents: phased }).workflows[0]!.phases[0]!.members.map(
+        (member) => member.id,
+      ),
+    ).toEqual(["wf-sort:wf:1", "wf-sort:wf:0", "wf-sort:wf:2"]);
   });
 
   it("keeps first-seen order after the roster retention ranking runs", () => {

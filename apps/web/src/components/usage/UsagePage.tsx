@@ -152,7 +152,7 @@ export function UsagePage() {
           ))}
         </ToggleGroup>
         <Button onClick={refreshWindow} aria-label="Refresh usage" size="icon-sm" variant="ghost">
-          <RefreshCwIcon className="size-3.5" />
+          <RefreshCwIcon className={cn("size-3.5", settling && "animate-spin")} />
         </Button>
       </div>
       <div className="ms-auto flex min-w-0 items-center justify-end gap-1 lg:hidden">
@@ -195,7 +195,7 @@ export function UsagePage() {
           </SelectPopup>
         </Select>
         <Button onClick={refreshWindow} aria-label="Refresh usage" size="icon-sm" variant="ghost">
-          <RefreshCwIcon className="size-3.5" />
+          <RefreshCwIcon className={cn("size-3.5", settling && "animate-spin")} />
         </Button>
       </div>
     </div>
@@ -591,7 +591,7 @@ function UsageDeviceStrip({
 function UsageSkeleton() {
   return (
     <>
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+      <section className="grid animate-pulse gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1">
             <div className="h-10 w-36 rounded-sm bg-muted" />

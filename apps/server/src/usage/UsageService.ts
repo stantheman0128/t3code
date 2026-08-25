@@ -79,6 +79,12 @@ const CACHE_RETENTION_DAYS = 90;
  */
 const SCAN_BUDGET_MS = 12_000;
 
+function utcDay(offsetDays: number): UsageSummaryInput["sinceDay"] {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10) as UsageSummaryInput["sinceDay"];
+}
+
 /** On-disk shape of the rate snapshot. */
 const RatesCacheFile = Schema.Struct({
   fetchedAtMs: Schema.Number,
@@ -525,6 +531,15 @@ export const make = Effect.gen(function* () {
       ...(codexAccount?.status === "ok" ? { codexAccount } : {}),
     } satisfies UsageSummary;
   });
+
+  // Fill the transcript cache at boot so opening Usage is a cache hit, not a
+  // 15s grok walk. Window is the longest the UI offers; later RPCs reuse
+  // (size, mtime) entries and only parse appends.
+  yield* readSummary({
+    sinceDay: utcDay(-CACHE_RETENTION_DAYS),
+    untilDay: utcDay(0),
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  }).pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
   return { readSummary } as const;
 });

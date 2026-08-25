@@ -1,62 +1,153 @@
 diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
-index 29b02311c2101b01e5ad991f2e9375e699f2340c..75be5fbdc9979a013d124e49cac8dcb474e1a69d 100644
+index 29b0231..f5d2388 100644
 --- a/dist/NodeChildProcessSpawner.js
 +++ b/dist/NodeChildProcessSpawner.js
-@@ -256,7 +256,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+@@ -10,6 +10,9 @@ import * as Stream from "effect/Stream";
+ import * as ChildProcess from "effect/unstable/process/ChildProcess";
+ import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner";
+ import * as NodeChildProcess from "node:child_process";
++import * as NodeFs from "node:fs";
++import * as NodeOs from "node:os";
++import * as NodePath from "node:path";
+ import { PassThrough } from "node:stream";
+ import { handleErrnoException } from "./internal/utils.js";
+ import * as NodeSink from "./NodeSink.js";
+@@ -25,6 +28,26 @@ const toPlatformError = (method, error, command) => {
+   }, "");
+   return handleErrnoException("ChildProcess", method)(error, [commandStr]);
+ };
++const windowsHideSpawnOptions = { windowsHide: true, windowsUseConpty: false };
++const windowsKillProcessTree = (pid, callback) => {
++  const numericPid = Number(pid);
++  if (!Number.isInteger(numericPid) || numericPid <= 0) {
++    callback();
++    return;
++  }
++  const scriptPath = NodePath.join(NodeOs.tmpdir(), "t3-hidden-taskkill.vbs");
++  const script = "If WScript.Arguments.Count < 1 Then WScript.Quit 1\r\nCreateObject(\"WScript.Shell\").Run \"taskkill /F /T /PID \" & WScript.Arguments(0), 0, True\r\n";
++  try {
++    NodeFs.writeFileSync(scriptPath, script);
++  } catch {
++    // reuse a previous copy if the temp file is locked
++  }
++  const wscript = NodePath.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "wscript.exe");
++  NodeChildProcess.execFile(wscript, ["//nologo", "//B", scriptPath, String(numericPid)], {
++    ...windowsHideSpawnOptions,
++    stdio: "ignore"
++  }, callback);
++};
+ const make = /*#__PURE__*/Effect.gen(function* () {
+   const fs = yield* FileSystem.FileSystem;
+   const path = yield* Path.Path;
+@@ -256,7 +279,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
    const killProcessGroup = (command, childProcess, signal) => {
      if (globalThis.process.platform === "win32") {
        return Effect.callback(resume => {
 -        NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, error => {
-+        NodeChildProcess.execFile("taskkill", ["/pid", String(childProcess.pid), "/T", "/F"], { windowsHide: true }, error => {
++        windowsKillProcessTree(childProcess.pid, error => {
            if (error) {
              resume(Effect.fail(toPlatformError("kill", toError(error), command)));
            } else {
-@@ -342,7 +342,8 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+@@ -274,7 +297,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+   };
+   const killProcessGroupOnExit = (childProcess, signal) => {
+     if (globalThis.process.platform === "win32") {
+-      NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, () => {
++      windowsKillProcessTree(childProcess.pid, () => {
+         // ignore errors during best-effort cleanup
+       });
+       return;
+@@ -342,7 +365,9 @@ const make = /*#__PURE__*/Effect.gen(function* () {
              env,
              stdio,
              detached: cmd.options.detached ?? process.platform !== "win32",
 -            shell: cmd.options.shell
 +            shell: cmd.options.shell,
-+            windowsHide: true
++            windowsHide: true,
++            windowsUseConpty: false
            }), Effect.fnUntraced(function* ([childProcess, exitSignal]) {
              const exited = yield* Deferred.isDone(exitSignal);
              const killWithTimeout = withTimeout(childProcess, cmd, cmd.options);
 diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
-index bf6f007c4a29597fad5eb1367dd145fde2688851..4a20ab98fe3c557e9622ba172ba15f58cf74aebb 100644
+index bf6f007..654ff60 100644
 --- a/src/NodeChildProcessSpawner.ts
 +++ b/src/NodeChildProcessSpawner.ts
-@@ -354,13 +354,18 @@ const make = Effect.gen(function*() {
+@@ -39,6 +39,9 @@ import {
+   ProcessId
+ } from "effect/unstable/process/ChildProcessSpawner"
+ import * as NodeChildProcess from "node:child_process"
++import * as NodeFs from "node:fs"
++import * as NodeOs from "node:os"
++import * as NodePath from "node:path"
+ import { PassThrough } from "node:stream"
+ import { handleErrnoException } from "./internal/utils.ts"
+ import * as NodeSink from "./NodeSink.ts"
+@@ -62,6 +65,39 @@ const toPlatformError = (
+   return handleErrnoException("ChildProcess", method)(error, [commandStr])
+ }
+ 
++const windowsHideSpawnOptions = { windowsHide: true, windowsUseConpty: false } as const
++
++const windowsKillProcessTree = (
++  pid: number | undefined,
++  callback: (error?: Error | null) => void
++): void => {
++  const numericPid = Number(pid)
++  if (!Number.isInteger(numericPid) || numericPid <= 0) {
++    callback()
++    return
++  }
++  const scriptPath = NodePath.join(NodeOs.tmpdir(), "t3-hidden-taskkill.vbs")
++  const script =
++    "If WScript.Arguments.Count < 1 Then WScript.Quit 1\r\n" +
++    "CreateObject(\"WScript.Shell\").Run \"taskkill /F /T /PID \" & WScript.Arguments(0), 0, True\r\n"
++  try {
++    NodeFs.writeFileSync(scriptPath, script)
++  } catch {
++    // reuse a previous copy if the temp file is locked
++  }
++  const wscript = NodePath.join(
++    process.env.SystemRoot ?? "C:\\Windows",
++    "System32",
++    "wscript.exe"
++  )
++  NodeChildProcess.execFile(
++    wscript,
++    ["//nologo", "//B", scriptPath, String(numericPid)],
++    { ...windowsHideSpawnOptions, stdio: "ignore" },
++    callback
++  )
++}
++
+ type ExitCodeWithSignal = readonly [code: number | null, signal: NodeJS.Signals | null]
+ type ExitSignal = Deferred.Deferred<ExitCodeWithSignal>
+ 
+@@ -354,7 +390,7 @@ const make = Effect.gen(function*() {
    ) => {
      if (globalThis.process.platform === "win32") {
        return Effect.callback<void, PlatformError.PlatformError>((resume) => {
 -        NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, (error) => {
--          if (error) {
--            resume(Effect.fail(toPlatformError("kill", toError(error), command)))
--          } else {
--            resume(Effect.void)
-+        NodeChildProcess.execFile(
-+          "taskkill",
-+          ["/pid", String(childProcess.pid), "/T", "/F"],
-+          { windowsHide: true },
-+          (error) => {
-+            if (error) {
-+              resume(Effect.fail(toPlatformError("kill", toError(error), command)))
-+            } else {
-+              resume(Effect.void)
-+            }
-           }
--        })
-+        )
++        windowsKillProcessTree(childProcess.pid, (error) => {
+           if (error) {
+             resume(Effect.fail(toPlatformError("kill", toError(error), command)))
+           } else {
+@@ -376,7 +412,7 @@ const make = Effect.gen(function*() {
+     signal: NodeJS.Signals
+   ): void => {
+     if (globalThis.process.platform === "win32") {
+-      NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, () => {
++      windowsKillProcessTree(childProcess.pid, () => {
+         // ignore errors during best-effort cleanup
        })
-     }
-     return Effect.try({
-@@ -476,7 +481,8 @@ const make = Effect.gen(function*() {
+       return
+@@ -476,7 +512,9 @@ const make = Effect.gen(function*() {
              env,
              stdio,
              detached: cmd.options.detached ?? process.platform !== "win32",
 -            shell: cmd.options.shell
 +            shell: cmd.options.shell,
-+            windowsHide: true
++            windowsHide: true,
++            windowsUseConpty: false
            }),
            Effect.fnUntraced(function*([childProcess, exitSignal]) {
              const exited = yield* Deferred.isDone(exitSignal)

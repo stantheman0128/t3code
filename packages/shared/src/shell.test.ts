@@ -1,3 +1,6 @@
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -63,7 +66,12 @@ describe("readPathFromLoginShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() => "__T3CODE_ENV_PATH_START__\n/a:/b\n__T3CODE_ENV_PATH_END__\n");
 
@@ -71,7 +79,11 @@ describe("readPathFromLoginShell", () => {
     expect(execFile).toHaveBeenCalledTimes(1);
 
     const firstCall = execFile.mock.calls[0] as
-      | [string, ReadonlyArray<string>, { encoding: "utf8"; timeout: number; windowsHide: boolean }]
+      | [
+          string,
+          ReadonlyArray<string>,
+          { encoding: "utf8"; timeout: number; windowsHide: boolean; windowsUseConpty: boolean },
+        ]
       | undefined;
     expect(firstCall).toBeDefined();
     if (!firstCall) {
@@ -85,7 +97,12 @@ describe("readPathFromLoginShell", () => {
     expect(args?.[1]).toContain("printenv PATH || true");
     expect(args?.[1]).toContain("__T3CODE_ENV_PATH_START__");
     expect(args?.[1]).toContain("__T3CODE_ENV_PATH_END__");
-    expect(options).toEqual({ encoding: "utf8", timeout: 5000, windowsHide: true });
+    expect(options).toEqual({
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+      windowsUseConpty: false,
+    });
   });
 });
 
@@ -95,7 +112,12 @@ describe("readPathFromLaunchctl", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() => "  /opt/homebrew/bin:/usr/bin  \n");
 
@@ -104,6 +126,7 @@ describe("readPathFromLaunchctl", () => {
       encoding: "utf8",
       timeout: 2000,
       windowsHide: true,
+      windowsUseConpty: false,
     });
   });
 
@@ -112,7 +135,12 @@ describe("readPathFromLaunchctl", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() => {
       throw new Error("spawn /bin/launchctl ENOENT");
@@ -128,7 +156,12 @@ describe("readEnvironmentFromLoginShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() =>
       [
@@ -153,7 +186,12 @@ describe("readEnvironmentFromLoginShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() =>
       [
@@ -175,7 +213,12 @@ describe("readEnvironmentFromLoginShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() =>
       ["__T3CODE_ENV_CUSTOM_VAR_START__", "  padded value  ", "__T3CODE_ENV_CUSTOM_VAR_END__"].join(
@@ -222,7 +265,12 @@ describe("readEnvironmentFromWindowsShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(
       () =>
@@ -235,7 +283,7 @@ describe("readEnvironmentFromWindowsShell", () => {
     expect(execFile).toHaveBeenCalledWith(
       "pwsh.exe",
       expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
-      { encoding: "utf8", timeout: 5000, windowsHide: true },
+      { encoding: "utf8", timeout: 5000, windowsHide: true, windowsUseConpty: false },
     );
   });
 
@@ -244,7 +292,12 @@ describe("readEnvironmentFromWindowsShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(
       () =>
@@ -261,7 +314,12 @@ describe("readEnvironmentFromWindowsShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >(() => "__T3CODE_ENV_PATH_START__\nC:\\Tools\n__T3CODE_ENV_PATH_END__\n");
 
@@ -271,7 +329,7 @@ describe("readEnvironmentFromWindowsShell", () => {
     expect(execFile).toHaveBeenCalledWith(
       "pwsh.exe",
       expect.arrayContaining(["-NoLogo", "-NonInteractive", "-Command"]),
-      { encoding: "utf8", timeout: 5000, windowsHide: true },
+      { encoding: "utf8", timeout: 5000, windowsHide: true, windowsUseConpty: false },
     );
     expect(execFile.mock.calls[0]?.[1]).not.toContain("-NoProfile");
   });
@@ -281,7 +339,12 @@ describe("readEnvironmentFromWindowsShell", () => {
       (
         file: string,
         args: ReadonlyArray<string>,
-        options: { encoding: "utf8"; timeout: number; windowsHide: boolean },
+        options: {
+          encoding: "utf8";
+          timeout: number;
+          windowsHide: boolean;
+          windowsUseConpty: boolean;
+        },
       ) => string
     >((file) => {
       if (file === "pwsh.exe") {
@@ -297,11 +360,13 @@ describe("readEnvironmentFromWindowsShell", () => {
       encoding: "utf8",
       timeout: 5000,
       windowsHide: true,
+      windowsUseConpty: false,
     });
     expect(execFile).toHaveBeenNthCalledWith(2, "powershell.exe", expect.any(Array), {
       encoding: "utf8",
       timeout: 5000,
       windowsHide: true,
+      windowsUseConpty: false,
     });
   });
 });
@@ -433,6 +498,30 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
         PATH: "C:\\Users\\tester\\AppData\\Roaming\\npm",
         PATHEXT: ".COM;.EXE;.BAT;.CMD",
         CODEX_HOME: "C:\\Users\\tester\\.codex",
+      });
+    }),
+  );
+
+  it.effect("unwraps npm cmd shims to the target exe without a shell", () =>
+    Effect.gen(function* () {
+      const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cmd-unwrap-"));
+      const exe = NodePath.join(dir, "node_modules", "pkg", "bin", "tool.exe");
+      NodeFS.mkdirSync(NodePath.dirname(exe), { recursive: true });
+      NodeFS.writeFileSync(exe, "fake");
+      const cmd = NodePath.join(dir, "tool.cmd");
+      NodeFS.writeFileSync(cmd, `@ECHO off\r\n"%dp0%\\node_modules\\pkg\\bin\\tool.exe"   %*\r\n`);
+
+      const command = yield* resolveSpawnCommand("tool", ["--version"], {
+        env: { PATH: dir, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+      }).pipe(
+        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(SpawnExecutableResolution, () => cmd),
+      );
+
+      expect(command).toEqual({
+        command: exe,
+        args: ["--version"],
+        shell: false,
       });
     }),
   );

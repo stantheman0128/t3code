@@ -24,6 +24,8 @@ type ExecFileSyncOptions = {
   timeout: number;
   /** Hide the console window when probing from a GUI parent (Electron). */
   windowsHide: boolean;
+  /** ConPTY allocates a console even with windowsHide; keep it off. */
+  windowsUseConpty: boolean;
 };
 
 type ExecFileSyncLike = (
@@ -36,6 +38,7 @@ const hiddenExecFileOptions = (timeout: number): ExecFileSyncOptions => ({
   encoding: "utf8",
   timeout,
   windowsHide: true,
+  windowsUseConpty: false,
 });
 
 function canExecuteFile(filePath: string): boolean {
@@ -643,6 +646,51 @@ export const resolveCommandPath = Effect.fn("shell.resolveCommandPath")(function
   });
 });
 
+const POWERSHELL_EXE_PATTERN = /powershell(?:\.exe)?$/i;
+const QUOTED_EXE_WITH_STAR_ARGS = /"([^"\r\n]+\.exe)"\s+%\*/i;
+
+function expandWindowsCmdDirectoryVars(text: string, cmdPath: string): string {
+  const directory = NodePath.win32.dirname(cmdPath);
+  const withSlash = directory.endsWith("\\") ? directory : `${directory}\\`;
+  return text
+    .replace(/%~dp0%/gi, withSlash)
+    .replace(/%dp0%/gi, withSlash)
+    .replace(/%~dp0/gi, withSlash);
+}
+
+/**
+ * npm and similar `.cmd` shims wrap a real `.exe`. Spawning the exe directly
+ * avoids `cmd.exe` (which always allocates a console on Windows).
+ */
+export function tryUnwrapWindowsCmdShim(
+  cmdPath: string,
+  args: ReadonlyArray<string>,
+): { command: string; args: Array<string> } | undefined {
+  let text: string;
+  try {
+    text = NodeFS.readFileSync(cmdPath, "utf8");
+  } catch {
+    return undefined;
+  }
+
+  const expanded = expandWindowsCmdDirectoryVars(text, cmdPath);
+  const match = QUOTED_EXE_WITH_STAR_ARGS.exec(expanded);
+  const exe = match?.[1];
+  if (exe === undefined || POWERSHELL_EXE_PATTERN.test(exe)) {
+    return undefined;
+  }
+
+  try {
+    if (!NodeFS.statSync(exe).isFile()) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return { command: NodePath.win32.normalize(exe), args: [...args] };
+}
+
 export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(function* (
   command: string,
   args: ReadonlyArray<string>,
@@ -665,6 +713,11 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
   const extension = NodePath.win32.extname(resolvedCommand).toLowerCase();
   if (extension !== ".cmd" && extension !== ".bat") {
     return { command: resolvedCommand, args: [...args], shell: false };
+  }
+
+  const unwrapped = tryUnwrapWindowsCmdShim(resolvedCommand, args);
+  if (unwrapped !== undefined) {
+    return { command: unwrapped.command, args: unwrapped.args, shell: false };
   }
 
   return {

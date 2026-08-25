@@ -50,6 +50,24 @@ describe("scan cache round trip", () => {
     expect(restored.get("/b.jsonl")).toEqual(original.get("/b.jsonl"));
   });
 
+  it("round-trips grok entries so a restart does not cold-scan updates.jsonl", () => {
+    const original: ScanCache = new Map([
+      [
+        "/updates.jsonl",
+        {
+          size: 80,
+          mtimeMs: 100,
+          provider: "grok",
+          records: [record({ provider: "grok", model: "grok-4.6", reportedCostUsd: 0.5 })],
+        },
+      ],
+    ]);
+
+    const restored = decodeScanCache(JSON.parse(JSON.stringify(encodeScanCache(original))));
+
+    expect(restored.get("/updates.jsonl")).toEqual(original.get("/updates.jsonl"));
+  });
+
   it("interns repeated model and session strings", () => {
     const encoded = encodeScanCache(
       cacheWith([["/a.jsonl", 100, [record(), record({ dedupeKey: "msg_2:" }), record()]]]),

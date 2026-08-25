@@ -41,6 +41,8 @@ import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
 import { parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
+  GROK_TRANSCRIPT_FILE_NAME,
+  grokHomeSessionWorkspaceDirNames,
   listTranscriptFiles,
   readDirectoryVolumeId,
   readTranscriptRecords,
@@ -70,6 +72,12 @@ const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Longest window the UI offers, plus slack. Older entries are pruned. */
 const CACHE_RETENTION_DAYS = 90;
+
+/**
+ * The Usage page's RPC is toasted as slow after 15s. Leave a little headroom
+ * so a grok home full of stub sessions cannot hold the whole summary hostage.
+ */
+const SCAN_BUDGET_MS = 12_000;
 
 /** On-disk shape of the rate snapshot. */
 const RatesCacheFile = Schema.Struct({
@@ -268,7 +276,8 @@ export const make = Effect.gen(function* () {
     size: number,
     mtimeMs: number,
     provider: UsageProviderKind,
-  ): Effect.Effect<readonly UsageRecord[]> =>
+    deadlineMs: number,
+  ): Effect.Effect<{ records: readonly UsageRecord[]; complete: boolean }> =>
     Effect.gen(function* () {
       const cached = fileCache.get(filePath);
       // Provider is part of the identity: if both providers were ever pointed
@@ -279,20 +288,33 @@ export const make = Effect.gen(function* () {
         cached.mtimeMs === mtimeMs &&
         cached.provider === provider
       ) {
-        return cached.records;
+        return { records: cached.records, complete: true };
       }
 
-      const parsed = yield* Effect.promise(() => readTranscriptRecords(filePath, provider));
+      // Append-only: a larger file with the same provider can resume from the
+      // previously consumed byte offset instead of re-reading tens of MB.
+      // Codex carries rolling model/session state, so a tail-only parse would
+      // mis-attribute; those files always start at 0.
+      const canResume =
+        cached !== undefined &&
+        cached.provider === provider &&
+        cached.size < size &&
+        provider !== "codex";
+      const startOffset = canResume ? cached.size : 0;
+      const parsed = yield* Effect.promise(() =>
+        readTranscriptRecords(filePath, provider, { startOffset, deadlineMs }),
+      );
       // A read failure is not an empty transcript: caching it under this
       // (size, mtime) would silently drop the file's usage until it changes.
-      if (parsed === null) return [];
-      // Stored already de-duplicated within the file, which is 99% of all
-      // duplicates. The aggregator still runs the cross-file dedupe pass.
-      const records = dedupeWithinFile(parsed);
+      if (parsed === null) return { records: cached?.records ?? [], complete: true };
 
-      fileCache.set(filePath, { size, mtimeMs, provider, records });
+      const records = dedupeWithinFile(
+        canResume && cached !== undefined ? [...cached.records, ...parsed.records] : parsed.records,
+      );
+      const consumed = parsed.complete ? size : parsed.bytesConsumed;
+      fileCache.set(filePath, { size: consumed, mtimeMs, provider, records });
       cacheDirty = true;
-      return records;
+      return { records, complete: parsed.complete };
     });
 
   const readSummary = Effect.fn("UsageService.readSummary")(function* (input: UsageSummaryInput) {
@@ -378,22 +400,50 @@ export const make = Effect.gen(function* () {
       }
 
       walkedRoots.push(dir);
-      const files = yield* Effect.promise(() => listTranscriptFiles(dir, windowStartMs));
+      const files = yield* Effect.promise(() =>
+        listTranscriptFiles(
+          dir,
+          windowStartMs,
+          provider === "grok"
+            ? {
+                fileName: GROK_TRANSCRIPT_FILE_NAME,
+                skipDirNames: new Set(grokHomeSessionWorkspaceDirNames(NodeOS.homedir())),
+              }
+            : undefined,
+        ),
+      );
       let scannedFiles = 0;
       let skippedFiles = 0;
+      let truncated = false;
       // Distinct per directory. Buckets carry per-cell session counts, but a
       // session spans days and models, so clients total this figure instead.
       const sessionIds = new Set<string>();
+      const deadlineMs = startedAtMs + SCAN_BUDGET_MS;
+      // Smallest first so a single huge grok transcript cannot starve the rest.
+      const orderedFiles = files.toSorted((a, b) => a.size - b.size);
 
-      for (const file of files) {
+      for (const file of orderedFiles) {
         livePaths.add(file.path);
-        const records = yield* readFileRecords(file.path, file.size, file.mtimeMs, provider);
-        if (records.length === 0) {
+        const now = yield* Clock.currentTimeMillis;
+        if (now >= deadlineMs) {
+          truncated = true;
+          skippedFiles += 1;
+          continue;
+        }
+        const read = yield* readFileRecords(
+          file.path,
+          file.size,
+          file.mtimeMs,
+          provider,
+          deadlineMs,
+        );
+        if (!read.complete) truncated = true;
+        if (read.records.length === 0) {
           skippedFiles += 1;
           continue;
         }
         scannedFiles += 1;
-        for (const record of records) {
+        for (const record of read.records) {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
           if (aggregator.add(record) && record.sessionId.length > 0) {
@@ -404,12 +454,14 @@ export const make = Effect.gen(function* () {
 
       sources.push({
         fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
-        status: "ok",
+        status: truncated ? "partial" : "ok",
         scannedFiles,
         skippedFiles,
         malformedRecords: 0,
         distinctSessions: sessionIds.size,
-        message: null,
+        message: truncated
+          ? "Scan stopped before every transcript was read; refresh to continue."
+          : null,
       });
     }
 

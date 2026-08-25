@@ -32,6 +32,28 @@ export interface TranscriptFile {
   readonly mtimeMs: number;
 }
 
+export interface ListTranscriptFilesOptions {
+  /** When set, only files with this basename are collected. */
+  readonly fileName?: string;
+  /** Directory basenames that must not be descended into. */
+  readonly skipDirNames?: ReadonlySet<string>;
+}
+
+/**
+ * Grok stores sessions under `sessions/<encodeURIComponent(cwd)>/<id>/`.
+ * A session whose cwd is the user home is not a project, and on a busy machine
+ * that folder can hold thousands of stub transcripts that drown the Usage scan.
+ */
+export function grokHomeSessionWorkspaceDirNames(homeDir: string): readonly string[] {
+  const names = new Set<string>();
+  names.add(encodeURIComponent(homeDir));
+  const posix = homeDir.replaceAll("\\", "/");
+  names.add(encodeURIComponent(posix));
+  return [...names];
+}
+
+export const GROK_TRANSCRIPT_FILE_NAME = "updates.jsonl";
+
 /**
  * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`.
  *
@@ -42,8 +64,11 @@ export interface TranscriptFile {
 export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
+  options?: ListTranscriptFilesOptions,
 ): Promise<readonly TranscriptFile[]> {
   const found: TranscriptFile[] = [];
+  const skipDirNames = options?.skipDirNames;
+  const fileName = options?.fileName;
 
   const walk = async (dir: string): Promise<void> => {
     let entries;
@@ -53,12 +78,15 @@ export async function listTranscriptFiles(
       return;
     }
     for (const entry of entries) {
-      const child = NodePath.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await walk(child);
+        if (skipDirNames?.has(entry.name)) continue;
+        await walk(NodePath.join(dir, entry.name));
         continue;
       }
-      if (!entry.name.endsWith(".jsonl")) continue;
+      if (fileName !== undefined ? entry.name !== fileName : !entry.name.endsWith(".jsonl")) {
+        continue;
+      }
+      const child = NodePath.join(dir, entry.name);
       try {
         const stats = await NodeFSP.stat(child);
         if (stats.mtimeMs >= sinceMs) {
@@ -90,6 +118,20 @@ export async function readDirectoryVolumeId(path: string): Promise<string> {
   }
 }
 
+export interface TranscriptReadOptions {
+  /** Byte offset to start from. Append-only files resume here on a cache miss. */
+  readonly startOffset?: number;
+  /** Unix-ms deadline; when already passed, the read returns `complete: false`. */
+  readonly deadlineMs?: number;
+}
+
+export interface TranscriptReadResult {
+  readonly records: readonly UsageRecord[];
+  /** Bytes of the file that have been consumed, suitable as the next startOffset. */
+  readonly bytesConsumed: number;
+  readonly complete: boolean;
+}
+
 /**
  * Streams one transcript and returns the usage records it contains, or `null`
  * when the file could not be read.
@@ -106,17 +148,38 @@ export async function readDirectoryVolumeId(path: string): Promise<string> {
 export async function readTranscriptRecords(
   filePath: string,
   provider: UsageProviderKind,
-): Promise<readonly UsageRecord[] | null> {
+  options?: TranscriptReadOptions,
+): Promise<TranscriptReadResult | null> {
   const records: UsageRecord[] = [];
   const codexState = initialCodexScanState();
+  const startOffset = options?.startOffset ?? 0;
+  const deadlineMs = options?.deadlineMs;
+  let bytesConsumed = startOffset;
+  let complete = true;
 
   try {
+    if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+      return { records, bytesConsumed, complete: false };
+    }
+
+    const stream = NodeFS.createReadStream(filePath, {
+      encoding: "utf8",
+      start: startOffset,
+    });
     const lines = NodeReadline.createInterface({
-      input: NodeFS.createReadStream(filePath, { encoding: "utf8" }),
+      input: stream,
       crlfDelay: Infinity,
     });
 
     for await (const line of lines) {
+      if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+        complete = false;
+        lines.close();
+        stream.destroy();
+        break;
+      }
+      bytesConsumed += Buffer.byteLength(line, "utf8") + 1;
+
       if (provider === "codex") {
         if (
           !mightCarryUsage(line, provider) &&
@@ -145,5 +208,5 @@ export async function readTranscriptRecords(
     return null;
   }
 
-  return records;
+  return { records, bytesConsumed, complete };
 }

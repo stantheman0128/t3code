@@ -5607,7 +5607,12 @@ function ChatViewContent(props: ChatViewProps) {
         );
         return;
       }
-      if (!isServerThread || activeThreadId === null || activeThread.session === null) {
+      if (
+        !isServerThread ||
+        activeThreadId === null ||
+        activeThread.session === null ||
+        activeThread.session.status === "stopped"
+      ) {
         toastManager.add(
           stackedThreadToast({
             type: "warning",

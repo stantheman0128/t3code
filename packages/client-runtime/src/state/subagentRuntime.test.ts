@@ -725,6 +725,18 @@ describe("agent display titles", () => {
     expect(formatAgentResultPreview(agents[0]!.result)).toContain("T3 Cursor provider");
   });
 
+  it("live agents with tool uses do not read as empty Working", () => {
+    const agents = fold([
+      activity("task.started", { taskId: "live-1", title: "Investigate T3 UI bugs" }),
+      activity("task.progress", {
+        taskId: "live-1",
+        status: "running",
+        typedUsage: { totalTokens: 71400, toolUses: 48 },
+      }),
+    ]);
+    expect(formatAgentActivityLine(agents[0]!)).toBe("48 tools");
+  });
+
   it("uses a description when Grok sends the session id as title", () => {
     const agents = fold([
       activity("task.started", {

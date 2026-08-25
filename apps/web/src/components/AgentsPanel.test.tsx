@@ -100,4 +100,33 @@ describe("AgentsPanel", () => {
     expect(html).toContain("Stop");
     expect(html).not.toContain("Direct spawns");
   });
+
+  it("expanded live agents with tool uses do not say no output yet", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-1",
+          status: "running",
+          title: "Investigate T3 UI bugs",
+          error: null,
+          result: null,
+          usage: { totalTokens: 71400, toolUses: 48 },
+          recentActivity: [],
+        }),
+      ],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 71400,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("48 tools");
+    expect(html).not.toContain("No output yet");
+  });
 });

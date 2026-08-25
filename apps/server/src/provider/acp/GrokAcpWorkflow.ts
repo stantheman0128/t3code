@@ -54,6 +54,7 @@ export interface GrokSubagentUpdate {
   readonly toolCallCount: number | undefined;
   readonly output: string | undefined;
   readonly description: string | undefined;
+  readonly toolsUsed: ReadonlyArray<string> | undefined;
 }
 
 export interface GrokTypedUsageSnapshot {
@@ -100,6 +101,17 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readStringList(value: unknown): ReadonlyArray<string> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items = value.flatMap((entry) => {
+    const name = readString(entry) ?? readString(asRecord(entry)?.name);
+    return name === undefined ? [] : [name];
+  });
+  return items.length > 0 ? items : undefined;
 }
 
 function nonNegativeInt(value: unknown): number | undefined {
@@ -233,6 +245,7 @@ export function parseXAiSubagentUpdate(payload: unknown): GrokSubagentUpdate | u
       readString(update.label) ??
       readString(update.prompt) ??
       readString(update.task),
+    toolsUsed: readStringList(update.tools_used ?? update.toolsUsed),
   };
 }
 
@@ -536,14 +549,17 @@ export function applyGrokSubagentUpdate(
       if (typedUsage) {
         usageByTaskId.set(update.subagentId, typedUsage);
       }
+      const lastTool = update.toolsUsed?.at(-1);
+      const summary =
+        lastTool ??
+        (update.description ? update.description.split(/\r?\n/, 1)[0]!.trim() : undefined);
       events.push({
         type: "task.progress",
         payload: {
           ...linkage,
           status: "running",
-          ...(update.description
-            ? { summary: update.description.split(/\r?\n/, 1)[0]!.trim() }
-            : {}),
+          ...(summary ? { summary } : {}),
+          ...(lastTool ? { lastToolName: lastTool } : {}),
           ...(typedUsage ? { typedUsage } : {}),
         },
       });

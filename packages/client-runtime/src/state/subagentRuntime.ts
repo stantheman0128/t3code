@@ -267,6 +267,9 @@ export function formatAgentActivityLine(agent: RuntimeSubagent): string {
     if (agent.lastToolName) return agent.lastToolName;
     const progress = extractAgentHeadline(agent.progress);
     if (progress) return progress;
+    if (agent.usage?.toolUses !== undefined && agent.usage.toolUses > 0) {
+      return `${agent.usage.toolUses} tools`;
+    }
     return "Working";
   }
   if (agent.error) return extractAgentHeadline(agent.error) ?? "Failed";

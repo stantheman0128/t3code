@@ -186,8 +186,13 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
   const tools = agent.recentActivity
     .map((entry) => entry.summary.replace(/^▸\s+/, "").trim())
     .filter((summary) => summary.length > 0);
+  const toolUses = agent.usage?.toolUses ?? 0;
   const hasDetail =
-    agent.error !== null || preview !== null || agent.outputFile !== null || tools.length > 0;
+    agent.error !== null ||
+    preview !== null ||
+    agent.outputFile !== null ||
+    tools.length > 0 ||
+    toolUses > 0;
   if (!hasDetail) {
     return (
       <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
@@ -209,6 +214,10 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
       ) : null}
       {tools.length > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">Did: {tools.slice(-6).join(" · ")}</p>
+      ) : toolUses > 0 ? (
+        <p className="text-[.65rem] text-muted-foreground">
+          {isActiveSubagentStatus(agent.status) ? `${toolUses} tools so far` : `${toolUses} tools`}
+        </p>
       ) : null}
       {agent.outputFile ? (
         <p className="truncate font-mono text-[.65rem] text-muted-foreground">{agent.outputFile}</p>

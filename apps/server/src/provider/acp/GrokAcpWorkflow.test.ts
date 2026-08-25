@@ -148,6 +148,21 @@ describe("GrokAcpWorkflow", () => {
     expect(member?.payload.taskId).toBe("wf_review_1:wf:agent_reviewer");
   });
 
+  it("puts the latest tools_used name on progress as lastToolName", () => {
+    const progress = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_progress",
+        subagent_id: "sa_tools",
+        tools_used: ["grep", "read_file"],
+      },
+    });
+    const applied = applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), progress!);
+    expect(applied.events.at(-1)?.payload).toMatchObject({
+      lastToolName: "read_file",
+      summary: "read_file",
+    });
+  });
+
   it("carries duration and tool-use counts on subagent progress and finish", () => {
     const progress = parseXAiSubagentUpdate({
       update: {

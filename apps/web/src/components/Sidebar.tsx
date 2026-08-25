@@ -850,11 +850,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       ? {
           label: "Working",
           icon: "working" as const,
-          // No shimmer: a label that animates forever is noise in a sidebar
-          // full of them (and repaints every vsync on high-refresh displays).
-          // Working is a background state, so it rests at the dim end of what
-          // the old pulse cycled through; only the thread you have open gets
-          // the label at full strength.
+          // The label stays still (a shimmering word is noise in a list).
+          // The dashed circle uses the same animate-spin token as other
+          // in-progress affordances so Working reads as live work.
           className: cn("text-sky-600 dark:text-sky-400", !props.isActive && "opacity-75"),
         }
       : status === "monitoring"
@@ -1479,7 +1477,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         )}
                       >
                         {topStatus.icon === "working" ? (
-                          <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                          <CircleDashedIcon
+                            aria-hidden
+                            className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                          />
                         ) : topStatus.icon === "done" ? (
                           <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
                         ) : null}

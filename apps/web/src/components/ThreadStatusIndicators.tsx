@@ -6,7 +6,13 @@ import {
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
 import type { EnvironmentId, ThreadLinkedPullRequest, VcsStatusResult } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
-import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
+import {
+  CircleDashedIcon,
+  CloudIcon,
+  FolderGit2Icon,
+  GitPullRequestIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
@@ -481,11 +487,18 @@ export function ThreadStatusLabel({
             />
           }
         >
-          <span
-            className={`size-[9px] rounded-full ${status.dotClass} ${
-              status.pulse ? "animate-status-pulse" : ""
-            }`}
-          />
+          {status.label === "Working" ? (
+            <CircleDashedIcon
+              aria-hidden
+              className="size-[9px] animate-spin motion-reduce:animate-none"
+            />
+          ) : (
+            <span
+              className={`size-[9px] rounded-full ${status.dotClass} ${
+                status.pulse ? "animate-status-pulse" : ""
+              }`}
+            />
+          )}
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
       </Tooltip>
@@ -502,11 +515,18 @@ export function ThreadStatusLabel({
           />
         }
       >
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
-            status.pulse ? "animate-status-pulse" : ""
-          }`}
-        />
+        {status.label === "Working" ? (
+          <CircleDashedIcon
+            aria-hidden
+            className="size-3 animate-spin motion-reduce:animate-none"
+          />
+        ) : (
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
+              status.pulse ? "animate-status-pulse" : ""
+            }`}
+          />
+        )}
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>

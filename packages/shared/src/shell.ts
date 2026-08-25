@@ -19,11 +19,24 @@ const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
 const WINDOWS_SHELL_CANDIDATES = ["pwsh.exe", "powershell.exe"] as const;
 
+type ExecFileSyncOptions = {
+  encoding: "utf8";
+  timeout: number;
+  /** Hide the console window when probing from a GUI parent (Electron). */
+  windowsHide: boolean;
+};
+
 type ExecFileSyncLike = (
   file: string,
   args: ReadonlyArray<string>,
-  options: { encoding: "utf8"; timeout: number },
+  options: ExecFileSyncOptions,
 ) => string;
+
+const hiddenExecFileOptions = (timeout: number): ExecFileSyncOptions => ({
+  encoding: "utf8",
+  timeout,
+  windowsHide: true,
+});
 
 function canExecuteFile(filePath: string): boolean {
   try {
@@ -203,10 +216,7 @@ export function readPathFromLaunchctl(
 ): string | undefined {
   try {
     return trimNonEmpty(
-      execFile("/bin/launchctl", ["getenv", "PATH"], {
-        encoding: "utf8",
-        timeout: 2000,
-      }),
+      execFile("/bin/launchctl", ["getenv", "PATH"], hiddenExecFileOptions(2000)),
     );
   } catch {
     return undefined;
@@ -312,10 +322,11 @@ export const readEnvironmentFromLoginShell: ShellEnvironmentReader = (
     return {};
   }
 
-  const output = execFile(shell, ["-ilc", buildEnvironmentCaptureCommand(names)], {
-    encoding: "utf8",
-    timeout: 5000,
-  });
+  const output = execFile(
+    shell,
+    ["-ilc", buildEnvironmentCaptureCommand(names)],
+    hiddenExecFileOptions(5000),
+  );
 
   const environment: Partial<Record<string, string>> = {};
   for (const name of names) {
@@ -383,7 +394,7 @@ export function readEnvironmentFromWindowsShell(
   ];
   for (const shell of WINDOWS_SHELL_CANDIDATES) {
     try {
-      const output = execFile(shell, args, { encoding: "utf8", timeout: 5000 });
+      const output = execFile(shell, args, hiddenExecFileOptions(5000));
 
       const environment: Partial<Record<string, string>> = {};
       for (const name of names) {

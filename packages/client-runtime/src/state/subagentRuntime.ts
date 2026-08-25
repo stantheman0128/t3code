@@ -167,6 +167,115 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+const OPAQUE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const OPAQUE_GROK_SESSION = /^01[0-9a-f]{6}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const OPAQUE_ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+
+export function isOpaqueAgentIdentity(value: string, agentId?: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return true;
+  if (agentId !== undefined && trimmed === agentId) return true;
+  return (
+    OPAQUE_UUID.test(trimmed) || OPAQUE_GROK_SESSION.test(trimmed) || OPAQUE_ULID.test(trimmed)
+  );
+}
+
+export function isWeakAgentTitle(value: string, agentId?: string): boolean {
+  if (isOpaqueAgentIdentity(value, agentId)) return true;
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
+  return (
+    normalized === "general purpose" ||
+    normalized === "subagent" ||
+    normalized === "agent" ||
+    normalized === "worker"
+  );
+}
+
+export function humanizeAgentLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+export function extractAgentHeadline(
+  text: string | null | undefined,
+  maxLength = 56,
+): string | null {
+  if (!text) return null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.length === 0 || line.startsWith("|") || line.startsWith("---")) continue;
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    const candidate = (heading?.[2] ?? line.replace(/^[-*]\s+/, "")).trim();
+    if (candidate.length === 0) continue;
+    if (candidate.toLowerCase() === "running" || candidate.toLowerCase() === "completed") continue;
+    if (isOpaqueAgentIdentity(candidate)) continue;
+    return candidate.length <= maxLength ? candidate : `${candidate.slice(0, maxLength - 1)}…`;
+  }
+  return null;
+}
+
+function pickAgentTitle(payload: Record<string, unknown>, id: string): string {
+  const candidates = [
+    asString(payload.title),
+    asString(payload.description),
+    asString(payload.detail),
+    asString(payload.role),
+  ].filter((value): value is string => value !== undefined);
+  const named = candidates.find((value) => !isWeakAgentTitle(value, id));
+  if (named) {
+    return extractAgentHeadline(named, 80) ?? named;
+  }
+  return candidates[0] ?? id;
+}
+
+export function formatAgentDisplayTitle(agent: RuntimeSubagent): string {
+  if (!isWeakAgentTitle(agent.title, agent.id)) {
+    return extractAgentHeadline(agent.title, 56) ?? humanizeAgentLabel(agent.title);
+  }
+  const fromResult = extractAgentHeadline(agent.result);
+  if (fromResult) return fromResult;
+  const fromProgress = extractAgentHeadline(agent.progress);
+  if (fromProgress) return fromProgress;
+  for (const entry of agent.recentActivity) {
+    const fromActivity = extractAgentHeadline(entry.summary);
+    if (fromActivity) return fromActivity;
+  }
+  if (agent.role) return humanizeAgentLabel(agent.role);
+  return "Subagent";
+}
+
+export function formatAgentActivityLine(agent: RuntimeSubagent): string {
+  if (isActiveSubagentStatus(agent.status)) {
+    if (agent.lastToolName) return agent.lastToolName;
+    const progress = extractAgentHeadline(agent.progress);
+    if (progress) return progress;
+    return "Working";
+  }
+  if (agent.error) return extractAgentHeadline(agent.error) ?? "Failed";
+  if (agent.status === "completed") return "Done";
+  if (agent.status === "failed") return "Failed";
+  if (agent.status === "cancelled" || agent.status === "interrupted") return "Stopped";
+  if (agent.status === "idle") return "Idle";
+  return "Done";
+}
+
+export function formatAgentResultPreview(result: string | null, maxLength = 360): string | null {
+  if (!result) return null;
+  const lines: Array<string> = [];
+  for (const raw of result.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.length === 0 || line.startsWith("|") || /^:?-+:?$/.test(line)) continue;
+    lines.push(line.replace(/^#{1,6}\s+/, "").replace(/^[-*]\s+/, ""));
+    if (lines.join(" ").length >= maxLength) break;
+  }
+  if (lines.length === 0) return extractAgentHeadline(result, maxLength);
+  const joined = lines.join("\n");
+  return joined.length <= maxLength ? joined : `${joined.slice(0, maxLength - 1)}…`;
+}
+
 function asCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
@@ -307,7 +416,7 @@ function getOrCreate(
   const created: MutableAgent = {
     id,
     kind: kindFromPayload(payload, id),
-    title: asString(payload.title) ?? asString(payload.detail) ?? id,
+    title: pickAgentTitle(payload, id),
     role: asString(payload.role) ?? null,
     model: asString(payload.model) ?? null,
     effort: asString(payload.effort) ?? null,
@@ -339,8 +448,10 @@ function getOrCreate(
 
 /** Metadata fill from any payload: never downgrades known values to null. */
 function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): void {
-  const title = asString(payload.title);
-  if (title) agent.title = title;
+  const nextTitle = pickAgentTitle(payload, agent.id);
+  if (!isWeakAgentTitle(nextTitle, agent.id) || isWeakAgentTitle(agent.title, agent.id)) {
+    agent.title = nextTitle;
+  }
   const role = asString(payload.role);
   if (role) agent.role = role;
   const model = asString(payload.model);

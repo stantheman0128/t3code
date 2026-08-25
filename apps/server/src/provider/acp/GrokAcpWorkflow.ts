@@ -53,6 +53,7 @@ export interface GrokSubagentUpdate {
   readonly turnCount: number | undefined;
   readonly toolCallCount: number | undefined;
   readonly output: string | undefined;
+  readonly description: string | undefined;
 }
 
 export interface GrokTypedUsageSnapshot {
@@ -226,6 +227,12 @@ export function parseXAiSubagentUpdate(payload: unknown): GrokSubagentUpdate | u
       update.tool_call_count ?? update.toolCallCount ?? update.tool_calls ?? update.toolCalls,
     ),
     output: readString(update.output),
+    description:
+      readString(update.description) ??
+      readString(update.title) ??
+      readString(update.label) ??
+      readString(update.prompt) ??
+      readString(update.task),
   };
 }
 
@@ -482,6 +489,19 @@ export function applyGrokWorkflowUpdate(
   };
 }
 
+function grokSubagentFinishSummary(update: GrokSubagentUpdate, finished: string): string {
+  if (update.error) return update.error;
+  if (update.output) {
+    for (const line of update.output.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0 || trimmed.startsWith("|")) continue;
+      const heading = /^#{1,6}\s+(.+)$/.exec(trimmed);
+      return (heading?.[1] ?? trimmed).slice(0, 180);
+    }
+  }
+  return update.description ?? finished;
+}
+
 export function applyGrokSubagentUpdate(
   state: GrokWorkflowTrackState,
   update: GrokSubagentUpdate,
@@ -490,13 +510,14 @@ export function applyGrokSubagentUpdate(
   const completedSubagentIds = new Set(state.completedSubagentIds);
   const usageByTaskId = new Map(state.usageByTaskId);
   const events: Array<GrokTaskEventSpec> = [];
-  const title = update.role ?? update.subagentId;
+  const titleSource = update.description ?? update.role;
+  const title = titleSource ? titleSource.split(/\r?\n/, 1)[0]!.trim().slice(0, 80) : "Subagent";
   const linkage = {
     taskId: update.subagentId,
     description: title,
     title,
     taskType: "subagent",
-    role: update.role ?? "general-purpose",
+    ...(update.role ? { role: update.role } : {}),
     ...(update.parentSessionId ? { parentAgentId: update.parentSessionId } : {}),
     ...(update.childSessionId ? { agentPath: update.childSessionId } : {}),
     timelineBypass: true,
@@ -520,7 +541,9 @@ export function applyGrokSubagentUpdate(
         payload: {
           ...linkage,
           status: "running",
-          summary: update.role ?? "running",
+          ...(update.description
+            ? { summary: update.description.split(/\r?\n/, 1)[0]!.trim() }
+            : {}),
           ...(typedUsage ? { typedUsage } : {}),
         },
       });
@@ -542,7 +565,7 @@ export function applyGrokSubagentUpdate(
         ...linkage,
         status:
           finished === "failed" ? "failed" : finished === "cancelled" ? "stopped" : "completed",
-        summary: update.error ?? update.output ?? finished,
+        summary: grokSubagentFinishSummary(update, finished),
         ...(typedUsage ? { typedUsage } : {}),
       },
     });

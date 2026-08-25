@@ -76,6 +76,23 @@ describe("GrokAcpWorkflow", () => {
     expect(second.events.some((event) => event.payload.taskType === "subagent")).toBe(false);
   });
 
+  it("uses spawn description as the child title instead of the session id", () => {
+    const spawned = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_spawned",
+        subagent_id: "01a03914-e401-7100-b9e5-f9503326a711",
+        subagent_type: "general-purpose",
+        description: "Explore ClaudePulse UI",
+      },
+    });
+    const applied = applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), spawned!);
+    expect(applied.events[0]?.payload).toMatchObject({
+      title: "Explore ClaudePulse UI",
+      role: "general-purpose",
+    });
+    expect(String(applied.events[0]?.payload.title)).not.toContain("01a03914");
+  });
+
   it("maps SubagentFinished onto a terminal child task", () => {
     const spawned = parseXAiSubagentUpdate({
       update: {

@@ -2,10 +2,15 @@ import { describe, expect, it } from "vite-plus/test";
 import { classifyTaskAgentKind, type OrchestrationThreadActivity } from "@t3tools/contracts";
 import {
   deriveAgentPanelModel,
+  extractAgentHeadline,
   foldSubagentActivities,
+  formatAgentActivityLine,
+  formatAgentDisplayTitle,
+  formatAgentResultPreview,
   formatSubagentModelLabel,
   formatSubagentTokenCount,
   isAgentAttributedToolActivity,
+  isOpaqueAgentIdentity,
   isSubagentActivityKind,
   isTimelineBypassActivity,
   workflowCardMembers,
@@ -642,6 +647,50 @@ describe("formatSubagentTokenCount", () => {
     expect(formatSubagentTokenCount(41200)).toBe("41.2k");
     expect(formatSubagentTokenCount(247000)).toBe("247k");
     expect(formatSubagentTokenCount(1_400_000)).toBe("1.4M");
+  });
+});
+
+describe("agent display titles", () => {
+  it("does not treat a grok session id as a name", () => {
+    expect(isOpaqueAgentIdentity("01a03914-e401-7100-b9e5-f9503326a711")).toBe(true);
+    expect(isOpaqueAgentIdentity("Audit auth flow")).toBe(false);
+  });
+
+  it("prefers a markdown heading from the result when the title is an id", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "01a03914-e401-7100-b9e5-f9503326a711",
+        title: "01a03914-e401-7100-b9e5-f9503326a711",
+        role: "general-purpose",
+      }),
+      activity("task.completed", {
+        taskId: "01a03914-e401-7100-b9e5-f9503326a711",
+        status: "completed",
+        summary: "# T3 Cursor provider vs Cursor IDE/CLI\n\nPure codebase inventory.",
+      }),
+    ]);
+    expect(formatAgentDisplayTitle(agents[0]!)).toBe("T3 Cursor provider vs Cursor IDE/CLI");
+    expect(formatAgentActivityLine(agents[0]!)).toBe("Done");
+    expect(formatAgentResultPreview(agents[0]!.result)).toContain("T3 Cursor provider");
+  });
+
+  it("uses a description when Grok sends the session id as title", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "01a02f79-35cb-7770-8312-56bd4037e4bf",
+        title: "01a02f79-35cb-7770-8312-56bd4037e4bf",
+        description: "Explore ClaudePulse UI",
+        role: "scout",
+      }),
+    ]);
+    expect(agents[0]!.title).toBe("Explore ClaudePulse UI");
+    expect(formatAgentDisplayTitle(agents[0]!)).toBe("Explore ClaudePulse UI");
+  });
+
+  it("extracts a heading and skips tables", () => {
+    expect(
+      extractAgentHeadline("# Architecture\n\n| Layer | Role |\n| --- | --- |\n| CursorDriver | M"),
+    ).toBe("Architecture");
   });
 });
 

@@ -21,6 +21,9 @@ import type {
   RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
+  formatAgentActivityLine,
+  formatAgentDisplayTitle,
+  formatAgentResultPreview,
   formatSubagentModelLabel,
   formatSubagentTokenCount,
   isActiveSubagentStatus,
@@ -59,8 +62,29 @@ function StatusDot({ status }: { status: RuntimeSubagent["status"] }) {
   return (
     <span
       aria-hidden
-      className={cn("size-1.5 shrink-0 rounded-full", STATUS_VISUALS[status].dotClass)}
+      className={cn("size-2 shrink-0 rounded-full", STATUS_VISUALS[status].dotClass)}
     />
+  );
+}
+
+function StatusChip({ status }: { status: RuntimeSubagent["status"] }) {
+  const live = isActiveSubagentStatus(status);
+  const label = live ? "Working" : status === "completed" ? "Done" : STATUS_VISUALS[status].label;
+  return (
+    <span
+      className={cn(
+        "rounded-sm px-1 py-px text-[.65rem] font-medium",
+        live
+          ? "bg-info/15 text-info-foreground"
+          : status === "completed"
+            ? "bg-success/15 text-success-foreground"
+            : status === "failed"
+              ? "bg-destructive/15 text-destructive-foreground"
+              : "bg-muted text-muted-foreground",
+      )}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -119,30 +143,6 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   );
 }
 
-/**
- * Status-dependent activity line. Live rows lead with what is happening now;
- * settled rows lead with the outcome. Errors are the only inline previews on
- * failed rows because they explain a red row at a glance.
- */
-function agentActivityText(agent: RuntimeSubagent): string | null {
-  const live =
-    agent.status === "running" || agent.status === "pending" || agent.status === "waiting";
-  if (live) {
-    return (
-      agent.progress ??
-      (agent.lastToolName ? `▸ ${agent.lastToolName}` : null) ??
-      agent.result ??
-      agent.error
-    );
-  }
-  return (
-    agent.error ??
-    agent.result ??
-    agent.progress ??
-    (agent.lastToolName ? `▸ ${agent.lastToolName}` : null)
-  );
-}
-
 function agentRowStopProps(
   agent: RuntimeSubagent,
   onStopAgent: ((agentId: string) => void) | undefined,
@@ -156,15 +156,18 @@ function agentRowStopProps(
 }
 
 function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
+  const preview = formatAgentResultPreview(agent.result);
+  const tools = agent.recentActivity
+    .map((entry) => entry.summary.replace(/^▸\s+/, "").trim())
+    .filter((summary) => summary.length > 0);
   const hasDetail =
-    agent.error !== null ||
-    agent.result !== null ||
-    agent.outputFile !== null ||
-    agent.recentActivity.length > 0;
+    agent.error !== null || preview !== null || agent.outputFile !== null || tools.length > 0;
   if (!hasDetail) {
     return (
       <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
-        {isActiveSubagentStatus(agent.status) ? "No output yet." : "No result recorded."}
+        {isActiveSubagentStatus(agent.status)
+          ? "Still working. No output yet."
+          : "No result recorded."}
       </p>
     );
   }
@@ -175,25 +178,14 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
           {agent.error}
         </p>
       ) : null}
-      {agent.result ? (
-        <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">
-          {agent.result}
-        </p>
+      {preview ? (
+        <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">{preview}</p>
+      ) : null}
+      {tools.length > 0 ? (
+        <p className="text-[.65rem] text-muted-foreground">Did: {tools.slice(-6).join(" · ")}</p>
       ) : null}
       {agent.outputFile ? (
         <p className="truncate font-mono text-[.65rem] text-muted-foreground">{agent.outputFile}</p>
-      ) : null}
-      {agent.recentActivity.length > 0 ? (
-        <ol className="space-y-0.5">
-          {agent.recentActivity.map((entry, index) => (
-            <li
-              key={`${entry.at}-${index}`}
-              className="min-w-0 whitespace-pre-wrap break-words font-mono text-[.65rem] text-muted-foreground"
-            >
-              {entry.summary}
-            </li>
-          ))}
-        </ol>
       ) : null}
     </div>
   );
@@ -210,14 +202,17 @@ function AgentRow({
   stopping?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const visuals = STATUS_VISUALS[agent.status];
-  const activity = agentActivityText(agent);
+  const displayTitle = formatAgentDisplayTitle(agent);
+  const activity = formatAgentActivityLine(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
   const role =
-    agent.role?.trim().toLocaleLowerCase() === agent.title.trim().toLocaleLowerCase()
-      ? null
-      : agent.role;
+    agent.role &&
+    agent.role.trim().toLocaleLowerCase() !== displayTitle.trim().toLocaleLowerCase() &&
+    agent.role.trim().toLocaleLowerCase() !== agent.title.trim().toLocaleLowerCase()
+      ? agent.role.replace(/[_-]+/g, " ")
+      : null;
   const metadata = [
+    role,
     modelLabel,
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : "— tok",
     agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
@@ -244,15 +239,11 @@ function AgentRow({
           <StatusDot status={agent.status} />
         </CollapsibleTrigger>
         <CollapsibleTrigger className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-left">
-          <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
-          {role ? (
-            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
-              {role}
-            </span>
-          ) : null}
+          <span className="min-w-0 truncate text-sm font-medium">{displayTitle}</span>
         </CollapsibleTrigger>
         <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
           <span className="inline-flex items-center gap-1">
+            <StatusChip status={agent.status} />
             {onStop ? (
               <button
                 type="button"
@@ -275,9 +266,6 @@ function AgentRow({
               </button>
             ) : null}
             <AgentElapsed agent={agent} />
-            {agent.status === "completed" ? (
-              <Check aria-hidden className="size-3 text-success" />
-            ) : null}
           </span>
         </span>
         <CollapsibleTrigger
@@ -286,12 +274,12 @@ function AgentRow({
             agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
           )}
         >
-          {activity ?? visuals.label}
+          {activity}
         </CollapsibleTrigger>
         <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
           {metadata.join(" · ")}
         </span>
-        <span className="sr-only">{visuals.label}</span>
+        <span className="sr-only">{STATUS_VISUALS[agent.status].label}</span>
       </div>
       <CollapsiblePanel>
         <AgentDetail agent={agent} />
@@ -723,13 +711,57 @@ export function AgentsPanel({
               <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
                 Direct spawns
               </div>
-              {model.directAgents.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  {...agentRowStopProps(agent, onStopAgent, canStopAgent, stoppingAgentIds)}
-                />
-              ))}
+              {(() => {
+                const working = model.directAgents.filter((agent) =>
+                  isActiveSubagentStatus(agent.status),
+                );
+                const settled = model.directAgents.filter(
+                  (agent) => !isActiveSubagentStatus(agent.status),
+                );
+                return (
+                  <>
+                    {working.length > 0 ? (
+                      <div>
+                        <div className="px-1.5 pt-1 text-[.65rem] text-info-foreground">
+                          Working
+                        </div>
+                        {working.map((agent) => (
+                          <AgentRow
+                            key={agent.id}
+                            agent={agent}
+                            {...agentRowStopProps(
+                              agent,
+                              onStopAgent,
+                              canStopAgent,
+                              stoppingAgentIds,
+                            )}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                    {working.length > 0 && settled.length > 0 ? (
+                      <div className="mx-1.5 my-1 border-t border-border/60" />
+                    ) : null}
+                    {settled.length > 0 ? (
+                      <div>
+                        <div className="px-1.5 pt-1 text-[.65rem] text-muted-foreground">Done</div>
+                        {settled.map((agent) => (
+                          <AgentRow
+                            key={agent.id}
+                            agent={agent}
+                            {...agentRowStopProps(
+                              agent,
+                              onStopAgent,
+                              canStopAgent,
+                              stoppingAgentIds,
+                            )}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                );
+              })()}
             </section>
           ) : null}
         </div>

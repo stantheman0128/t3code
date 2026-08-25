@@ -192,9 +192,15 @@ export function resolveMarkdownFileLinkTarget(
     ? parseFileUrlHref(rawHref)
     : null;
   const source = fileUrlTarget ?? stripSearchAndHash(rawHref);
-  const decodedPath = normalizeWindowsDrivePath(
+  const decodedPathRaw = normalizeWindowsDrivePath(
     fileUrlTarget ? source.path.trim() : safeDecode(source.path.trim()),
   );
+  // Markdown hrefs keep Windows relative backslashes; the rest of the resolver
+  // only treats `/` as a path separator. Drive and UNC paths keep theirs.
+  const decodedPath =
+    WINDOWS_DRIVE_PATH_PATTERN.test(decodedPathRaw) || WINDOWS_UNC_PATH_PATTERN.test(decodedPathRaw)
+      ? decodedPathRaw
+      : decodedPathRaw.replaceAll("\\", "/");
   const decodedHash = safeDecode(source.hash.trim());
 
   if (decodedPath.length === 0) return null;

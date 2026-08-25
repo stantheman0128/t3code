@@ -132,6 +132,15 @@ describe("resolveMarkdownFileLinkTarget", () => {
     );
   });
 
+  it("resolves relative Windows backslash paths and #L anchors against cwd", () => {
+    expect(
+      resolveMarkdownFileLinkTarget(
+        String.raw`apps\web\src\markdown-links.ts#L12`,
+        String.raw`C:\Users\stans\project`,
+      ),
+    ).toBe(String.raw`C:\Users\stans\project\apps\web\src\markdown-links.ts:12`);
+  });
+
   it("does not treat filename line references as external schemes", () => {
     expect(resolveMarkdownFileLinkTarget("script.ts:10", "/Users/julius/project")).toBe(
       "/Users/julius/project/script.ts:10",

@@ -66,6 +66,39 @@ const testLayer = (input: {
   );
 };
 
+it.effect("hides Windows PowerShell when opening the default browser", () => {
+  let spawned: ChildProcess.StandardCommand | undefined;
+  return Effect.gen(function* () {
+    const launcher = yield* ExternalLauncher.ExternalLauncher;
+
+    yield* launcher.launchBrowser("https://example.com/some path");
+
+    assert.ok(spawned);
+    assert.equal(
+      spawned.command,
+      String.raw`C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`,
+    );
+    assert.equal(spawned.args.includes("-WindowStyle"), true);
+    assert.equal(spawned.args.includes("Hidden"), true);
+    assert.equal(
+      spawned.args.indexOf("-WindowStyle") < spawned.args.indexOf("-EncodedCommand"),
+      true,
+    );
+    assert.equal(spawned.options.detached, false);
+    assert.equal(spawned.options.shell, false);
+  }).pipe(
+    Effect.provide(
+      testLayer({
+        platform: "win32",
+        env: { SYSTEMROOT: String.raw`C:\WINDOWS` },
+        onSpawn: (command) => {
+          spawned = command;
+        },
+      }),
+    ),
+  );
+});
+
 it.effect("launches the default browser through the platform command", () => {
   let spawned: ChildProcess.StandardCommand | undefined;
   let didUnref = false;

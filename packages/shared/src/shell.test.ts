@@ -25,6 +25,8 @@ import {
   resolveWindowsEnvironment,
   SpawnExecutableResolution,
   WindowsShellEnvironment,
+  isWindowsPowerShellCommand,
+  withHiddenWindowsPowerShellArgs,
   type WindowsShellEnvironmentReader,
 } from "./shell.ts";
 
@@ -37,6 +39,41 @@ const withWindowsEnvironmentMocks = <A, E, R>(
     Effect.provideService(WindowsShellEnvironment, readEnvironment),
     Effect.provideService(CommandAvailability, commandAvailable),
   );
+
+describe("withHiddenWindowsPowerShellArgs", () => {
+  it("recognizes Windows PowerShell and pwsh command names", () => {
+    expect(isWindowsPowerShellCommand("powershell.exe")).toBe(true);
+    expect(
+      isWindowsPowerShellCommand(
+        String.raw`C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`,
+      ),
+    ).toBe(true);
+    expect(isWindowsPowerShellCommand("pwsh")).toBe(true);
+    expect(isWindowsPowerShellCommand("node.exe")).toBe(false);
+  });
+
+  it("inserts -WindowStyle Hidden before -Command without duplicating it", () => {
+    expect(
+      withHiddenWindowsPowerShellArgs(["-NoProfile", "-NonInteractive", "-Command", "Get-Process"]),
+    ).toEqual([
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-Command",
+      "Get-Process",
+    ]);
+    expect(
+      withHiddenWindowsPowerShellArgs([
+        "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
+        "-Command",
+        "Get-Process",
+      ]),
+    ).toEqual(["-NoProfile", "-WindowStyle", "Hidden", "-Command", "Get-Process"]);
+  });
+});
 
 describe("extractPathFromShellOutput", () => {
   it("extracts the path between capture markers", () => {
@@ -282,9 +319,18 @@ describe("readEnvironmentFromWindowsShell", () => {
     });
     expect(execFile).toHaveBeenCalledWith(
       "pwsh.exe",
-      expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
+      expect.arrayContaining([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-Command",
+      ]),
       { encoding: "utf8", timeout: 5000, windowsHide: true, windowsUseConpty: false },
     );
+    const probeArgs = execFile.mock.calls[0]?.[1] ?? [];
+    expect(probeArgs.indexOf("-WindowStyle")).toBeLessThan(probeArgs.indexOf("-Command"));
   });
 
   it("strips CRLF delimiters from captured PowerShell values", () => {
@@ -328,7 +374,7 @@ describe("readEnvironmentFromWindowsShell", () => {
     });
     expect(execFile).toHaveBeenCalledWith(
       "pwsh.exe",
-      expect.arrayContaining(["-NoLogo", "-NonInteractive", "-Command"]),
+      expect.arrayContaining(["-NoLogo", "-NonInteractive", "-WindowStyle", "Hidden", "-Command"]),
       { encoding: "utf8", timeout: 5000, windowsHide: true, windowsUseConpty: false },
     );
     expect(execFile.mock.calls[0]?.[1]).not.toContain("-NoProfile");
@@ -445,6 +491,29 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
       expect(command).toEqual({
         command: "node.exe",
         args: ["script.js", "hello & goodbye"],
+        shell: false,
+      });
+    }),
+  );
+
+  it.effect("hides Windows PowerShell consoles for background spawns", () =>
+    Effect.gen(function* () {
+      const command = yield* resolveSpawnCommand(
+        String.raw`C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`,
+        ["-NoProfile", "-NonInteractive", "-Command", "Get-NetTCPConnection"],
+        { env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" } },
+      ).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+
+      expect(command).toEqual({
+        command: String.raw`C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`,
+        args: [
+          "-NoProfile",
+          "-NonInteractive",
+          "-WindowStyle",
+          "Hidden",
+          "-Command",
+          "Get-NetTCPConnection",
+        ],
         shell: false,
       });
     }),

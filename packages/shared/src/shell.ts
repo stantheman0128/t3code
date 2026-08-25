@@ -388,13 +388,13 @@ export function readEnvironmentFromWindowsShell(
       ? optionsOrExecFile
       : (maybeExecFile ?? (NodeChildProcess.execFileSync as ExecFileSyncLike));
   const command = buildWindowsEnvironmentCaptureCommand(names);
-  const args = [
+  const args = withHiddenWindowsPowerShellArgs([
     "-NoLogo",
     ...(options.loadProfile ? ([] as const) : (["-NoProfile"] as const)),
     "-NonInteractive",
     "-Command",
     command,
-  ];
+  ]);
   for (const shell of WINDOWS_SHELL_CANDIDATES) {
     try {
       const output = execFile(shell, args, hiddenExecFileOptions(5000));
@@ -647,7 +647,50 @@ export const resolveCommandPath = Effect.fn("shell.resolveCommandPath")(function
 });
 
 const POWERSHELL_EXE_PATTERN = /powershell(?:\.exe)?$/i;
+const WINDOWS_POWERSHELL_COMMAND_PATTERN = /(?:^|[\\/])(?:pwsh|powershell)(?:\.exe)?$/i;
+const POWERSHELL_SCRIPT_SWITCH_PATTERN =
+  /^(?:[-/](?:Command|EncodedCommand|File)(?:$|:)|[-/](?:c|f|e|ec)$)/i;
 const QUOTED_EXE_WITH_STAR_ARGS = /"([^"\r\n]+\.exe)"\s+%\*/i;
+
+export function isWindowsPowerShellCommand(command: string): boolean {
+  return WINDOWS_POWERSHELL_COMMAND_PATTERN.test(command.replace(/^"+|"+$/g, ""));
+}
+
+function hasHiddenWindowStyle(args: ReadonlyArray<string>): boolean {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) continue;
+    if (/^(?:[-/]WindowStyle:Hidden)$/i.test(arg)) {
+      return true;
+    }
+    if (
+      /^(?:[-/]WindowStyle)$/i.test(arg) &&
+      args[index + 1] !== undefined &&
+      /^Hidden$/i.test(args[index + 1])
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * PowerShell is a console-subsystem exe. Windows 11's default terminal still
+ * opens a tab titled with the powershell.exe path unless the process is told
+ * to hide its window. `windowsHide` / CREATE_NO_WINDOW is also ignored when
+ * the spawn uses DETACHED_PROCESS.
+ */
+export function withHiddenWindowsPowerShellArgs(args: ReadonlyArray<string>): Array<string> {
+  if (hasHiddenWindowStyle(args)) {
+    return [...args];
+  }
+  const hidden = ["-WindowStyle", "Hidden"] as const;
+  const scriptIndex = args.findIndex((arg) => POWERSHELL_SCRIPT_SWITCH_PATTERN.test(arg));
+  if (scriptIndex === -1) {
+    return [...hidden, ...args];
+  }
+  return [...args.slice(0, scriptIndex), ...hidden, ...args.slice(scriptIndex)];
+}
 
 function expandWindowsCmdDirectoryVars(text: string, cmdPath: string): string {
   const directory = NodePath.win32.dirname(cmdPath);
@@ -712,7 +755,13 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
   const resolvedCommand = resolveExecutable(command, platform, env) ?? command;
   const extension = NodePath.win32.extname(resolvedCommand).toLowerCase();
   if (extension !== ".cmd" && extension !== ".bat") {
-    return { command: resolvedCommand, args: [...args], shell: false };
+    return {
+      command: resolvedCommand,
+      args: isWindowsPowerShellCommand(resolvedCommand)
+        ? withHiddenWindowsPowerShellArgs(args)
+        : [...args],
+      shell: false,
+    };
   }
 
   const unwrapped = tryUnwrapWindowsCmdShim(resolvedCommand, args);

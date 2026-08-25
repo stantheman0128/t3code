@@ -313,6 +313,12 @@ describe("DesktopShellEnvironment", () => {
         platform: "win32",
         handler: (command) => {
           if (command._tag !== "StandardCommand") return "";
+          assert.equal(command.args.includes("-WindowStyle"), true);
+          assert.equal(command.args.includes("Hidden"), true);
+          assert.equal(
+            command.args.indexOf("-WindowStyle") < command.args.indexOf("-Command"),
+            true,
+          );
           const loadProfile = !command.args.includes("-NoProfile");
           return loadProfile
             ? envOutput({

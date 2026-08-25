@@ -18,7 +18,11 @@ import {
   type LaunchEditorInput,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
+import {
+  isCommandAvailable,
+  resolveSpawnCommand,
+  withHiddenWindowsPowerShellArgs,
+} from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -212,9 +216,11 @@ function resolveWindowsBrowserLaunch(target: string, command: string): ProcessLa
   );
   return {
     command,
-    args: [...POWERSHELL_ARGUMENTS_PREFIX, encodedCommand],
+    args: withHiddenWindowsPowerShellArgs([...POWERSHELL_ARGUMENTS_PREFIX, encodedCommand]),
     options: {
-      detached: true,
+      // DETACHED_PROCESS voids CREATE_NO_WINDOW. A detached powershell.exe is
+      // what Windows Terminal titles `...\WindowsPowerShell\v1.0\powershell.exe`.
+      detached: false,
       shell: false,
       stdin: "ignore",
       stdout: "ignore",

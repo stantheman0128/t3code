@@ -8,6 +8,8 @@ import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
+import { withHiddenWindowsPowerShellArgs } from "@t3tools/shared/shell";
+
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 type EnvironmentPatch = Record<string, string>;
@@ -355,13 +357,13 @@ const readWindowsEnvironment = Effect.fn("desktop.shellEnvironment.readWindowsEn
   ): Effect.fn.Return<EnvironmentPatch, never, ChildProcessSpawner.ChildProcessSpawner> {
     if (names.length === 0) return {};
 
-    const args = [
+    const args = withHiddenWindowsPowerShellArgs([
       "-NoLogo",
       ...(options.loadProfile ? ([] as const) : (["-NoProfile"] as const)),
       "-NonInteractive",
       "-Command",
       captureWindowsEnvironmentCommand(names),
-    ];
+    ]);
 
     for (const command of WINDOWS_SHELL_CANDIDATES) {
       const output = yield* runCommandOutput({

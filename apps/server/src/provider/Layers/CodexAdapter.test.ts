@@ -10,12 +10,12 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderItemId,
+  RuntimeTaskId,
   type ProviderApprovalDecision,
   type ProviderEvent,
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
-  RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -33,6 +33,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
@@ -88,14 +89,6 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
   );
 
-  public readonly interruptTaskImpl = vi.fn(
-    (_taskId: RuntimeTaskId): Promise<void> => Promise.resolve(undefined),
-  );
-
-  public readonly applyGoalCommandImpl = vi.fn(
-    (_command: unknown): Promise<void> => Promise.resolve(undefined),
-  );
-
   public readonly readThreadImpl = vi.fn(
     (): Promise<CodexThreadSnapshot> =>
       Promise.resolve({
@@ -110,6 +103,18 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
         threadId: "provider-thread-1",
         turns: [],
       }),
+  );
+
+  public readonly uploadFeedbackImpl = vi.fn((_reason?: string) =>
+    Promise.resolve({ threadId: "provider-thread-1" }),
+  );
+
+  public readonly interruptTaskImpl = vi.fn(
+    (_taskId: RuntimeTaskId): Promise<void> => Promise.resolve(undefined),
+  );
+
+  public readonly applyGoalCommandImpl = vi.fn(
+    (_command: unknown): Promise<void> => Promise.resolve(undefined),
   );
 
   public readonly respondToRequestImpl = vi.fn(
@@ -148,7 +153,7 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     return Effect.promise(() => this.interruptTaskImpl(taskId));
   }
 
-  applyGoalCommand(command: Parameters<CodexSessionRuntimeShape["applyGoalCommand"]>[0]) {
+  applyGoalCommand(command: unknown) {
     return Effect.promise(() => this.applyGoalCommandImpl(command));
   }
 
@@ -156,6 +161,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   rollbackThread(numTurns: number) {
     return Effect.promise(() => this.rollbackThreadImpl(numTurns));
+  }
+
+  uploadFeedback(reason?: string) {
+    return Effect.promise(() => this.uploadFeedbackImpl(reason));
   }
 
   respondToRequest(requestId: ApprovalRequestId, decision: ProviderApprovalDecision) {
@@ -344,47 +353,39 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }),
   );
 
-  it.effect("forwards interruptTask to the session runtime", () =>
+  it.effect("uploads feedback for the active Codex thread", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("thread-feedback");
       yield* adapter.startSession({
         provider: ProviderDriverKind.make("codex"),
-        threadId: asThreadId("sess-task-stop"),
+        threadId,
         runtimeMode: "full-access",
       });
       const runtime = sessionRuntimeFactory.lastRuntime;
       NodeAssert.ok(runtime);
-      const taskId = RuntimeTaskId.make("agent-thread-1");
-      const interruptTask = adapter.interruptTask;
-      NodeAssert.ok(interruptTask);
-      yield* interruptTask(asThreadId("sess-task-stop"), taskId);
-      NodeAssert.equal(runtime.interruptTaskImpl.mock.calls.length, 1);
-      NodeAssert.equal(runtime.interruptTaskImpl.mock.calls[0]?.[0], taskId);
+
+      const result = yield* adapter.uploadFeedback({
+        threadId,
+        reason: "The agent stopped early.",
+      });
+
+      NodeAssert.deepStrictEqual(result, { feedbackId: "provider-thread-1" });
+      NodeAssert.deepStrictEqual(runtime.uploadFeedbackImpl.mock.calls, [
+        ["The agent stopped early."],
+      ]);
     }),
   );
 
-  it.effect("applies /goal before sending the objective as the turn", () =>
+  it.effect("rejects feedback for an unknown Codex thread", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
-      yield* adapter.startSession({
-        provider: ProviderDriverKind.make("codex"),
-        threadId: asThreadId("sess-goal"),
-        runtimeMode: "full-access",
-      });
-      const runtime = sessionRuntimeFactory.lastRuntime;
-      NodeAssert.ok(runtime);
-      runtime.sendTurnImpl.mockClear();
-      yield* adapter.sendTurn({
-        threadId: asThreadId("sess-goal"),
-        input: "/goal Keep tests green",
-        attachments: [],
-      });
-      NodeAssert.deepStrictEqual(runtime.applyGoalCommandImpl.mock.calls[0]?.[0], {
-        kind: "set",
-        objective: "Keep tests green",
-        tokenBudget: null,
-      });
-      NodeAssert.equal(runtime.sendTurnImpl.mock.calls[0]?.[0]?.input, "Keep tests green");
+      const result = yield* adapter
+        .uploadFeedback({ threadId: asThreadId("thread-feedback-missing") })
+        .pipe(Effect.result);
+
+      NodeAssert.equal(result._tag, "Failure");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterSessionNotFoundError");
     }),
   );
 
@@ -573,6 +574,67 @@ function startLifecycleRuntime() {
 }
 
 lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
+  it.effect("does not reactivate an idle child after a parent interaction", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 3)).pipe(
+        Effect.forkChild,
+      );
+
+      const childEvent = (id: string, method: string, payload: Record<string, unknown>) => ({
+        id: asEventId(id),
+        kind: "notification" as const,
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method,
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        payload,
+      });
+
+      yield* runtime.emit(
+        childEvent("evt-child-running", "collabAgent/turnStarted", {
+          agentThreadId: "child-1",
+          agentPath: "/root/audit",
+        }),
+      );
+      yield* runtime.emit(
+        childEvent("evt-child-idle", "collabAgent/turnCompleted", {
+          agentThreadId: "child-1",
+          agentPath: "/root/audit",
+          turn: { status: "completed" },
+        }),
+      );
+      yield* runtime.emit(
+        childEvent("evt-child-interacted", "collabAgent/activity", {
+          agentThreadId: "child-1",
+          agentPath: "/root/audit",
+          activityKind: "interacted",
+        }),
+      );
+      yield* runtime.emit(
+        childEvent("evt-other-child-running", "collabAgent/turnStarted", {
+          agentThreadId: "child-2",
+          agentPath: "/root/other",
+        }),
+      );
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      NodeAssert.deepStrictEqual(
+        events.map((event) =>
+          event.type === "task.updated"
+            ? { taskId: event.payload.taskId, status: event.payload.status }
+            : { type: event.type },
+        ),
+        [
+          { taskId: "child-1", status: "running" },
+          { taskId: "child-1", status: "idle" },
+          { taskId: "child-2", status: "running" },
+        ],
+      );
+    }),
+  );
+
   it.effect("maps completed agent message items to canonical item.completed events", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
@@ -671,6 +733,66 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           status: "completed",
         },
       });
+    }),
+  );
+
+  it.effect("preserves failed and declined outcomes on completed tool items", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const items = [
+        {
+          type: "commandExecution",
+          id: "failed-command",
+          command: "vp test run",
+          commandActions: [],
+          cwd: "/tmp",
+          exitCode: 1,
+          status: "failed",
+        },
+        {
+          type: "mcpToolCall",
+          id: "failed-mcp",
+          server: "simulator",
+          tool: "build",
+          arguments: {},
+          error: { message: "Build failed" },
+          status: "failed",
+        },
+        {
+          type: "fileChange",
+          id: "declined-change",
+          changes: [],
+          status: "declined",
+        },
+      ] as const;
+
+      for (const item of items) {
+        const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+        yield* runtime.emit({
+          id: asEventId(`evt-${item.id}`),
+          kind: "notification",
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          method: "item/completed",
+          threadId: asThreadId("thread-1"),
+          turnId: asTurnId("turn-1"),
+          itemId: asItemId(item.id),
+          payload: {
+            completedAtMs: 1_778_000_000_000,
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item,
+          },
+        });
+
+        const firstEvent = yield* Fiber.join(firstEventFiber);
+        NodeAssert.equal(firstEvent._tag, "Some");
+        if (firstEvent._tag !== "Some" || firstEvent.value.type !== "item.completed") {
+          return;
+        }
+        NodeAssert.equal(firstEvent.value.payload.status, item.status);
+      }
     }),
   );
 
@@ -961,6 +1083,79 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("maps MCP elicitation requests into app access approvals", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-elicitation"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-08-24T00:00:00.000Z",
+        method: "mcpServer/elicitation/request",
+        requestKind: "mcp-elicitation",
+        requestId: ApprovalRequestId.make("req-safari"),
+        turnId: asTurnId("turn-1"),
+        payload: {
+          mode: "form",
+          message: "Allow ChatGPT to use Safari?",
+          serverName: "computer-use",
+          threadId: "provider-thread-1",
+          turnId: "turn-1",
+          _meta: { app_name: "Safari", persist: ["session", "always"] },
+          requestedSchema: { type: "object", properties: {} },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "request.opened") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.requestType, "mcp_elicitation_approval");
+      NodeAssert.equal(firstEvent.value.payload.appName, "Safari");
+      NodeAssert.equal(firstEvent.value.payload.detail, "Allow ChatGPT to use Safari?");
+      NodeAssert.deepStrictEqual(firstEvent.value.payload.options, [
+        { decision: "cancel", label: "Cancel" },
+        { decision: "decline", label: "Decline" },
+        { decision: "acceptForSession", label: "Always allow this session" },
+        { decision: "acceptAlways", label: "Always allow" },
+        { decision: "accept", label: "Approve" },
+      ]);
+    }),
+  );
+
+  it.effect("preserves MCP elicitation type when an app access request resolves", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-elicitation-resolved"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-08-24T00:00:00.000Z",
+        method: "item/requestApproval/decision",
+        requestKind: "mcp-elicitation",
+        requestId: ApprovalRequestId.make("req-safari"),
+        payload: { decision: "acceptAlways" },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "request.resolved") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.requestType, "mcp_elicitation_approval");
+      NodeAssert.equal(firstEvent.value.payload.decision, "acceptAlways");
+    }),
+  );
+
   it.effect("preserves file-read request type when mapping serverRequest/resolved", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
@@ -1210,6 +1405,63 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         compactsAutomatically: true,
       });
     }),
+  );
+
+  // Production calls startSession from a request fiber that finishes as soon as
+  // the session exists. `Effect.forkChild` made the runtime event consumer a
+  // child of that fiber, and Effect interrupts a fiber's children when it
+  // completes, so the consumer died on return and every event the session
+  // emitted afterwards was dropped. The other tests here start the session from
+  // the test fiber, which never completes, so the consumer survived and the bug
+  // stayed invisible. Starting it in a fiber that finishes reproduces
+  // production.
+  it.effect("keeps consuming runtime events after the startSession fiber completes", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const startSessionFiber = yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("thread-outlives-start"),
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Fiber.join(startSessionFiber);
+
+      const runtime = lifecycleRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+      yield* runtime.emit({
+        id: asEventId("evt-after-start-session"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        threadId: asThreadId("thread-outlives-start"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("msg_after_start"),
+        payload: {
+          completedAtMs: 1_778_000_000_000,
+          threadId: "thread-outlives-start",
+          turnId: "turn-1",
+          item: {
+            type: "agentMessage",
+            id: "msg_after_start",
+            text: "emitted after startSession returned",
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber).pipe(Effect.timeout("10 seconds"));
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "item.completed");
+      // Live clock so the timeout above is real: under the default test clock it
+      // waits on virtual time that never advances, and a regression would hang
+      // until the suite timeout instead of failing here.
+    }).pipe(TestClock.withLive),
   );
 });
 

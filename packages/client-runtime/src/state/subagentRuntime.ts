@@ -17,7 +17,7 @@
  * folding (completion can create an agent; a late start only fills
  * metadata).
  */
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import { PANEL_BACKGROUND_TASK_TYPES, type OrchestrationThreadActivity } from "@t3tools/contracts";
 
 export type RuntimeSubagentStatus =
   | "pending"
@@ -58,7 +58,7 @@ export interface SubagentRunHandles {
 
 export interface RuntimeSubagent {
   readonly id: string;
-  readonly kind: "subagent" | "workflow" | "workflow_agent";
+  readonly kind: "subagent" | "workflow" | "workflow_agent" | "monitor" | "scheduled";
   readonly title: string;
   readonly role: string | null;
   readonly model: string | null;
@@ -143,6 +143,19 @@ const ROSTER_LIMIT = 100;
  */
 export function isBackgroundTaskActivity(payload: Record<string, unknown>): boolean {
   return payload.agentKind !== "agent";
+}
+
+function panelBackgroundTaskType(payload: Record<string, unknown>): string | undefined {
+  const taskType = asString(payload.taskType);
+  if (taskType !== undefined && PANEL_BACKGROUND_TASK_TYPES.has(taskType)) {
+    return taskType;
+  }
+  return undefined;
+}
+
+/** Shells/plan stay in the work log. Monitors and /loop rows belong on Agents. */
+function isHiddenBackgroundTask(payload: Record<string, unknown>): boolean {
+  return isBackgroundTaskActivity(payload) && panelBackgroundTaskType(payload) === undefined;
 }
 
 function bounded(value: string): string {
@@ -244,6 +257,8 @@ export function formatAgentDisplayTitle(agent: RuntimeSubagent): string {
     if (fromActivity) return fromActivity;
   }
   if (agent.role) return humanizeAgentLabel(agent.role);
+  if (agent.kind === "scheduled") return "Scheduled";
+  if (agent.kind === "monitor") return "Monitor";
   return "Subagent";
 }
 
@@ -258,7 +273,7 @@ export function formatAgentActivityLine(agent: RuntimeSubagent): string {
   if (agent.status === "completed") return "Done";
   if (agent.status === "failed") return "Failed";
   if (agent.status === "cancelled" || agent.status === "interrupted") return "Stopped";
-  if (agent.status === "idle") return "Idle";
+  if (agent.status === "idle") return extractAgentHeadline(agent.progress) ?? "Idle";
   return "Done";
 }
 
@@ -396,6 +411,13 @@ function kindFromPayload(
   if (asString(payload.taskType) === "local_workflow") {
     return "workflow";
   }
+  const panelType = panelBackgroundTaskType(payload);
+  if (panelType === "loop") {
+    return "scheduled";
+  }
+  if (panelType === "monitor" || panelType === "monitor_mcp") {
+    return "monitor";
+  }
   if (payload.parentAgentId !== undefined || agentId.includes(":wf:")) {
     return "workflow_agent";
   }
@@ -466,6 +488,10 @@ function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): vo
   const workflowName = asString(payload.workflowName);
   if (workflowName) agent.workflowName = workflowName;
   if (asString(payload.taskType) === "local_workflow") agent.kind = "workflow";
+  if (asString(payload.taskType) === "loop") agent.kind = "scheduled";
+  if (asString(payload.taskType) === "monitor" || asString(payload.taskType) === "monitor_mcp") {
+    agent.kind = "monitor";
+  }
   const agentIndex = asCount(payload.agentIndex);
   if (agentIndex !== undefined) agent.agentIndex = agentIndex;
   const phaseIndex = asCount(payload.phaseIndex);
@@ -612,7 +638,7 @@ export function foldSubagentActivities(
         // Only real agents join the roster. Shells, monitors, and plan-mode
         // tasks are background work — they render in the ordinary work log,
         // not the Agents surface (a "Run 12s stall" shell is not a subagent).
-        if (isBackgroundTaskActivity(payload)) break;
+        if (isHiddenBackgroundTask(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
         // Order-robustness: a start row arriving after a terminal state is a
@@ -641,7 +667,7 @@ export function foldSubagentActivities(
         // rows often carry only taskId+status, no marker fields) inherit the
         // first row's classification instead of being re-judged.
         const existed = agents.has(taskId);
-        if (!existed && isBackgroundTaskActivity(payload)) break;
+        if (!existed && isHiddenBackgroundTask(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
         if (agent.activationCount === 0) agent.activationCount = 1;
@@ -679,7 +705,7 @@ export function foldSubagentActivities(
         // Membership is sticky per taskId: rows after the first (terminal
         // rows often carry only taskId+status, no marker fields) inherit the
         // first row's classification instead of being re-judged.
-        if (!agents.has(taskId) && isBackgroundTaskActivity(payload)) break;
+        if (!agents.has(taskId) && isHiddenBackgroundTask(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
         // A task first seen via task.updated (start row aged out) has run at
@@ -707,7 +733,7 @@ export function foldSubagentActivities(
         // Membership is sticky per taskId: rows after the first (terminal
         // rows often carry only taskId+status, no marker fields) inherit the
         // first row's classification instead of being re-judged.
-        if (!agents.has(taskId) && isBackgroundTaskActivity(payload)) break;
+        if (!agents.has(taskId) && isHiddenBackgroundTask(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
         if (agent.activationCount === 0) agent.activationCount = 1;
@@ -828,6 +854,7 @@ export interface AgentPanelWorkflowGroup {
 export interface AgentPanelModel {
   readonly workflows: ReadonlyArray<AgentPanelWorkflowGroup>;
   readonly directAgents: ReadonlyArray<RuntimeSubagent>;
+  readonly background: ReadonlyArray<RuntimeSubagent>;
   readonly runningCount: number;
   readonly waitingCount: number;
   readonly idleCount: number;
@@ -840,6 +867,7 @@ export interface AgentPanelModel {
 const EMPTY_PANEL_MODEL: AgentPanelModel = {
   workflows: [],
   directAgents: [],
+  background: [],
   runningCount: 0,
   waitingCount: 0,
   idleCount: 0,
@@ -878,9 +906,14 @@ export function deriveAgentPanelModel({
   const workflowIds = new Set(workflows.map((workflow) => workflow.id));
   const members = new Map<string, RuntimeSubagent[]>();
   const direct: RuntimeSubagent[] = [];
+  const background: RuntimeSubagent[] = [];
 
   for (const agent of source) {
     if (agent.kind === "workflow") {
+      continue;
+    }
+    if (agent.kind === "monitor" || agent.kind === "scheduled") {
+      background.push(agent);
       continue;
     }
     if (agent.parentAgentId !== null && workflowIds.has(agent.parentAgentId)) {
@@ -979,6 +1012,7 @@ export function deriveAgentPanelModel({
     // Live rows float to the top; first-seen order is the tiebreaker inside
     // a liveness band so in-flight agents do not jump among themselves.
     directAgents: direct.slice().sort(compareAgentsByLiveThenSeen),
+    background: background.slice().sort(compareAgentsByLiveThenSeen),
     runningCount,
     waitingCount,
     idleCount,

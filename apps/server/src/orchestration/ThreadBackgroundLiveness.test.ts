@@ -28,6 +28,18 @@ describe("ThreadBackgroundLiveness", () => {
     expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
   });
 
+  it("idle scheduled loops do not pin Monitoring", () => {
+    const liveness = ThreadBackgroundLiveness.make();
+    liveness.recordTaskLiveness({
+      threadId: "thread",
+      taskId: "loop-1",
+      taskType: "loop",
+      status: "idle",
+      kind: "updated",
+    });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+  });
+
   it("agents present as working; monitors as monitoring; agents win", () => {
     const liveness = ThreadBackgroundLiveness.make();
     const threadId = "t-live-1";

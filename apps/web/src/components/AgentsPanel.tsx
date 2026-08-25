@@ -68,18 +68,27 @@ function StatusDot({ status }: { status: RuntimeSubagent["status"] }) {
   );
 }
 
-function StatusChip({ status }: { status: RuntimeSubagent["status"] }) {
-  const live = isActiveSubagentStatus(status);
-  const label = live ? "Working" : status === "completed" ? "Done" : STATUS_VISUALS[status].label;
+function StatusChip({ agent }: { agent: RuntimeSubagent }) {
+  const live = isActiveSubagentStatus(agent.status);
+  const label =
+    agent.kind === "scheduled" && agent.status === "idle"
+      ? "Scheduled"
+      : agent.kind === "monitor" && live
+        ? "Monitoring"
+        : live
+          ? "Working"
+          : agent.status === "completed"
+            ? "Done"
+            : STATUS_VISUALS[agent.status].label;
   return (
     <span
       className={cn(
         "rounded-sm px-1 py-px text-[.65rem] font-medium",
         live
           ? "bg-info/15 text-info-foreground"
-          : status === "completed"
+          : agent.status === "completed"
             ? "bg-success/15 text-success-foreground"
-            : status === "failed"
+            : agent.status === "failed"
               ? "bg-destructive/15 text-destructive-foreground"
               : "bg-muted text-muted-foreground",
       )}
@@ -144,13 +153,29 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   );
 }
 
+function isStoppablePanelAgent(agent: RuntimeSubagent): boolean {
+  if (isActiveSubagentStatus(agent.status)) {
+    return true;
+  }
+  if (
+    (agent.kind === "scheduled" || agent.kind === "monitor") &&
+    agent.status !== "completed" &&
+    agent.status !== "failed" &&
+    agent.status !== "cancelled" &&
+    agent.status !== "interrupted"
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function agentRowStopProps(
   agent: RuntimeSubagent,
   onStopAgent: ((agentId: string) => void) | undefined,
   canStopAgent: boolean,
   stoppingAgentIds: ReadonlySet<string>,
 ): { onStop: () => void; stopping: boolean } | Record<string, never> {
-  if (!canStopAgent || !onStopAgent || !isActiveSubagentStatus(agent.status)) {
+  if (!canStopAgent || !onStopAgent || !isStoppablePanelAgent(agent)) {
     return {};
   }
   return { onStop: () => onStopAgent(agent.id), stopping: stoppingAgentIds.has(agent.id) };
@@ -244,7 +269,7 @@ function AgentRow({
         </CollapsibleTrigger>
         <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
           <span className="inline-flex items-center gap-1">
-            <StatusChip status={agent.status} />
+            <StatusChip agent={agent} />
             {onStop ? (
               <button
                 type="button"
@@ -686,8 +711,8 @@ export function AgentsPanel({
         <Bot aria-hidden className="size-6 text-muted-foreground/60" />
         <p className="text-sm font-medium">No agents yet</p>
         <p className="max-w-56 text-xs text-muted-foreground">
-          When this thread spawns subagents or runs a workflow, they show up here with live status,
-          activity, and token usage.
+          When this thread spawns subagents, runs a workflow, or has a monitor or schedule, they
+          show up here with live status, activity, and token usage.
         </p>
       </div>
     );
@@ -708,6 +733,20 @@ export function AgentsPanel({
               stoppingAgentIds={stoppingAgentIds}
             />
           ))}
+          {model.background.length > 0 ? (
+            <section>
+              <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                Scheduled / Monitoring
+              </div>
+              {model.background.map((agent) => (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  {...agentRowStopProps(agent, onStopAgent, canStopAgent, stoppingAgentIds)}
+                />
+              ))}
+            </section>
+          ) : null}
           {model.directAgents.length > 0 ? (
             <section>
               <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">

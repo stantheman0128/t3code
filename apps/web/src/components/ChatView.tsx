@@ -4700,6 +4700,7 @@ function ChatViewContent(props: ChatViewProps) {
         if (isActiveSubagentStatus(agent.status)) stillActive.add(agent.id);
       };
       for (const agent of agentPanelModel.directAgents) visit(agent);
+      for (const agent of agentPanelModel.background) visit(agent);
       for (const group of agentPanelModel.workflows) {
         visit(group.workflow);
         for (const phase of group.phases) {
@@ -4751,7 +4752,9 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThread, environmentId, interruptThreadTurn, setThreadError],
   );
   const canStopAgent =
-    activeProviderStatus?.driver === "claudeAgent" || activeProviderStatus?.driver === "codex";
+    activeProviderStatus?.driver === "claudeAgent" ||
+    activeProviderStatus?.driver === "codex" ||
+    activeProviderStatus?.driver === "grok";
   const handleStopBackgroundWork = useCallback(async () => {
     if (!activeThread) return;
     setIsStoppingBackgroundWork(true);

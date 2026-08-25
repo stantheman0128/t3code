@@ -105,14 +105,19 @@ import {
   GROK_SESSION_NOTIFICATION_METHODS,
   XAiQueueChangedNotification,
   grokAutoCompactEvents,
+  grokBackgroundInterruptRequest,
   grokBackgroundTaskEvents,
   grokHookEvents,
+  grokMonitorEventEvents,
   grokQueueChangedEvents,
+  grokScheduledTaskEvents,
   grokSessionRecapEvents,
   parseXAiAutoCompact,
   parseXAiBackgroundTask,
   parseXAiHookExecution,
+  parseXAiMonitorEvent,
   parseXAiQueueChanged,
+  parseXAiScheduledTask,
   parseXAiSessionRecap,
   parseXAiTurnCompletedUsage,
   type GrokExtraEventSpec,
@@ -179,6 +184,7 @@ interface GrokSessionContext {
   availableModelIds: ReadonlyArray<string>;
   workflowTrack: GrokWorkflowTrackState;
   readonly toolUpdateGates: Map<string, GrokToolUpdateGate>;
+  readonly scheduledTaskIds: Set<string>;
   stopped: boolean;
 }
 
@@ -925,6 +931,33 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 });
                 return;
               }
+              const scheduled = parseXAiScheduledTask(params);
+              if (scheduled) {
+                if (scheduled.kind === "created") {
+                  ctx.scheduledTaskIds.add(scheduled.taskId);
+                } else if (scheduled.kind === "deleted") {
+                  ctx.scheduledTaskIds.delete(scheduled.taskId);
+                }
+                yield* emitGrokExtraSpecs({
+                  threadId: input.threadId,
+                  turnId,
+                  method,
+                  payload: params,
+                  specs: grokScheduledTaskEvents(scheduled),
+                });
+                return;
+              }
+              const monitorEvent = parseXAiMonitorEvent(params);
+              if (monitorEvent) {
+                yield* emitGrokExtraSpecs({
+                  threadId: input.threadId,
+                  turnId,
+                  method,
+                  payload: params,
+                  specs: grokMonitorEventEvents(monitorEvent),
+                });
+                return;
+              }
               const turnCompleted = parseXAiTurnCompletedUsage(
                 params,
                 ctx.maxTokens,
@@ -1241,6 +1274,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             availableModelIds,
             workflowTrack: emptyGrokWorkflowTrackState(),
             toolUpdateGates: new Map(),
+            scheduledTaskIds: new Set(),
             stopped: false,
           };
 
@@ -1811,6 +1845,23 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         );
       });
 
+    const interruptTask: GrokAdapterShape["interruptTask"] = (threadId, taskId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireSession(threadId);
+        const request = grokBackgroundInterruptRequest(
+          ctx.acpSessionId,
+          String(taskId),
+          ctx.scheduledTaskIds,
+        );
+        yield* ctx.acp
+          .request(request.method, request.payload)
+          .pipe(
+            Effect.mapError((error) =>
+              mapAcpToAdapterError(PROVIDER, threadId, request.method, error),
+            ),
+          );
+      });
+
     const interruptTurn: GrokAdapterShape["interruptTurn"] = (threadId, turnId) =>
       Effect.gen(function* () {
         const observed = yield* Effect.sync(() => {
@@ -2112,6 +2163,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
       startSession,
       sendTurn,
       interruptTurn,
+      interruptTask,
       readThread,
       rollbackThread,
       respondToRequest,

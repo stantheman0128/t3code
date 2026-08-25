@@ -83,7 +83,8 @@ is millions. Billed tokens still appear as total processed when they are larger 
 the window.
 
 The Usage page scans `~/.grok/sessions/**/updates.jsonl` the same way it reads Claude and
-Codex transcripts. Complete PromptUsage rows contribute token totals and, when
+Codex transcripts. Sessions whose working directory is your home folder are skipped, so a
+home-directory session dump cannot stall the page. Complete PromptUsage rows contribute token totals and, when
 `costUsdTicks` is present and the bill is not marked incomplete, a dollar amount
 (1e10 ticks = $1). Incomplete bills stay on the token side and never become $0.
 
@@ -93,7 +94,12 @@ bill is complete, T3 attaches `totalCostUsd` to the turn. Auto-compact notificat
 (`compactsAutomatically`) and mark the thread compacted, matching Claude's
 compact boundary. Session recap lands on thread metadata, not the title.
 Hook runs and background shells use the same `hook.*` and `local_bash` task
-events as Claude. Queued prompts (`_x.ai/queue/changed`) update session state
+events as Claude. Grok `/loop` and `monitor` updates (`scheduled_task_created` /
+`fired` / `deleted`, `monitor_event`) land on the Agents panel as Scheduled /
+Monitoring rows — not mixed with subagents, and not as a third UI. Waiting
+loops stay idle so the composer Monitoring banner only appears while a watch
+is actually running. Stop on those rows calls `_x.ai/scheduler/delete` or
+`_x.ai/task/kill`. Queued prompts (`_x.ai/queue/changed`) update session state
 and thread metadata with the queue length.
 
 ## Rewind

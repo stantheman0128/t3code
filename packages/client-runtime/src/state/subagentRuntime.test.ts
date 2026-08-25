@@ -375,6 +375,21 @@ describe("deriveAgentPanelModel", () => {
     activity("task.updated", { taskId: "direct-1", status: "idle" }),
   ]);
 
+  it("puts monitors and loops in background, not Direct spawns", () => {
+    const model = deriveAgentPanelModel({
+      agents: fold([
+        activity("task.started", { taskId: "direct-1", title: "Marlow", role: "explorer" }),
+        activity("task.started", { taskId: "mon-1", taskType: "monitor", title: "Watch PR" }),
+        activity("task.started", { taskId: "loop-1", taskType: "loop", title: "Daily sync" }),
+        activity("task.updated", { taskId: "loop-1", taskType: "loop", status: "idle" }),
+      ]),
+    });
+    expect(model.directAgents.map((agent) => agent.id)).toEqual(["direct-1"]);
+    expect(model.background.map((agent) => agent.id)).toEqual(["mon-1", "loop-1"]);
+    expect(model.hasAgents).toBe(true);
+    expect(model.liveCount).toBe(2);
+  });
+
   it("groups workflow members by phase and separates direct spawns", () => {
     const model = deriveAgentPanelModel({ agents: roster });
     expect(model.workflows).toHaveLength(1);
@@ -757,14 +772,19 @@ describe("model and effort attribution", () => {
 });
 
 describe("background task exclusion", () => {
-  it("shells and monitors never join the roster (from any lifecycle row)", () => {
+  it("shells never join the roster; monitors and loops do", () => {
     const agents = fold([
       activity("task.started", { taskId: "shell-1", taskType: "shell", title: "Run 12s stall" }),
       activity("task.progress", { taskId: "shell-2", taskType: "shell", title: "Run stall" }),
-      activity("task.completed", { taskId: "mon-1", taskType: "monitor", status: "completed" }),
+      activity("task.started", { taskId: "mon-1", taskType: "monitor", title: "Watch PR" }),
+      activity("task.started", { taskId: "loop-1", taskType: "loop", title: "Daily sync" }),
+      activity("task.updated", { taskId: "loop-1", taskType: "loop", status: "idle" }),
       activity("task.started", { taskId: "agent-1", taskType: "subagent", title: "Real agent" }),
     ]);
-    expect(agents.map((agent) => agent.id)).toEqual(["agent-1"]);
+    expect(agents.map((agent) => agent.id)).toEqual(["mon-1", "loop-1", "agent-1"]);
+    expect(agents.find((agent) => agent.id === "loop-1")?.kind).toBe("scheduled");
+    expect(agents.find((agent) => agent.id === "mon-1")?.kind).toBe("monitor");
+    expect(agents.find((agent) => agent.id === "loop-1")?.status).toBe("idle");
   });
 
   it("rows without a taskType stay in the roster (workflow members, Codex children)", () => {

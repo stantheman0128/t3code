@@ -514,8 +514,15 @@ export type TaskRunHandles = typeof TaskRunHandles.Type;
 export const MONITOR_TASK_TYPES: ReadonlySet<string> = new Set([
   "monitor",
   "monitor_mcp",
+  "loop",
   "local_bash",
   "shell",
+]);
+/** Background work that belongs on the Agents panel (not ordinary shells). */
+export const PANEL_BACKGROUND_TASK_TYPES: ReadonlySet<string> = new Set([
+  "monitor",
+  "monitor_mcp",
+  "loop",
 ]);
 /** Task types that are neither agents nor watch loops (plan-mode bookkeeping). */
 export const INERT_TASK_TYPES: ReadonlySet<string> = new Set(["plan", "dream"]);

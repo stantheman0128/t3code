@@ -98,6 +98,25 @@ export interface GrokBackgroundTask {
   readonly outputFile: string | undefined;
   readonly exitCode: number | undefined;
   readonly output: string | undefined;
+  readonly taskType: "local_bash" | "monitor";
+}
+
+export interface GrokScheduledTask {
+  readonly kind: "created" | "fired" | "deleted";
+  readonly taskId: string;
+  readonly prompt: string | undefined;
+  readonly humanSchedule: string | undefined;
+  readonly nextFireAt: string | undefined;
+}
+
+export interface GrokMonitorEvent {
+  readonly taskId: string;
+  readonly eventText: string;
+}
+
+export interface GrokBackgroundInterruptRequest {
+  readonly method: "_x.ai/scheduler/delete" | "_x.ai/task/kill";
+  readonly payload: { readonly sessionId: string; readonly id?: string; readonly taskId?: string };
 }
 
 export interface GrokQueueChanged {
@@ -402,6 +421,40 @@ export function parseXAiTurnCompletedUsage(
   };
 }
 
+function grokBackgroundTaskType(record: Record<string, unknown>): "local_bash" | "monitor" {
+  const type =
+    readString(record.type) ?? readString(record.task_type) ?? readString(record.taskType);
+  if (type === "monitor") {
+    return "monitor";
+  }
+  if (readString(record.monitor_description) ?? readString(record.monitorDescription)) {
+    return "monitor";
+  }
+  return "local_bash";
+}
+
+function scheduleTitle(prompt: string | undefined): string {
+  const first = prompt?.split(/\r?\n/, 1)[0]?.trim();
+  return first && first.length > 0 ? first : "Scheduled task";
+}
+
+function scheduleSummary(task: GrokScheduledTask): string {
+  const parts = [
+    task.humanSchedule,
+    task.nextFireAt ? `next ${task.nextFireAt}` : undefined,
+  ].filter((part): part is string => part !== undefined);
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+  if (task.kind === "fired") {
+    return "Firing";
+  }
+  if (task.kind === "deleted") {
+    return "Stopped";
+  }
+  return "Scheduled";
+}
+
 export function parseXAiBackgroundTask(payload: unknown): GrokBackgroundTask | undefined {
   const update = unwrapSessionUpdate(payload);
   if (!update) {
@@ -422,6 +475,7 @@ export function parseXAiBackgroundTask(payload: unknown): GrokBackgroundTask | u
       outputFile: readString(update.output_file) ?? readString(update.outputFile),
       exitCode: undefined,
       output: undefined,
+      taskType: grokBackgroundTaskType(update),
     };
   }
   if (tag === "task_completed" || tag === "TaskCompleted") {
@@ -439,9 +493,122 @@ export function parseXAiBackgroundTask(payload: unknown): GrokBackgroundTask | u
       outputFile: readString(snapshot.output_file) ?? readString(snapshot.outputFile),
       exitCode: nonNegativeInt(snapshot.exit_code ?? snapshot.exitCode),
       output: readString(snapshot.output),
+      taskType: grokBackgroundTaskType(snapshot),
     };
   }
   return undefined;
+}
+
+export function parseXAiScheduledTask(payload: unknown): GrokScheduledTask | undefined {
+  const update = unwrapSessionUpdate(payload);
+  if (!update) {
+    return undefined;
+  }
+  const tag = sessionUpdateTag(update);
+  const kind =
+    tag === "scheduled_task_created" || tag === "ScheduledTaskCreated"
+      ? "created"
+      : tag === "scheduled_task_fired" || tag === "ScheduledTaskFired"
+        ? "fired"
+        : tag === "scheduled_task_deleted" || tag === "ScheduledTaskDeleted"
+          ? "deleted"
+          : undefined;
+  if (kind === undefined) {
+    return undefined;
+  }
+  const taskId = readString(update.task_id) ?? readString(update.taskId) ?? readString(update.id);
+  if (taskId === undefined) {
+    return undefined;
+  }
+  return {
+    kind,
+    taskId,
+    prompt: readString(update.prompt),
+    humanSchedule: readString(update.human_schedule) ?? readString(update.humanSchedule),
+    nextFireAt: readString(update.next_fire_at) ?? readString(update.nextFireAt),
+  };
+}
+
+export function parseXAiMonitorEvent(payload: unknown): GrokMonitorEvent | undefined {
+  const update = unwrapSessionUpdate(payload);
+  if (!update) {
+    return undefined;
+  }
+  const tag = sessionUpdateTag(update);
+  if (tag !== "monitor_event" && tag !== "MonitorEvent") {
+    return undefined;
+  }
+  const taskId = readString(update.task_id) ?? readString(update.taskId);
+  const eventText = readString(update.event_text) ?? readString(update.eventText);
+  if (taskId === undefined || eventText === undefined) {
+    return undefined;
+  }
+  return { taskId, eventText };
+}
+
+export function grokScheduledTaskEvents(
+  task: GrokScheduledTask,
+): ReadonlyArray<GrokExtraEventSpec> {
+  const title = scheduleTitle(task.prompt);
+  const summary = scheduleSummary(task);
+  const linkage = {
+    taskId: task.taskId,
+    taskType: "loop",
+    title,
+    description: task.prompt ?? title,
+    timelineBypass: true,
+  };
+  if (task.kind === "created") {
+    return [
+      { type: "task.started", payload: { ...linkage, summary } },
+      { type: "task.updated", payload: { ...linkage, status: "idle", summary } },
+    ];
+  }
+  if (task.kind === "fired") {
+    return [
+      {
+        type: "task.progress",
+        payload: { ...linkage, status: "idle", summary },
+      },
+    ];
+  }
+  return [
+    {
+      type: "task.completed",
+      payload: { ...linkage, status: "cancelled", summary },
+    },
+  ];
+}
+
+export function grokMonitorEventEvents(event: GrokMonitorEvent): ReadonlyArray<GrokExtraEventSpec> {
+  return [
+    {
+      type: "task.progress",
+      payload: {
+        taskId: event.taskId,
+        taskType: "monitor",
+        summary: event.eventText,
+        timelineBypass: true,
+      },
+    },
+  ];
+}
+
+export function grokBackgroundInterruptRequest(
+  acpSessionId: string,
+  taskId: string,
+  scheduledTaskIds: ReadonlySet<string>,
+): GrokBackgroundInterruptRequest {
+  if (scheduledTaskIds.has(taskId)) {
+    return {
+      method: "_x.ai/scheduler/delete",
+      payload: { sessionId: acpSessionId, id: taskId },
+    };
+  }
+  return {
+    method: "_x.ai/task/kill",
+    payload: { sessionId: acpSessionId, taskId },
+  };
 }
 
 export function grokBackgroundTaskEvents(
@@ -451,7 +618,8 @@ export function grokBackgroundTaskEvents(
     taskId: task.taskId,
     description: task.description,
     title: task.description,
-    taskType: "local_bash",
+    taskType: task.taskType,
+    ...(task.taskType === "monitor" ? { timelineBypass: true } : {}),
     ...(task.outputFile ? { outputFile: task.outputFile } : {}),
   };
   if (task.kind === "started") {

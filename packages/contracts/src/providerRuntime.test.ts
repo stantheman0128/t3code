@@ -191,6 +191,7 @@ describe("classifyTaskAgentKind", () => {
     expect(classifyTaskAgentKind({ taskType: "brand_new_agent_type" })).toBe("agent");
     expect(classifyTaskAgentKind({ taskType: "local_bash" })).toBe("background");
     expect(classifyTaskAgentKind({ taskType: "monitor" })).toBe("background");
+    expect(classifyTaskAgentKind({ taskType: "loop" })).toBe("background");
     expect(classifyTaskAgentKind({ taskType: "plan" })).toBe("background");
   });
 

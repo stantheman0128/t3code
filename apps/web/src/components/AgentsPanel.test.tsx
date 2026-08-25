@@ -43,6 +43,7 @@ describe("AgentsPanel", () => {
   it("renders a failed session without referencing removed status state", () => {
     const model: AgentPanelModel = {
       workflows: [],
+      background: [],
       directAgents: [
         agent({
           id: "01a03914-e401-7100-b9e5-f9503326a711",
@@ -63,5 +64,40 @@ describe("AgentsPanel", () => {
     const html = renderToStaticMarkup(<AgentsPanel model={model} />);
     expect(html).toContain("Failed");
     expect(html).toContain("Failed lookup");
+  });
+
+  it("lists idle scheduled loops with Stop, not as Direct spawns", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [
+        agent({
+          id: "01a039ba3569",
+          kind: "scheduled",
+          status: "idle",
+          title: "Daily T3 fork sync.",
+          progress: "every 1 day",
+          error: null,
+          result: null,
+          usage: null,
+        }),
+      ],
+      directAgents: [],
+      runningCount: 0,
+      waitingCount: 0,
+      idleCount: 1,
+      settledCount: 0,
+      totalTokens: 0,
+      hasAgents: true,
+      liveCount: 0,
+    };
+
+    const html = renderToStaticMarkup(
+      <AgentsPanel model={model} canStopAgent onStopAgent={() => undefined} />,
+    );
+    expect(html).toContain("Scheduled / Monitoring");
+    expect(html).toContain("Daily T3 fork sync.");
+    expect(html).toContain("every 1 day");
+    expect(html).toContain("Stop");
+    expect(html).not.toContain("Direct spawns");
   });
 });

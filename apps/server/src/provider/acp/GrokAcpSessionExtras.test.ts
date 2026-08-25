@@ -2,14 +2,19 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   grokAutoCompactEvents,
+  grokBackgroundInterruptRequest,
   grokBackgroundTaskEvents,
   grokHookEvents,
+  grokMonitorEventEvents,
   grokQueueChangedEvents,
+  grokScheduledTaskEvents,
   grokSessionRecapEvents,
   parseXAiAutoCompact,
   parseXAiBackgroundTask,
   parseXAiHookExecution,
+  parseXAiMonitorEvent,
   parseXAiQueueChanged,
+  parseXAiScheduledTask,
   parseXAiSessionRecap,
   parseXAiTurnCompletedUsage,
 } from "./GrokAcpSessionExtras.ts";
@@ -235,6 +240,108 @@ describe("GrokAcpSessionExtras", () => {
     expect(grokBackgroundTaskEvents(finished!)[0]).toMatchObject({
       type: "task.completed",
       payload: { status: "completed", summary: "done" },
+    });
+  });
+
+  it("maps monitor_description background tasks onto monitor, not local_bash", () => {
+    const started = parseXAiBackgroundTask({
+      update: {
+        sessionUpdate: "task_backgrounded",
+        task_id: "mon-1",
+        command: "gh pr checks --watch",
+        monitor_description: "gh pr checks --watch",
+        description: "Watch PR checks",
+      },
+    });
+    expect(grokBackgroundTaskEvents(started!)[0]).toMatchObject({
+      type: "task.started",
+      payload: {
+        taskId: "mon-1",
+        taskType: "monitor",
+        title: "Watch PR checks",
+        timelineBypass: true,
+      },
+    });
+  });
+
+  it("maps scheduled_task_created onto an idle loop task, not a live monitor", () => {
+    const parsed = parseXAiScheduledTask({
+      update: {
+        sessionUpdate: "scheduled_task_created",
+        task_id: "01a039ba3569",
+        prompt: "Daily T3 fork sync.\nRepo: t3code-grok-parity",
+        human_schedule: "every 1 day",
+        next_fire_at: "2026-08-26T16:21:39.817390300+00:00",
+      },
+    });
+    expect(parsed).toMatchObject({
+      kind: "created",
+      taskId: "01a039ba3569",
+      humanSchedule: "every 1 day",
+    });
+    const events = grokScheduledTaskEvents(parsed!);
+    expect(events[0]).toMatchObject({
+      type: "task.started",
+      payload: {
+        taskId: "01a039ba3569",
+        taskType: "loop",
+        title: "Daily T3 fork sync.",
+        timelineBypass: true,
+      },
+    });
+    expect(events[1]).toMatchObject({
+      type: "task.updated",
+      payload: { taskId: "01a039ba3569", taskType: "loop", status: "idle" },
+    });
+  });
+
+  it("maps scheduled_task_fired and scheduled_task_deleted onto the same loop id", () => {
+    const fired = parseXAiScheduledTask({
+      update: { sessionUpdate: "scheduled_task_fired", task_id: "loop-1", prompt: "check CI" },
+    });
+    expect(grokScheduledTaskEvents(fired!)[0]).toMatchObject({
+      type: "task.progress",
+      payload: { taskId: "loop-1", taskType: "loop", status: "idle", timelineBypass: true },
+    });
+
+    const deleted = parseXAiScheduledTask({
+      update: { sessionUpdate: "scheduled_task_deleted", task_id: "loop-1" },
+    });
+    expect(grokScheduledTaskEvents(deleted!)[0]).toMatchObject({
+      type: "task.completed",
+      payload: { taskId: "loop-1", taskType: "loop", status: "cancelled" },
+    });
+  });
+
+  it("maps monitor_event onto task.progress for the monitor id", () => {
+    const parsed = parseXAiMonitorEvent({
+      update: {
+        sessionUpdate: "monitor_event",
+        task_id: "mon-1",
+        event_text: "checks: pass",
+      },
+    });
+    expect(grokMonitorEventEvents(parsed!)).toEqual([
+      {
+        type: "task.progress",
+        payload: {
+          taskId: "mon-1",
+          taskType: "monitor",
+          summary: "checks: pass",
+          timelineBypass: true,
+        },
+      },
+    ]);
+  });
+
+  it("routes Stop to scheduler/delete for loops and task/kill for monitors", () => {
+    expect(grokBackgroundInterruptRequest("sess-1", "loop-1", new Set(["loop-1"]))).toEqual({
+      method: "_x.ai/scheduler/delete",
+      payload: { sessionId: "sess-1", id: "loop-1" },
+    });
+    expect(grokBackgroundInterruptRequest("sess-1", "mon-1", new Set(["loop-1"]))).toEqual({
+      method: "_x.ai/task/kill",
+      payload: { sessionId: "sess-1", taskId: "mon-1" },
     });
   });
 

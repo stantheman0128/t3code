@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
+import { spawn as spawnNodeProcess } from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
 
@@ -3160,6 +3161,27 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* Effect.log("[desktop-artifact] Done. Artifacts:").pipe(
     Effect.annotateLogs({ artifacts: copiedArtifacts }),
   );
+
+  if (
+    options.platform === "win" &&
+    options.target === "nsis" &&
+    process.env.CI !== "true" &&
+    process.env.T3CODE_SKIP_INSTALL !== "1"
+  ) {
+    const installer = copiedArtifacts.find(
+      (artifact) => artifact.endsWith(".exe") && !artifact.includes(".blockmap"),
+    );
+    if (installer) {
+      yield* Effect.log(
+        "[desktop-artifact] Opening the installer so Start Menu T3 Code is replaced.",
+      );
+      spawnNodeProcess(installer, [], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      }).unref();
+    }
+  }
 });
 
 const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {

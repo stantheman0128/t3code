@@ -1804,32 +1804,19 @@ const make = Effect.gen(function* () {
           }
         }
         if (thinkingDelta && thinkingDelta.length > 0) {
-          if (assistantDeliveryMode === "buffered") {
-            const spillChunk = yield* appendBufferedThinking(assistantMessageId, thinkingDelta);
-            if (spillChunk.length > 0) {
-              yield* dispatchAssistantDelta({
-                event,
-                threadId: thread.id,
-                messageId: assistantMessageId,
-                turnId,
-                createdAt: now,
-                commandTag: "assistant-thinking-buffer-spill",
-                delta: spillChunk,
-                channel: "thinking",
-              });
-            }
-          } else {
-            yield* dispatchAssistantDelta({
-              event,
-              threadId: thread.id,
-              messageId: assistantMessageId,
-              turnId,
-              createdAt: now,
-              commandTag: "assistant-thinking-delta",
-              delta: thinkingDelta,
-              channel: "thinking",
-            });
-          }
+          // Buffered mode is for the final answer. Thought chunks are the
+          // live process; hold them until item.completed and a 26-minute
+          // Grok turn looks like an empty Thinking row plus a tool log.
+          yield* dispatchAssistantDelta({
+            event,
+            threadId: thread.id,
+            messageId: assistantMessageId,
+            turnId,
+            createdAt: now,
+            commandTag: "assistant-thinking-delta",
+            delta: thinkingDelta,
+            channel: "thinking",
+          });
         }
       }
 

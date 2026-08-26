@@ -1076,6 +1076,38 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("paints reasoning deltas live before the assistant item completes", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-thinking-live-1"),
+      provider: ProviderDriverKind.make("grok"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-live"),
+      itemId: asItemId("item-thinking-live"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "I will inspect the registry next.",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id === "assistant:item-thinking-live" &&
+          message.thinking === "I will inspect the registry next.",
+      ),
+    );
+    const message = thread.messages.find(
+      (entry: ProviderRuntimeTestMessage) => entry.id === "assistant:item-thinking-live",
+    );
+    expect(message?.thinking).toBe("I will inspect the registry next.");
+    expect(message?.streaming).toBe(true);
+  });
+
   it("uses assistant item completion detail when no assistant deltas were streamed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

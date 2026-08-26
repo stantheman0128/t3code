@@ -4,6 +4,8 @@ import {
   applyGrokSubagentUpdate,
   applyGrokWorkflowUpdate,
   emptyGrokWorkflowTrackState,
+  grokChildToolProgressEvent,
+  grokSessionIdFromRaw,
   grokWorkflowMemberTaskId,
   parseXAiSubagentUpdate,
   parseXAiWorkflowUpdated,
@@ -232,5 +234,69 @@ describe("GrokAcpWorkflow", () => {
       durationMs: 1200,
       toolUses: 3,
     });
+  });
+
+  it("maps child-session tool calls onto the live subagent as lastToolName", () => {
+    const spawned = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_spawned",
+        subagent_id: "sa_1",
+        child_session_id: "child-1",
+        subagent_type: "explore",
+        description: "Investigate T3 UI bugs",
+      },
+    });
+    const afterSpawn = applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), spawned!);
+    expect(afterSpawn.state.subagentByChildSessionId.get("child-1")).toBe("sa_1");
+
+    const fromChildSession = grokChildToolProgressEvent(
+      afterSpawn.state,
+      grokSessionIdFromRaw({ sessionId: "child-1", update: { sessionUpdate: "tool_call" } }),
+      { title: "read_file", kind: "read" },
+    );
+    expect(fromChildSession).toMatchObject({
+      type: "task.progress",
+      payload: {
+        taskId: "sa_1",
+        lastToolName: "read_file",
+        summary: "read_file",
+        timelineBypass: true,
+      },
+    });
+
+    const fromParentWhileOneChildLive = grokChildToolProgressEvent(
+      afterSpawn.state,
+      "sess-parent",
+      { command: "rg lastToolName" },
+    );
+    expect(fromParentWhileOneChildLive?.payload).toMatchObject({
+      taskId: "sa_1",
+      lastToolName: "rg lastToolName",
+    });
+  });
+
+  it("does not pin parent-session tools onto a finished child", () => {
+    const spawned = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_spawned",
+        subagent_id: "sa_1",
+        child_session_id: "child-1",
+      },
+    });
+    const finished = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_finished",
+        subagent_id: "sa_1",
+        child_session_id: "child-1",
+        status: "completed",
+      },
+    });
+    const afterFinish = applyGrokSubagentUpdate(
+      applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), spawned!).state,
+      finished!,
+    );
+    expect(
+      grokChildToolProgressEvent(afterFinish.state, "child-1", { title: "read_file" }),
+    ).toBeUndefined();
   });
 });

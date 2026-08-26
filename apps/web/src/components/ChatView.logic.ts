@@ -225,14 +225,23 @@ export function reconcileMountedTerminalThreadIds(input: {
   activeThreadId: string | null;
   activeThreadTerminalOpen: boolean;
   maxHiddenThreadCount?: number;
+  alwaysRetainActiveThread?: boolean;
 }): string[] {
-  return reconcileRetainedMountedThreadIds({
+  const nextThreadIds = reconcileRetainedMountedThreadIds({
     currentThreadIds: input.currentThreadIds,
     openThreadIds: input.openThreadIds,
     activeThreadId: input.activeThreadId,
     activeThreadOpen: input.activeThreadTerminalOpen,
     maxHiddenThreadCount: input.maxHiddenThreadCount ?? MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   });
+  if (
+    input.alwaysRetainActiveThread === true &&
+    input.activeThreadId &&
+    !nextThreadIds.includes(input.activeThreadId)
+  ) {
+    nextThreadIds.push(input.activeThreadId);
+  }
+  return nextThreadIds;
 }
 
 export function reconcileRetainedMountedThreadIds(input: {

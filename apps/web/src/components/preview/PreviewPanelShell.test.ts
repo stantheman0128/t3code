@@ -13,6 +13,20 @@ describe("getPreviewPanelMaxWidth", () => {
     expect(getPreviewPanelMaxWidth(2_001)).toBe(1_400);
   });
 
+  it("starts an opening inline panel at zero width so Toggle Right Panel can animate in", () => {
+    const markup = renderToStaticMarkup(
+      jsx(PreviewPanelShell, {
+        mode: "inline",
+        open: true,
+        defaultWidth: 540,
+        children: "Panel",
+      }),
+    );
+
+    expect(markup).toContain("width:0px");
+    expect(markup).toContain('data-preview-panel-open="true"');
+  });
+
   it("collapses inline width when closing so the panel can animate out", () => {
     const markup = renderToStaticMarkup(
       jsx(PreviewPanelShell, {

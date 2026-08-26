@@ -656,6 +656,18 @@ describe("reconcileMountedTerminalThreadIds", () => {
       }),
     ).toEqual(ids.slice(-MAX_HIDDEN_MOUNTED_TERMINAL_THREADS));
   });
+
+  it("keeps the active thread mounted after close so the drawer can animate out", () => {
+    expect(
+      reconcileMountedTerminalThreadIds({
+        currentThreadIds: ["thread-a"],
+        openThreadIds: [],
+        activeThreadId: "thread-a",
+        activeThreadTerminalOpen: false,
+        alwaysRetainActiveThread: true,
+      }),
+    ).toEqual(["thread-a"]);
+  });
 });
 
 describe("reconcileRetainedMountedThreadIds", () => {

@@ -72,8 +72,8 @@ export function PreviewPanelShell(props: {
   const isInline = props.mode === "inline";
   const isOpen = props.open !== false;
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const wasOpenRef = useRef(isOpen);
-  const [entered, setEntered] = useState(isOpen);
+  const wasOpenRef = useRef(false);
+  const [entered, setEntered] = useState(false);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
   // container measurement (and its re-renders) everywhere else.
   const maxWidth = useClampedMaxWidth(hostRef, isInline && !props.maximized);
@@ -91,14 +91,24 @@ export function PreviewPanelShell(props: {
       wasOpenRef.current = isOpen;
       return;
     }
-    if (isOpen && !wasOpenRef.current) {
-      setEntered(false);
-      const frame = window.requestAnimationFrame(() => setEntered(true));
-      wasOpenRef.current = true;
-      return () => window.cancelAnimationFrame(frame);
+    if (isOpen) {
+      if (!wasOpenRef.current) {
+        setEntered(false);
+        let inner = 0;
+        const outer = window.requestAnimationFrame(() => {
+          inner = window.requestAnimationFrame(() => setEntered(true));
+        });
+        wasOpenRef.current = true;
+        return () => {
+          window.cancelAnimationFrame(outer);
+          window.cancelAnimationFrame(inner);
+        };
+      }
+      setEntered(true);
+      return;
     }
-    wasOpenRef.current = isOpen;
-    setEntered(isOpen);
+    wasOpenRef.current = false;
+    setEntered(false);
   }, [isInline, isOpen, props.maximized]);
 
   const revealed = isOpen && entered;

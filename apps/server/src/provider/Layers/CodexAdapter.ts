@@ -744,6 +744,7 @@ function mapCollabAgentEvent(
             description: title,
             ...(knownName ? { title: knownName } : {}),
             summary,
+            lastToolName: summary,
             timelineBypass: true,
           },
         },

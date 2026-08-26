@@ -157,6 +157,41 @@ describe("AgentsPanel", () => {
 
     const html = renderToStaticMarkup(<AgentsPanel model={model} />);
     expect(html).toContain("read_file");
+    expect(html).toContain("Now:");
     expect(html).not.toContain("No output yet");
+  });
+
+  it("opens a live agent on the procedure list instead of hiding it behind a collapsed panel", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-3",
+          status: "running",
+          title: "Investigate T3 UI bugs",
+          error: null,
+          result: null,
+          lastToolName: "grep",
+          usage: { totalTokens: 800, toolUses: 2 },
+          recentActivity: [
+            { at: "2026-08-26T10:00:00.000Z", summary: "▸ read_file" },
+            { at: "2026-08-26T10:00:05.000Z", summary: "▸ grep" },
+          ],
+        }),
+      ],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 800,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("read_file");
+    expect(html).toContain("grep");
+    expect(html).toContain("Now:");
   });
 });

@@ -34,7 +34,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { Collapsible, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
 
@@ -181,13 +181,21 @@ function agentRowStopProps(
   return { onStop: () => onStopAgent(agent.id), stopping: stoppingAgentIds.has(agent.id) };
 }
 
+const WEAK_AGENT_STEPS = new Set(["running", "active", "pending", "start", "queued", "working"]);
+
+function isUsefulAgentStep(summary: string): boolean {
+  const value = summary.replace(/^▸\s+/, "").trim();
+  return value.length > 0 && !WEAK_AGENT_STEPS.has(value.toLocaleLowerCase());
+}
+
 function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
   const preview = formatAgentResultPreview(agent.result);
   const tools = agent.recentActivity
     .map((entry) => entry.summary.replace(/^▸\s+/, "").trim())
-    .filter((summary) => summary.length > 0);
+    .filter(isUsefulAgentStep);
   const steps = tools.length > 0 ? tools : agent.lastToolName !== null ? [agent.lastToolName] : [];
   const toolUses = agent.usage?.toolUses ?? 0;
+  const live = isActiveSubagentStatus(agent.status);
   const hasDetail =
     agent.error !== null ||
     preview !== null ||
@@ -197,9 +205,7 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
   if (!hasDetail) {
     return (
       <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
-        {isActiveSubagentStatus(agent.status)
-          ? "Still working. No output yet."
-          : "No result recorded."}
+        {live ? "Still working. No output yet." : "No result recorded."}
       </p>
     );
   }
@@ -213,15 +219,20 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
       {preview ? (
         <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">{preview}</p>
       ) : null}
+      {live && agent.lastToolName ? (
+        <p className="text-[.65rem] text-foreground/80">
+          Now: <span className="font-mono">{agent.lastToolName}</span>
+        </p>
+      ) : null}
       {steps.length > 0 ? (
         <ol className="list-decimal space-y-0.5 pl-4 text-[.65rem] text-muted-foreground">
-          {steps.slice(-12).map((step, index) => (
+          {steps.slice(-16).map((step, index) => (
             <li key={`${index}-${step}`}>{step}</li>
           ))}
         </ol>
       ) : toolUses > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">
-          {isActiveSubagentStatus(agent.status) ? `${toolUses} tools so far` : `${toolUses} tools`}
+          {live ? `${toolUses} tools so far` : `${toolUses} tools`}
         </p>
       ) : null}
       {agent.outputFile ? (
@@ -241,7 +252,15 @@ function AgentRow({
   onStop?: () => void;
   stopping?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const live = isActiveSubagentStatus(agent.status);
+  const [open, setOpen] = useState(live);
+  const didAutoOpen = useRef(live);
+  useEffect(() => {
+    if (live && !didAutoOpen.current) {
+      didAutoOpen.current = true;
+      setOpen(true);
+    }
+  }, [live]);
   const displayTitle = formatAgentDisplayTitle(agent);
   const activity = formatAgentActivityLine(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -321,9 +340,7 @@ function AgentRow({
         </span>
         <span className="sr-only">{STATUS_VISUALS[agent.status].label}</span>
       </div>
-      <CollapsiblePanel>
-        <AgentDetail agent={agent} />
-      </CollapsiblePanel>
+      {open ? <AgentDetail agent={agent} /> : null}
     </Collapsible>
   );
 }

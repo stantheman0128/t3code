@@ -1040,8 +1040,14 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       setEntered(false);
       return;
     }
-    const frame = window.requestAnimationFrame(() => setEntered(true));
-    return () => window.cancelAnimationFrame(frame);
+    let inner = 0;
+    const outer = window.requestAnimationFrame(() => {
+      inner = window.requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(outer);
+      window.cancelAnimationFrame(inner);
+    };
   }, [drawerOpen]);
 
   if (!project || !cwd || !drawerMounted) {
@@ -1847,6 +1853,7 @@ function ChatViewContent(props: ChatViewProps) {
         activeThreadId: activeThreadKey,
         activeThreadTerminalOpen: Boolean(activeThreadKey && terminalUiState.terminalOpen),
         maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+        alwaysRetainActiveThread: true,
       });
       return currentThreadIds.length === nextThreadIds.length &&
         currentThreadIds.every((nextThreadId, index) => nextThreadId === nextThreadIds[index])

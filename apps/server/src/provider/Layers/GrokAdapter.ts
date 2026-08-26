@@ -96,6 +96,8 @@ import {
   applyGrokSubagentUpdate,
   applyGrokWorkflowUpdate,
   emptyGrokWorkflowTrackState,
+  grokChildToolProgressEvent,
+  grokSessionIdFromRaw,
   parseXAiSubagentUpdate,
   parseXAiWorkflowUpdated,
   type GrokWorkflowTrackState,
@@ -184,6 +186,7 @@ interface GrokSessionContext {
   availableModelIds: ReadonlyArray<string>;
   workflowTrack: GrokWorkflowTrackState;
   readonly toolUpdateGates: Map<string, GrokToolUpdateGate>;
+  readonly lastChildToolNameBySubagentId: Map<string, string>;
   readonly scheduledTaskIds: Set<string>;
   stopped: boolean;
 }
@@ -1274,6 +1277,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             availableModelIds,
             workflowTrack: emptyGrokWorkflowTrackState(),
             toolUpdateGates: new Map(),
+            lastChildToolNameBySubagentId: new Map(),
             scheduledTaskIds: new Set(),
             stopped: false,
           };
@@ -1343,6 +1347,34 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     return;
                   case "ToolCallUpdated": {
                     yield* publishGrokSessionOccupancy(ctx, notificationTurnId, event.rawPayload);
+                    const childProgress = grokChildToolProgressEvent(
+                      ctx.workflowTrack,
+                      grokSessionIdFromRaw(event.rawPayload),
+                      event.toolCall,
+                    );
+                    const childTaskId =
+                      typeof childProgress?.payload.taskId === "string"
+                        ? childProgress.payload.taskId
+                        : undefined;
+                    const childToolName =
+                      typeof childProgress?.payload.lastToolName === "string"
+                        ? childProgress.payload.lastToolName
+                        : undefined;
+                    if (
+                      childProgress &&
+                      childTaskId &&
+                      childToolName &&
+                      ctx.lastChildToolNameBySubagentId.get(childTaskId) !== childToolName
+                    ) {
+                      ctx.lastChildToolNameBySubagentId.set(childTaskId, childToolName);
+                      yield* emitGrokTaskSpecs({
+                        threadId: ctx.threadId,
+                        turnId: notificationTurnId,
+                        method: "session/update",
+                        payload: event.rawPayload,
+                        specs: [childProgress],
+                      });
+                    }
                     const nowMs = yield* Clock.currentTimeMillis;
                     if (
                       !shouldEmitGrokToolUpdate({
@@ -2124,6 +2156,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           trimmedCtx.lastQueueLength = undefined;
           trimmedCtx.workflowTrack = emptyGrokWorkflowTrackState();
           trimmedCtx.toolUpdateGates.clear();
+          trimmedCtx.lastChildToolNameBySubagentId.clear();
           return { threadId, turns: trimmedCtx.turns };
         }),
       );

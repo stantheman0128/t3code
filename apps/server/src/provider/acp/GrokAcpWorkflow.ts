@@ -71,6 +71,7 @@ export interface GrokWorkflowTrackState {
   readonly memberFingerprints: ReadonlyMap<string, string>;
   readonly seenSubagentIds: ReadonlySet<string>;
   readonly completedSubagentIds: ReadonlySet<string>;
+  readonly subagentByChildSessionId: ReadonlyMap<string, string>;
   /** Last published usage per task id so a tool-only tick cannot zero tokens. */
   readonly usageByTaskId: ReadonlyMap<string, GrokTypedUsageSnapshot>;
 }
@@ -84,6 +85,7 @@ export function emptyGrokWorkflowTrackState(): GrokWorkflowTrackState {
     memberFingerprints: new Map(),
     seenSubagentIds: new Set(),
     completedSubagentIds: new Set(),
+    subagentByChildSessionId: new Map(),
     usageByTaskId: new Map(),
   };
 }
@@ -536,6 +538,11 @@ export function applyGrokSubagentUpdate(
     timelineBypass: true,
   };
 
+  const subagentByChildSessionId = new Map(state.subagentByChildSessionId);
+  if (update.childSessionId) {
+    subagentByChildSessionId.set(update.childSessionId, update.subagentId);
+  }
+
   if (update.kind === "spawned" && !seenSubagentIds.has(update.subagentId)) {
     seenSubagentIds.add(update.subagentId);
     events.push({ type: "task.started", payload: linkage });
@@ -594,8 +601,67 @@ export function applyGrokSubagentUpdate(
       ...state,
       seenSubagentIds,
       completedSubagentIds,
+      subagentByChildSessionId,
       usageByTaskId,
     },
     events,
+  };
+}
+
+export function grokSessionIdFromRaw(payload: unknown): string | undefined {
+  const record = asRecord(payload);
+  return readString(record?.sessionId) ?? readString(record?.session_id);
+}
+
+export function grokToolDisplayName(toolCall: {
+  readonly title?: string;
+  readonly kind?: string;
+  readonly command?: string;
+}): string | undefined {
+  return readString(toolCall.title) ?? readString(toolCall.command) ?? readString(toolCall.kind);
+}
+
+export function grokLiveSubagentIdForToolProgress(
+  state: GrokWorkflowTrackState,
+  sessionId: string | undefined,
+): string | undefined {
+  if (sessionId) {
+    const mapped = state.subagentByChildSessionId.get(sessionId);
+    if (mapped && !state.completedSubagentIds.has(mapped)) {
+      return mapped;
+    }
+  }
+  const live: string[] = [];
+  for (const id of state.seenSubagentIds) {
+    if (!state.completedSubagentIds.has(id)) {
+      live.push(id);
+    }
+  }
+  return live.length === 1 ? live[0] : undefined;
+}
+
+export function grokChildToolProgressEvent(
+  state: GrokWorkflowTrackState,
+  sessionId: string | undefined,
+  toolCall: {
+    readonly title?: string;
+    readonly kind?: string;
+    readonly command?: string;
+  },
+): GrokTaskEventSpec | undefined {
+  const subagentId = grokLiveSubagentIdForToolProgress(state, sessionId);
+  const lastTool = grokToolDisplayName(toolCall);
+  if (!subagentId || !lastTool) {
+    return undefined;
+  }
+  return {
+    type: "task.progress",
+    payload: {
+      taskId: subagentId,
+      status: "running",
+      summary: lastTool,
+      lastToolName: lastTool,
+      timelineBypass: true,
+    },
   };
 }

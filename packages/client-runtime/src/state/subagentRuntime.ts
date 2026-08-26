@@ -129,7 +129,7 @@ export function compareAgentsByLiveThenIndex(a: RuntimeSubagent, b: RuntimeSubag
   );
 }
 
-const RECENT_ACTIVITY_LIMIT = 6;
+const RECENT_ACTIVITY_LIMIT = 24;
 const SUMMARY_CHAR_LIMIT = 180;
 const ROSTER_LIMIT = 100;
 

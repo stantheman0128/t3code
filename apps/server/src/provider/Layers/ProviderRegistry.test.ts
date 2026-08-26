@@ -54,6 +54,9 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodedDefaultServerSettings = encodeServerSettings(DEFAULT_SERVER_SETTINGS);
 
 const defaultClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)({});
+const isolatedClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)({
+  homePath: "/nonexistent/t3-claude-status-home",
+});
 const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({});
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const disabledCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({
@@ -2010,7 +2013,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       it.effect("returns a display label for claude subscription types", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
-            defaultClaudeSettings,
+            isolatedClaudeSettings,
             claudeCapabilities({ subscriptionType: "maxplan" }),
           );
           assert.strictEqual(status.status, "ready");
@@ -2037,7 +2040,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       it.effect("does not duplicate Claude in full subscription labels", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
-            defaultClaudeSettings,
+            isolatedClaudeSettings,
             claudeCapabilities({
               subscriptionType: "Claude Max Subscription",
             }),
@@ -2059,7 +2062,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       it.effect("does not duplicate Claude in provider-prefixed subscription names", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
-            defaultClaudeSettings,
+            isolatedClaudeSettings,
             claudeCapabilities({
               subscriptionType: "Claude Max",
             }),

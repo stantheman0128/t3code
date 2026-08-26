@@ -40,7 +40,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { makeClaudeEnvironment, resolveClaudeHomePath } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
@@ -549,6 +549,65 @@ function formatClaudeSubscriptionAuthLabel(subscriptionType: string): string {
   return `Claude ${subscriptionLabel} Subscription`;
 }
 
+function claudeOrganizationTypeToSubscription(
+  organizationType: string | undefined,
+): string | undefined {
+  const normalized = organizationType?.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!normalized) return undefined;
+  switch (normalized) {
+    case "claudepro":
+    case "pro":
+      return "pro";
+    case "claudemax":
+    case "claudemaxplan":
+    case "max":
+    case "maxplan":
+      return "maxplan";
+    case "claudeteam":
+    case "team":
+      return "team";
+    case "claudeenterprise":
+    case "enterprise":
+      return "enterprise";
+    case "claudefree":
+    case "free":
+      return "free";
+    default:
+      return undefined;
+  }
+}
+
+/** Billing in ~/.claude.json is the account plan; SDK init often reports maxplan anyway. */
+export function preferClaudeSubscriptionType(
+  sdkSubscriptionType: string | undefined,
+  organizationType: string | undefined,
+): string | undefined {
+  return claudeOrganizationTypeToSubscription(organizationType) ?? sdkSubscriptionType;
+}
+
+const readClaudeOrganizationType = Effect.fn("readClaudeOrganizationType")(function* (
+  homeDir: string,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const raw = yield* fileSystem
+    .readFileString(path.join(homeDir, ".claude.json"))
+    .pipe(Effect.orElseSucceed((): string | null => null));
+  if (raw === null || raw.trim().length === 0) {
+    return undefined;
+  }
+  try {
+    const document = JSON.parse(raw) as {
+      oauthAccount?: { organizationType?: unknown };
+    };
+    return typeof document.oauthAccount?.organizationType === "string"
+      ? document.oauthAccount.organizationType
+      : undefined;
+  } catch {
+    return undefined;
+  }
+});
+
 function claudeAuthMetadata(input: {
   readonly subscriptionType: string | undefined;
   readonly authMethod: string | undefined;
@@ -954,9 +1013,17 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  const claudeHome = yield* resolveClaudeHomePath(claudeSettings);
+  const organizationType = yield* readClaudeOrganizationType(claudeHome).pipe(
+    Effect.orElseSucceed(() => undefined),
+  );
+  const subscriptionType = preferClaudeSubscriptionType(
+    capabilities.subscriptionType,
+    organizationType,
+  );
   const authMetadata =
     claudeAuthMetadata({
-      subscriptionType: capabilities.subscriptionType,
+      subscriptionType,
       authMethod: capabilities.tokenSource,
     }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
   return buildServerProvider({

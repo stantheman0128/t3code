@@ -10,10 +10,17 @@ import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
   isLegacyClaudeModel,
+  preferClaudeSubscriptionType,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+
+it("prefers ~/.claude.json organizationType over SDK maxplan", () => {
+  assert.equal(preferClaudeSubscriptionType("maxplan", "claude_pro"), "pro");
+  assert.equal(preferClaudeSubscriptionType("maxplan", undefined), "maxplan");
+  assert.equal(preferClaudeSubscriptionType(undefined, "claude_pro"), "pro");
+});
 
 it("keeps only the Claude 5 family out of legacy models", () => {
   assert.deepStrictEqual(

@@ -186,12 +186,13 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
   const tools = agent.recentActivity
     .map((entry) => entry.summary.replace(/^▸\s+/, "").trim())
     .filter((summary) => summary.length > 0);
+  const steps = tools.length > 0 ? tools : agent.lastToolName !== null ? [agent.lastToolName] : [];
   const toolUses = agent.usage?.toolUses ?? 0;
   const hasDetail =
     agent.error !== null ||
     preview !== null ||
     agent.outputFile !== null ||
-    tools.length > 0 ||
+    steps.length > 0 ||
     toolUses > 0;
   if (!hasDetail) {
     return (
@@ -212,8 +213,12 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
       {preview ? (
         <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">{preview}</p>
       ) : null}
-      {tools.length > 0 ? (
-        <p className="text-[.65rem] text-muted-foreground">Did: {tools.slice(-6).join(" · ")}</p>
+      {steps.length > 0 ? (
+        <ol className="list-decimal space-y-0.5 pl-4 text-[.65rem] text-muted-foreground">
+          {steps.slice(-12).map((step, index) => (
+            <li key={`${index}-${step}`}>{step}</li>
+          ))}
+        </ol>
       ) : toolUses > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">
           {isActiveSubagentStatus(agent.status) ? `${toolUses} tools so far` : `${toolUses} tools`}
@@ -728,8 +733,8 @@ export function AgentsPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ScrollArea className="min-h-0 flex-1">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <ScrollArea className="h-0 min-h-0 flex-1">
         <div className="flex flex-col gap-2 p-2">
           {model.workflows.map((group) => (
             <WorkflowSection

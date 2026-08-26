@@ -26,12 +26,14 @@ function nonEmptyString(value: unknown): string | undefined {
 }
 
 export function grokAuthLabel(record: GrokAuthRecord): string {
-  if (nonEmptyString(record.team_id)) {
-    return "Grok Team";
-  }
   const mode = nonEmptyString(record.auth_mode)?.toLowerCase();
   if (mode === "api_key" || mode === "api-key") {
     return "XAI_API_KEY";
+  }
+  // grok.com OIDC always has a team_id, including personal User accounts.
+  const principal = nonEmptyString(record.principal_type)?.toLowerCase();
+  if (principal !== undefined && principal !== "user") {
+    return "Grok Team";
   }
   return "grok.com";
 }

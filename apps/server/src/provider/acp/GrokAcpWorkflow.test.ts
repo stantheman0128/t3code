@@ -185,6 +185,7 @@ describe("GrokAcpWorkflow", () => {
         tokens_used: 90,
         duration_ms: 1200,
         tool_calls: 4,
+        tools_used: ["grep", "read_file"],
       },
     });
     const afterFinish = applyGrokSubagentUpdate(afterProgress.state, finished!);
@@ -193,6 +194,7 @@ describe("GrokAcpWorkflow", () => {
       durationMs: 1200,
       toolUses: 4,
     });
+    expect(afterFinish.events[0]?.payload.lastToolName).toBe("read_file");
   });
 
   it("does not let a tool-only tick zero earlier subagent tokens", () => {

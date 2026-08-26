@@ -129,4 +129,34 @@ describe("AgentsPanel", () => {
     expect(html).toContain("48 tools");
     expect(html).not.toContain("No output yet");
   });
+
+  it("lists lastToolName when Grok has not streamed a procedure yet", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-2",
+          status: "running",
+          title: "Investigate T3 UI bugs",
+          error: null,
+          result: null,
+          lastToolName: "read_file",
+          usage: { totalTokens: 1200, toolUses: 4 },
+          recentActivity: [],
+        }),
+      ],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 1200,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("read_file");
+    expect(html).not.toContain("No output yet");
+  });
 });

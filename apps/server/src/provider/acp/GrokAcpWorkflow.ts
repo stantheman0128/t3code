@@ -575,6 +575,7 @@ export function applyGrokSubagentUpdate(
     if (typedUsage) {
       usageByTaskId.set(update.subagentId, typedUsage);
     }
+    const lastTool = update.toolsUsed?.at(-1);
     events.push({
       type: "task.completed",
       payload: {
@@ -582,6 +583,7 @@ export function applyGrokSubagentUpdate(
         status:
           finished === "failed" ? "failed" : finished === "cancelled" ? "stopped" : "completed",
         summary: grokSubagentFinishSummary(update, finished),
+        ...(lastTool ? { lastToolName: lastTool } : {}),
         ...(typedUsage ? { typedUsage } : {}),
       },
     });

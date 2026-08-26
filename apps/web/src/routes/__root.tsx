@@ -38,6 +38,7 @@ import {
   derivePhysicalProjectKeyFromPath,
   selectProjectGroupingSettings,
 } from "../logicalProject";
+import { sanitizeLastLocationPath } from "../lastLocation";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { configureClientTracing } from "../observability/clientTracing";
@@ -90,6 +91,7 @@ export const Route = createRootRoute({
 
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
+  const setLastLocationPath = useUiStateStore((state) => state.setLastLocationPath);
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
 
@@ -101,6 +103,13 @@ function RootRouteView() {
       window.cancelAnimationFrame(frame);
     };
   }, [pathname]);
+
+  useEffect(() => {
+    const nextPath = sanitizeLastLocationPath(pathname);
+    if (nextPath) {
+      setLastLocationPath(nextPath);
+    }
+  }, [pathname, setLastLocationPath]);
 
   if (pathname === "/pair" || pathname === "/connect" || pathname.startsWith("/connect/")) {
     return (

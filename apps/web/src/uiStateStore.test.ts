@@ -24,6 +24,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
+    lastLocationPath: null,
     ...overrides,
   };
 }
@@ -177,6 +178,7 @@ describe("parsePersistedState", () => {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
+      lastLocationPath: null,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -184,6 +186,13 @@ describe("parsePersistedState", () => {
         },
       },
     });
+  });
+
+  it("hydrates the last app location", () => {
+    expect(parsePersistedState({ lastLocationPath: "/settings/providers" }).lastLocationPath).toBe(
+      "/settings/providers",
+    );
+    expect(parsePersistedState({ lastLocationPath: "/" }).lastLocationPath).toBeNull();
   });
 
   it("ignores changed-file expansion values saved with legacy folder semantics", () => {
@@ -303,6 +312,7 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      lastLocationPath: null,
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

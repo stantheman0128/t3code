@@ -1,5 +1,6 @@
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
+import { parseStoredLastLocationPath } from "./lastLocation";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
@@ -27,6 +28,7 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  lastLocationPath?: string | null;
 }
 
 export interface UiProjectState {
@@ -43,7 +45,11 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState {}
+export interface UiLocationState {
+  lastLocationPath: string | null;
+}
+
+export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiLocationState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -51,6 +57,7 @@ const initialState: UiState = {
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
+  lastLocationPath: null,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -135,6 +142,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.defaultAdvertisedEndpointKey.length > 0
         ? parsed.defaultAdvertisedEndpointKey
         : null,
+    lastLocationPath: parseStoredLastLocationPath(parsed.lastLocationPath),
   };
 }
 
@@ -207,6 +215,7 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        lastLocationPath: state.lastLocationPath,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -290,6 +299,17 @@ export function setThreadChangedFilesExpanded(
         [turnId]: expanded,
       },
     },
+  };
+}
+
+export function setLastLocationPath(state: UiState, path: string | null): UiState {
+  const nextPath = parseStoredLastLocationPath(path);
+  if (state.lastLocationPath === nextPath) {
+    return state;
+  }
+  return {
+    ...state,
+    lastLocationPath: nextPath,
   };
 }
 
@@ -386,6 +406,7 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
+  setLastLocationPath: (path: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -404,6 +425,14 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
+  setLastLocationPath: (path) =>
+    set((state) => {
+      const next = setLastLocationPath(state, path);
+      if (next !== state) {
+        persistState(next);
+      }
+      return next;
+    }),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>

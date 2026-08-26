@@ -1,5 +1,5 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,6 +18,8 @@ import {
 import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { consumeLastLocationRestore, shouldSkipIndexDraftLanding } from "../lastLocation";
+import { useUiStateStore } from "../uiStateStore";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -40,7 +42,9 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const router = useRouter();
   const startingRef = useRef(false);
+  const restoringRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const mostRecentProject = useMemo(
@@ -52,7 +56,16 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (shouldSkipIndexDraftLanding() || restoringRef.current || startingRef.current) {
+      return;
+    }
+    const restoredPath = consumeLastLocationRestore(useUiStateStore.getState().lastLocationPath);
+    if (restoredPath) {
+      restoringRef.current = true;
+      router.history.replace(restoredPath);
+      return;
+    }
+    if (mostRecentProject === null) {
       return;
     }
     startingRef.current = true;
@@ -62,7 +75,7 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [handleNewThread, mostRecentProject, router, startState.retryRequest]);
 
   if (!bootstrapped) {
     return null;

@@ -13,12 +13,29 @@ describe("getPreviewPanelMaxWidth", () => {
     expect(getPreviewPanelMaxWidth(2_001)).toBe(1_400);
   });
 
+  it("collapses inline width when closing so the panel can animate out", () => {
+    const markup = renderToStaticMarkup(
+      jsx(PreviewPanelShell, {
+        mode: "inline",
+        open: false,
+        defaultWidth: 540,
+        children: "Panel",
+      }),
+    );
+
+    expect(markup).toContain("width:0px");
+    expect(markup).toContain('data-preview-panel-open="false"');
+  });
+
   it("keeps inline panels inside their containing workspace", () => {
     const markup = renderToStaticMarkup(
       jsx(PreviewPanelShell, { mode: "inline", defaultWidth: 1_000, children: "Panel" }),
     );
 
     expect(markup).toContain("max-w-full");
+    expect(markup).toContain("transition-[width]");
+    expect(markup).toContain("starting:w-0");
+    expect(markup).toContain('data-preview-panel-open="true"');
   });
 
   it("reserves the sibling column minimum when the flex row is known", () => {

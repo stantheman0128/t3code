@@ -369,6 +369,7 @@ import {
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
 import { useComposerHandleContext } from "../composerHandleContext";
 import {
   awaitAttachmentUploads,
@@ -381,6 +382,7 @@ import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { Button } from "./ui/button";
+import { Collapsible, CollapsiblePanel } from "./ui/collapsible";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -1028,42 +1030,54 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     [onAddTerminalContext, visible],
   );
 
-  if (!project || !terminalUiState.terminalOpen || !cwd) {
+  const keepHidden = !visible && terminalUiState.terminalOpen;
+  const drawerOpen = visible;
+  const drawerMounted = useDelayedUnmount(drawerOpen || keepHidden, 200);
+
+  if (!project || !cwd || !drawerMounted) {
     return null;
   }
 
+  const drawer = (
+    <ThreadTerminalDrawer
+      threadRef={threadRef}
+      threadId={threadId}
+      cwd={cwd}
+      worktreePath={effectiveWorktreePath}
+      runtimeEnv={runtimeEnv}
+      visible={visible}
+      height={terminalUiState.terminalHeight}
+      // Known-session order is MRU and changes on focus; persisted store order keeps sidebar labels stable.
+      terminalIds={terminalUiState.terminalIds}
+      activeTerminalId={terminalUiState.activeTerminalId}
+      terminalGroups={terminalUiState.terminalGroups}
+      activeTerminalGroupId={terminalUiState.activeTerminalGroupId}
+      focusRequestId={focusRequestId + localFocusRequestId + (visible ? 1 : 0)}
+      onSplitTerminal={splitTerminal}
+      onSplitTerminalVertical={splitTerminalVertical}
+      onNewTerminal={createNewTerminal}
+      splitShortcutLabel={visible ? splitShortcutLabel : undefined}
+      splitVerticalShortcutLabel={visible ? splitVerticalShortcutLabel : undefined}
+      newShortcutLabel={visible ? newShortcutLabel : undefined}
+      closeShortcutLabel={visible ? closeShortcutLabel : undefined}
+      keybindings={keybindings}
+      onActiveTerminalChange={activateTerminal}
+      onCloseTerminal={closeTerminal}
+      onHeightChange={setTerminalHeight}
+      onAddTerminalContext={handleAddTerminalContext}
+      terminalLabelsById={terminalLabelsById}
+      terminalLaunchLocationsById={terminalLaunchLocationsById}
+    />
+  );
+
+  if (keepHidden) {
+    return <div className="hidden">{drawer}</div>;
+  }
+
   return (
-    <div className={visible ? undefined : "hidden"}>
-      <ThreadTerminalDrawer
-        threadRef={threadRef}
-        threadId={threadId}
-        cwd={cwd}
-        worktreePath={effectiveWorktreePath}
-        runtimeEnv={runtimeEnv}
-        visible={visible}
-        height={terminalUiState.terminalHeight}
-        // Known-session order is MRU and changes on focus; persisted store order keeps sidebar labels stable.
-        terminalIds={terminalUiState.terminalIds}
-        activeTerminalId={terminalUiState.activeTerminalId}
-        terminalGroups={terminalUiState.terminalGroups}
-        activeTerminalGroupId={terminalUiState.activeTerminalGroupId}
-        focusRequestId={focusRequestId + localFocusRequestId + (visible ? 1 : 0)}
-        onSplitTerminal={splitTerminal}
-        onSplitTerminalVertical={splitTerminalVertical}
-        onNewTerminal={createNewTerminal}
-        splitShortcutLabel={visible ? splitShortcutLabel : undefined}
-        splitVerticalShortcutLabel={visible ? splitVerticalShortcutLabel : undefined}
-        newShortcutLabel={visible ? newShortcutLabel : undefined}
-        closeShortcutLabel={visible ? closeShortcutLabel : undefined}
-        keybindings={keybindings}
-        onActiveTerminalChange={activateTerminal}
-        onCloseTerminal={closeTerminal}
-        onHeightChange={setTerminalHeight}
-        onAddTerminalContext={handleAddTerminalContext}
-        terminalLabelsById={terminalLabelsById}
-        terminalLaunchLocationsById={terminalLaunchLocationsById}
-      />
-    </div>
+    <Collapsible open={drawerOpen}>
+      <CollapsiblePanel>{drawer}</CollapsiblePanel>
+    </Collapsible>
   );
 });
 
@@ -1754,6 +1768,10 @@ function ChatViewContent(props: ChatViewProps) {
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
+  const inlineRightPanelOpen = Boolean(
+    rightPanelOpen && !shouldUseRightPanelSheet && activeThreadRef,
+  );
+  const inlineRightPanelMounted = useDelayedUnmount(inlineRightPanelOpen, 200);
 
   useEffect(() => {
     if (!activeThreadRef) return;
@@ -7314,9 +7332,10 @@ function ChatViewContent(props: ChatViewProps) {
         ))}
       </div>
 
-      {!shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
+      {!shouldUseRightPanelSheet && inlineRightPanelMounted && activeThreadRef ? (
         <RightPanelTabs
           mode="inline"
+          open={rightPanelOpen}
           maximized={rightPanelMaximized}
           surfaces={rightPanelState.surfaces}
           activeSurfaceId={activeRightPanelSurface?.id ?? null}

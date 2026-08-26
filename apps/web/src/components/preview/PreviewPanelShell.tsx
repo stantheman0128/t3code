@@ -53,6 +53,11 @@ export function PreviewPanelShell(props: {
   mode: PreviewPanelMode;
   maximized?: boolean;
   /**
+   * Inline open/close. Keep the shell mounted with `false` through the width
+   * transition so Toggle Right Panel can animate out instead of unmounting.
+   */
+  open?: boolean;
+  /**
    * Overrides the localStorage key used to persist the panel width. Callers
    * embedding this shell for a different surface (e.g. the pull requests
    * page) should pass their own key so resizing one panel doesn't clobber
@@ -65,6 +70,7 @@ export function PreviewPanelShell(props: {
 }) {
   const useDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
   const isInline = props.mode === "inline";
+  const isOpen = props.open !== false;
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
   // container measurement (and its re-renders) everywhere else.
@@ -85,12 +91,13 @@ export function PreviewPanelShell(props: {
         isInline
           ? props.maximized
             ? "flex-1 border-l border-border"
-            : "shrink-0 border-l border-border"
+            : "shrink-0 overflow-hidden border-l border-border transition-[width] duration-200 ease-out starting:w-0 motion-reduce:transition-none"
           : "w-full",
       )}
-      style={isInline && !props.maximized ? { width: `${width}px` } : undefined}
+      style={isInline && !props.maximized ? { width: `${isOpen ? width : 0}px` } : undefined}
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={props.maximized ? "true" : "false"}
+      data-preview-panel-open={isOpen ? "true" : "false"}
     >
       {isInline && !props.maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}
       {useDragRegion ? <div className="electron-drag-region h-0 w-full" aria-hidden /> : null}

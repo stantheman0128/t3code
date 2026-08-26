@@ -51,7 +51,8 @@ describe("ThreadStatusLabel", () => {
       />,
     );
 
-    expect(markup).toContain("animate-spin");
+    expect(markup).toContain("animate-working-spin");
+    expect(markup).not.toContain("animate-spin");
     expect(markup).not.toContain("animate-status-pulse");
   });
 
@@ -77,7 +78,7 @@ describe("ThreadStatusLabel", () => {
       />,
     );
 
-    expect(monitoring).not.toContain("animate-spin");
-    expect(completed).not.toContain("animate-spin");
+    expect(monitoring).not.toContain("animate-working-spin");
+    expect(completed).not.toContain("animate-working-spin");
   });
 });

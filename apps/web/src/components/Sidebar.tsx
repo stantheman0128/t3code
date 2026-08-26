@@ -851,8 +851,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           label: "Working",
           icon: "working" as const,
           // The label stays still (a shimmering word is noise in a list).
-          // The dashed circle uses the same animate-spin token as other
-          // in-progress affordances so Working reads as live work.
+          // The dashed circle uses the slower Working spin so the row
+          // reads as live work, not a 1s loading throbber.
           className: cn("text-sky-600 dark:text-sky-400", !props.isActive && "opacity-75"),
         }
       : status === "monitoring"
@@ -1479,7 +1479,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         {topStatus.icon === "working" ? (
                           <CircleDashedIcon
                             aria-hidden
-                            className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                            className="size-4 shrink-0 animate-working-spin motion-reduce:animate-none"
                           />
                         ) : topStatus.icon === "done" ? (
                           <CircleCheckIcon aria-hidden className="size-4 shrink-0" />

@@ -145,6 +145,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 @theme inline {
   --color-zinc-25: oklch(99.2% 0 0);
   --animate-skeleton: skeleton 2s infinite linear;
+  /* Sidebar/thread Working spinner: slower than Tailwind's 1s spin so the
+     dashed circle reads as ongoing work instead of a loading throbber. */
+  --animate-working-spin: spin 1.8s linear infinite;
   /* Duty-cycled indicator animations: long holds with stepped ramps, so the
      compositor updates discrete frames instead of every vsync. */
   --animate-status-pulse: status-pulse 2s infinite;

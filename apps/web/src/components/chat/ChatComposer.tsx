@@ -75,6 +75,7 @@ import { ComposerStashMenu } from "./ComposerStashMenu";
 import {
   ComposerTasksBadge,
   ComposerTasksDrawer,
+  ComposerTasksDrawerClip,
   type ComposerTaskStep,
   type ComposerTasksProgress,
 } from "./ComposerTasksBadge";
@@ -134,6 +135,7 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
+import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
 import {
@@ -2573,10 +2575,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       steps={visibleTaskSteps}
     />
   ) : null;
+  const tasksDrawerOpen =
+    isTasksDrawerOpen &&
+    !hasBlockingComposerTopDrawer &&
+    visibleTasksProgress !== null &&
+    visibleTaskSteps !== null;
+  const tasksDrawerMounted = useDelayedUnmount(tasksDrawerOpen, 200);
   const showShoulderTabs =
     !props.externalDrawerAttached &&
     !showComposerTopDrawer &&
-    !isTasksDrawerOpen &&
+    !tasksDrawerMounted &&
     !isComposerCollapsedMobile;
   const hasShoulderTab =
     showShoulderTabs &&
@@ -3046,7 +3054,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onDragOverCapture={composerMentionDragHandlers.onDragOver}
       onDragLeaveCapture={onComposerMentionDragLeaveCapture}
       onDropCapture={composerMentionDragHandlers.onDrop}
-      className={cn("mx-auto w-full min-w-0 max-w-3xl", hasShoulderTab && "pt-7")}
+      className={cn(
+        "mx-auto w-full min-w-0 max-w-3xl transition-[padding-top] duration-200 ease-linear motion-reduce:transition-none",
+        hasShoulderTab && "pt-7",
+      )}
       data-chat-composer-form="true"
     >
       {showComposerTopDrawer && (!isTasksDrawerOpen || hasBlockingComposerTopDrawer) ? (
@@ -3162,16 +3173,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ) : null}
         </div>
       ) : null}
-      {isTasksDrawerOpen &&
-      !hasBlockingComposerTopDrawer &&
-      visibleTasksProgress &&
-      visibleTaskSteps ? (
-        <ComposerTasksDrawer
-          onDismiss={dismissTasks}
-          onCollapse={toggleTasksDrawer}
-          progress={visibleTasksProgress}
-          steps={visibleTaskSteps}
-        />
+      {tasksDrawerMounted && visibleTasksProgress && visibleTaskSteps ? (
+        <ComposerTasksDrawerClip open={tasksDrawerOpen}>
+          <ComposerTasksDrawer
+            onDismiss={dismissTasks}
+            onCollapse={toggleTasksDrawer}
+            progress={visibleTasksProgress}
+            steps={visibleTaskSteps}
+          />
+        </ComposerTasksDrawerClip>
       ) : null}
       <div className="relative">
         {showShoulderTabs && visibleTasksProgress && visibleTaskSteps ? (

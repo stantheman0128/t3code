@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ComposerTasksBadge, ComposerTasksDrawer } from "./ComposerTasksBadge";
+import {
+  ComposerTasksBadge,
+  ComposerTasksDrawer,
+  ComposerTasksDrawerClip,
+} from "./ComposerTasksBadge";
 
 const progress = {
   step: "Attach task progress",
@@ -112,6 +116,26 @@ describe("ComposerTasksBadge", () => {
     expect(markup).not.toContain("bg-success");
     expect(markup).not.toContain("bg-primary");
     expect(markup).not.toContain("bg-muted-foreground/25");
+  });
+
+  it("clips the task list with the sidebar expand timing", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerTasksDrawerClip open={false}>
+        <ComposerTasksDrawer
+          onCollapse={() => undefined}
+          onDismiss={() => undefined}
+          progress={progress}
+          steps={steps}
+        />
+      </ComposerTasksDrawerClip>,
+    );
+
+    expect(markup).toContain("data-chat-composer-tasks-drawer-clip");
+    expect(markup).toContain("transition-[grid-template-rows]");
+    expect(markup).toContain("duration-200");
+    expect(markup).toContain("ease-linear");
+    expect(markup).toContain("grid-template-rows:0fr");
+    expect(markup).toContain('data-chat-composer-tasks-drawer="true"');
   });
 
   it("does not render an empty task count", () => {

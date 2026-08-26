@@ -1,5 +1,5 @@
 import { ListTodoIcon, XIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, useLayoutEffect, useState, type ReactNode } from "react";
 
 import { formatDuration } from "../../session-logic";
 import { cn } from "~/lib/utils";
@@ -158,6 +158,36 @@ export const ComposerTasksBadge = memo(function ComposerTasksBadge({
       >
         <XIcon aria-hidden className="size-3" />
       </Button>
+    </div>
+  );
+});
+
+/** Clip-to-zero height so the tasks list expands like the main sidebar. */
+export const ComposerTasksDrawerClip = memo(function ComposerTasksDrawerClip({
+  open,
+  children,
+}: {
+  readonly open: boolean;
+  readonly children: ReactNode;
+}) {
+  const [entered, setEntered] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setEntered(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setEntered(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
+
+  return (
+    <div
+      data-chat-composer-tasks-drawer-clip="true"
+      className="grid transition-[grid-template-rows] duration-200 ease-linear motion-reduce:transition-none"
+      style={{ gridTemplateRows: open && entered ? "1fr" : "0fr" }}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
     </div>
   );
 });

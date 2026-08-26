@@ -490,7 +490,7 @@ export function ThreadStatusLabel({
           {status.label === "Working" ? (
             <CircleDashedIcon
               aria-hidden
-              className="size-[9px] animate-spin motion-reduce:animate-none"
+              className="size-[9px] animate-working-spin motion-reduce:animate-none"
             />
           ) : (
             <span
@@ -518,7 +518,7 @@ export function ThreadStatusLabel({
         {status.label === "Working" ? (
           <CircleDashedIcon
             aria-hidden
-            className="size-3 animate-spin motion-reduce:animate-none"
+            className="size-3 animate-working-spin motion-reduce:animate-none"
           />
         ) : (
           <span

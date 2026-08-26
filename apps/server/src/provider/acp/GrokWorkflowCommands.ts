@@ -28,6 +28,14 @@ export const GROK_WORKFLOW_CONTROL_COMMANDS: ReadonlyArray<ServerProviderSlashCo
   },
 ];
 
+export const GROK_LOOP_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
+  {
+    name: "loop",
+    description: "Repeat a prompt on an interval. Grok /loop; minimum 60s, expires after 7 days",
+    input: { hint: "5m Check CI" },
+  },
+];
+
 export const GROK_GOAL_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
   {
     name: "goal",
@@ -141,7 +149,7 @@ const readWorkflowDir = Effect.fn("grok.readWorkflowDir")(function* (
 });
 
 /**
- * Built-in `/workflow`, pause/resume/stop, `/goal`, plus `~/.grok/workflows`
+ * Built-in `/workflow`, pause/resume/stop, `/loop`, `/goal`, plus `~/.grok/workflows`
  * and `<project>/.grok/workflows` scripts. Project scripts override user
  * scripts of the same command name. T3 sends the slash text as a prompt — it
  * does not host Rhai.
@@ -155,6 +163,9 @@ export const readGrokWorkflowSlashCommands = Effect.fn("grok.readWorkflowSlashCo
     const byName = new Map<string, ServerProviderSlashCommand>();
     byName.set(GROK_WORKFLOW_LAUNCH_COMMAND.name, GROK_WORKFLOW_LAUNCH_COMMAND);
     for (const command of GROK_WORKFLOW_CONTROL_COMMANDS) {
+      byName.set(command.name, command);
+    }
+    for (const command of GROK_LOOP_SLASH_COMMANDS) {
       byName.set(command.name, command);
     }
     for (const command of GROK_GOAL_SLASH_COMMANDS) {

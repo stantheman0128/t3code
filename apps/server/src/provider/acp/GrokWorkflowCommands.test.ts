@@ -103,6 +103,7 @@ it.layer(NodeServices.layer)("readGrokWorkflowSlashCommands", (it) => {
         expect(commands).toEqual(expect.arrayContaining([...GROK_WORKFLOW_CONTROL_COMMANDS]));
         expect(commands.map((command) => command.name)).toEqual(
           expect.arrayContaining([
+            "loop",
             "goal",
             "goal status",
             "goal pause",

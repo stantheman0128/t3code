@@ -51,6 +51,11 @@ Grok Build workflows are Rhai scripts that orchestrate child agents as one backg
 CLI launches them with the `workflow` tool or `/workflow` and streams progress as
 `x.ai/session_notification` / `workflow_updated`.
 
+Composer `/` lists `/workflow` to start a run by name, `/workflow pause`, `/workflow resume`,
+`/workflow stop`, `/loop` (interval plus prompt, same as Grok TUI), `/goal` (status, pause,
+resume, clear), and each script in `~/.grok/workflows` plus the project `.grok/workflows`
+directory.
+
 T3 Code now maps those updates onto the same Agents / task surface used by Claude workflows and Codex collab children:
 
 - the run becomes a `local_workflow` task (name, objective, phases)
@@ -58,12 +63,10 @@ T3 Code now maps those updates onto the same Agents / task surface used by Claud
 - member tokens stay on the child `typedUsage` snapshot — they do not replace the thread context window
 - standalone Grok `subagent_spawned` / `subagent_progress` / `subagent_finished` updates use the same child-task path
 
-T3 does not reimplement the Rhai host. Composer `/` lists `/workflow` to start a run by name,
-`/workflow pause`, `/workflow resume`, `/workflow stop`, `/goal` (status, pause, resume, clear),
-and each script in `~/.grok/workflows` plus the project `.grok/workflows` directory. Picking one
-sends that slash text as a prompt so the Grok CLI can run it. Project scripts override user
-scripts of the same name. If you only see pause/resume/stop, there is no `.rhai` script in those
-folders yet; use `/workflow <name>` for a built-in or add a script to launch by name.
+T3 does not reimplement the Rhai host. Picking a slash item sends that text as a prompt so the
+Grok CLI can run it. Project scripts override user scripts of the same name. If you only see
+pause/resume/stop, there is no `.rhai` script in those folders yet; use `/workflow <name>` for a
+built-in or add a script to launch by name.
 
 ## Goals
 

@@ -72,6 +72,8 @@ export function PreviewPanelShell(props: {
   const isInline = props.mode === "inline";
   const isOpen = props.open !== false;
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const wasOpenRef = useRef(isOpen);
+  const [entered, setEntered] = useState(isOpen);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
   // container measurement (and its re-renders) everywhere else.
   const maxWidth = useClampedMaxWidth(hostRef, isInline && !props.maximized);
@@ -83,6 +85,24 @@ export function PreviewPanelShell(props: {
     edge: "left",
   });
 
+  useLayoutEffect(() => {
+    if (!isInline || props.maximized) {
+      setEntered(true);
+      wasOpenRef.current = isOpen;
+      return;
+    }
+    if (isOpen && !wasOpenRef.current) {
+      setEntered(false);
+      const frame = window.requestAnimationFrame(() => setEntered(true));
+      wasOpenRef.current = true;
+      return () => window.cancelAnimationFrame(frame);
+    }
+    wasOpenRef.current = isOpen;
+    setEntered(isOpen);
+  }, [isInline, isOpen, props.maximized]);
+
+  const revealed = isOpen && entered;
+
   return (
     <div
       ref={hostRef}
@@ -91,17 +111,22 @@ export function PreviewPanelShell(props: {
         isInline
           ? props.maximized
             ? "flex-1 border-l border-border"
-            : "shrink-0 overflow-hidden border-l border-border transition-[width] duration-200 ease-out starting:w-0 motion-reduce:transition-none"
+            : "shrink-0 overflow-hidden border-l border-border transition-[width] duration-200 ease-linear motion-reduce:transition-none"
           : "w-full",
       )}
-      style={isInline && !props.maximized ? { width: `${isOpen ? width : 0}px` } : undefined}
+      style={isInline && !props.maximized ? { width: `${revealed ? width : 0}px` } : undefined}
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={props.maximized ? "true" : "false"}
       data-preview-panel-open={isOpen ? "true" : "false"}
     >
-      {isInline && !props.maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}
-      {useDragRegion ? <div className="electron-drag-region h-0 w-full" aria-hidden /> : null}
-      {props.children}
+      <div
+        className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
+        style={isInline && !props.maximized ? { width: `${width}px` } : undefined}
+      >
+        {isInline && !props.maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}
+        {useDragRegion ? <div className="electron-drag-region h-0 w-full" aria-hidden /> : null}
+        {props.children}
+      </div>
     </div>
   );
 }

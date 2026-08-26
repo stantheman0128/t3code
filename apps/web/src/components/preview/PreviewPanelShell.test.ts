@@ -34,7 +34,7 @@ describe("getPreviewPanelMaxWidth", () => {
 
     expect(markup).toContain("max-w-full");
     expect(markup).toContain("transition-[width]");
-    expect(markup).toContain("starting:w-0");
+    expect(markup).toContain("ease-linear");
     expect(markup).toContain('data-preview-panel-open="true"');
   });
 

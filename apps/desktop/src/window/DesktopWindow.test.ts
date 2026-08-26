@@ -30,6 +30,12 @@ vi.mock("electron", async (importOriginal) => ({
       },
     ]),
   },
+  Tray: class {
+    setToolTip = vi.fn();
+    setContextMenu = vi.fn();
+    on = vi.fn();
+    destroy = vi.fn();
+  },
 }));
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
@@ -92,6 +98,7 @@ function makeFakeBrowserWindow() {
     isDestroyed: vi.fn(() => false),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
+    hide: vi.fn(),
     isMinimized: vi.fn(() => false),
     isVisible: vi.fn(() => true),
     loadURL: vi.fn(() => Promise.resolve()),
@@ -117,6 +124,7 @@ function makeFakeBrowserWindow() {
     getNormalBounds: window.getNormalBounds,
     isDestroyed: window.isDestroyed,
     isFullScreen: window.isFullScreen,
+    hide: window.hide,
     isMaximized: window.isMaximized,
     isMinimized: window.isMinimized,
     loadURL: window.loadURL,
@@ -707,6 +715,33 @@ describe("DesktopWindow", () => {
         assert.deepEqual(mainWindowMaximizedUpdates, [true]);
         assert.equal(fakeWindow.getNormalBounds.mock.calls.length, 1);
         assert.equal(fakeWindow.getBounds.mock.calls.length, 0);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("hides the main window to the tray instead of closing it", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const close = fakeWindow.windowListeners.get("close");
+        if (!close) {
+          return yield* Effect.die("window close listener was not registered");
+        }
+        const preventDefault = vi.fn();
+        close({ preventDefault } as unknown as Electron.Event);
+        assert.equal(preventDefault.mock.calls.length, 1);
+        assert.equal(fakeWindow.hide.mock.calls.length, 1);
       }).pipe(Effect.provide(layer));
     }),
   );

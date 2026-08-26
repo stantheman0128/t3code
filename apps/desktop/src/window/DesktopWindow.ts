@@ -283,6 +283,8 @@ export const make = Effect.gen(function* () {
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+  let allowWindowClose = false;
+  let appTray: Electron.Tray | null = null;
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -592,9 +594,58 @@ export const make = Effect.gen(function* () {
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
+    window.on("close", (event) => {
       runFork(flushBoundsPersist);
+      if (allowWindowClose) {
+        return;
+      }
+      event?.preventDefault?.();
+      if (!window.isDestroyed()) {
+        window.hide();
+      }
     });
+
+    const trayIcon = Option.isSome(iconPaths.ico)
+      ? iconPaths.ico.value
+      : Option.isSome(iconPaths.png)
+        ? iconPaths.png.value
+        : Option.isSome(iconPaths.icns)
+          ? iconPaths.icns.value
+          : undefined;
+    if (trayIcon !== undefined && appTray === null) {
+      try {
+        const tray = new Electron.Tray(trayIcon);
+        tray.setToolTip(environment.displayName);
+        tray.setContextMenu(
+          Electron.Menu.buildFromTemplate([
+            {
+              label: "Show",
+              click: () => {
+                void runPromise(electronWindow.reveal(window));
+              },
+            },
+            { type: "separator" },
+            {
+              label: "Quit",
+              click: () => {
+                void runPromise(electronApp.quit);
+              },
+            },
+          ]),
+        );
+        tray.on("click", () => {
+          void runPromise(electronWindow.reveal(window));
+        });
+        appTray = tray;
+        Electron.app.once("before-quit", () => {
+          allowWindowClose = true;
+          appTray?.destroy();
+          appTray = null;
+        });
+      } catch (cause) {
+        yield* logWindowWarning("failed to create tray icon", { cause });
+      }
+    }
 
     if (environment.platform === "darwin") {
       window.on("enter-full-screen", () => {

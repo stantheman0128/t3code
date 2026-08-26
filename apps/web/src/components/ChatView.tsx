@@ -382,7 +382,6 @@ import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { Button } from "./ui/button";
-import { Collapsible, CollapsiblePanel } from "./ui/collapsible";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -1033,6 +1032,16 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const keepHidden = !visible && terminalUiState.terminalOpen;
   const drawerOpen = visible;
   const drawerMounted = useDelayedUnmount(drawerOpen || keepHidden, 200);
+  const [entered, setEntered] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!drawerOpen) {
+      setEntered(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setEntered(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [drawerOpen]);
 
   if (!project || !cwd || !drawerMounted) {
     return null;
@@ -1074,10 +1083,15 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     return <div className="hidden">{drawer}</div>;
   }
 
+  const drawerHeight = terminalUiState.terminalHeight;
+
   return (
-    <Collapsible open={drawerOpen}>
-      <CollapsiblePanel>{drawer}</CollapsiblePanel>
-    </Collapsible>
+    <div
+      className="overflow-hidden transition-[height] duration-200 ease-linear motion-reduce:transition-none"
+      style={{ height: drawerOpen && entered ? drawerHeight : 0 }}
+    >
+      <div style={{ height: drawerHeight }}>{drawer}</div>
+    </div>
   );
 });
 

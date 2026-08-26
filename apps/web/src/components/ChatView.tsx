@@ -239,6 +239,7 @@ import {
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
+import { usePromptQueueStore } from "../promptQueueStore";
 import {
   appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
@@ -6106,6 +6107,169 @@ function ChatViewContent(props: ChatViewProps) {
     }
   };
 
+  useEffect(() => {
+    if (isWorking || isSendBusy || phase === "running" || sendInFlightRef.current) {
+      return;
+    }
+    if (promptRef.current.trim().length > 0) {
+      return;
+    }
+    const queued = usePromptQueueStore.getState().dequeue(routeThreadKey);
+    if (!queued) {
+      return;
+    }
+    promptRef.current = queued.prompt;
+    setComposerDraftPrompt(composerDraftTarget, queued.prompt);
+    composerRef.current?.resetCursorState({ prompt: queued.prompt, cursor: queued.prompt.length });
+    void onSend();
+  }, [composerDraftTarget, isSendBusy, isWorking, phase, routeThreadKey, setComposerDraftPrompt]);
+
+  const onSendInNewThread = useCallback(async () => {
+    if (
+      !activeThread ||
+      !activeProject ||
+      isConnecting ||
+      activeEnvironmentUnavailable ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+    const sendCtx = composerRef.current?.getSendContext();
+    if (!sendCtx?.providerAvailable) {
+      return;
+    }
+    const trimmed = promptRef.current.trim();
+    if (!trimmed) {
+      return;
+    }
+    const outgoingMessageText = formatOutgoingPrompt({
+      provider: sendCtx.selectedProvider,
+      model: sendCtx.selectedModel,
+      models: sendCtx.selectedProviderModels,
+      effort: sendCtx.selectedPromptEffort,
+      text: trimmed,
+    });
+    if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    const nextThreadId = newThreadId();
+    const nextThreadTitle = truncate(trimmed);
+    sendInFlightRef.current = true;
+    beginLocalDispatch({ preparingWorktree: false });
+    const finish = () => {
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+    };
+
+    promptRef.current = "";
+    clearComposerDraftContent(composerDraftTarget);
+    composerRef.current?.resetCursorState();
+
+    const createResult = await createThread({
+      environmentId,
+      input: {
+        threadId: nextThreadId,
+        projectId: activeProject.id,
+        title: nextThreadTitle,
+        modelSelection: sendCtx.selectedModelSelection,
+        runtimeMode,
+        interactionMode,
+        branch: activeThreadBranch,
+        worktreePath: activeThread.worktreePath,
+        createdAt,
+      },
+    });
+    let failure: AtomCommandResult<unknown, unknown> | null =
+      createResult._tag === "Failure" ? createResult : null;
+
+    if (failure === null) {
+      const startResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text: outgoingMessageText,
+            attachments: [],
+          },
+          modelSelection: sendCtx.selectedModelSelection,
+          titleSeed: nextThreadTitle,
+          runtimeMode,
+          interactionMode,
+          createdAt,
+        },
+      });
+      failure = startResult._tag === "Failure" ? startResult : null;
+    }
+
+    if (failure === null) {
+      const startedResult = await settlePromise(() =>
+        waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+      );
+      failure = startedResult._tag === "Failure" ? startedResult : null;
+    }
+
+    if (failure === null) {
+      const navigateResult = await settlePromise(() =>
+        navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: activeThread.environmentId,
+            threadId: nextThreadId,
+          },
+        }),
+      );
+      failure = navigateResult._tag === "Failure" ? navigateResult : null;
+    }
+
+    if (failure !== null) {
+      const cleanupResult = await deleteThread({
+        environmentId,
+        input: { threadId: nextThreadId },
+      });
+      if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+        console.warn(
+          "Failed to clean up new thread after start failure.",
+          squashAtomCommandFailure(cleanupResult),
+        );
+      }
+      if (!isAtomCommandInterrupted(failure)) {
+        const error = squashAtomCommandFailure(failure);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not start a new thread",
+            description:
+              error instanceof Error
+                ? error.message
+                : "An error occurred while creating the new thread.",
+          }),
+        );
+      }
+    }
+    finish();
+  }, [
+    activeEnvironmentUnavailable,
+    activeProject,
+    activeThread,
+    activeThreadBranch,
+    beginLocalDispatch,
+    clearComposerDraftContent,
+    composerDraftTarget,
+    createThread,
+    deleteThread,
+    environmentId,
+    interactionMode,
+    isConnecting,
+    navigate,
+    resetLocalDispatch,
+    runtimeMode,
+    startThreadTurn,
+  ]);
+
   const onInterrupt = async () => {
     if (!activeThread) return;
     const result = await interruptThreadTurn({
@@ -7196,6 +7360,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onSendInNewThread={onSendInNewThread}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption

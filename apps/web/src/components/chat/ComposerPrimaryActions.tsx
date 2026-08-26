@@ -31,6 +31,9 @@ interface ComposerPrimaryActionsProps {
   /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
    * be the only primary action and a running turn could not be steered. */
   showSendWhileRunning?: boolean;
+  busySendMenuOpen?: boolean;
+  onBusySendMenuOpenChange?: (open: boolean) => void;
+  onBusySendChoice?: (choice: "queue" | "steer" | "new-thread") => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -72,6 +75,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   hasSendableContent,
   preserveComposerFocusOnPointerDown = false,
   showSendWhileRunning = false,
+  busySendMenuOpen = false,
+  onBusySendMenuOpenChange,
+  onBusySendChoice,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
@@ -274,10 +280,85 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return sendButton;
   }
 
+  const busySendButton = (
+    <button
+      type="button"
+      className={cn(
+        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-[0_1px_--theme(--color-white/16%)] hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8",
+        stageBackdropVariant
+          ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
+          : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
+      )}
+      {...pointerFocusProps}
+      disabled={
+        isSendBusy ||
+        isSendDisabled ||
+        isConnecting ||
+        isEnvironmentUnavailable ||
+        !hasSendableContent
+      }
+      aria-label="Send while running"
+      aria-haspopup="menu"
+      aria-expanded={busySendMenuOpen}
+    >
+      {stageBackdropVariant ? (
+        <span className="absolute inset-0 -z-10" aria-hidden="true">
+          <StageBackdropButtonArt variant={stageBackdropVariant} />
+        </span>
+      ) : null}
+      {isConnecting || isSendBusy ? (
+        <Spinner className="size-3.5" aria-hidden="true" />
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path
+            d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </button>
+  );
+
   return (
     <>
       {renderStopGenerationButton(false)}
-      {showSendWhileRunning && hasSendableContent ? sendButton : null}
+      {showSendWhileRunning && hasSendableContent ? (
+        <Menu open={busySendMenuOpen} onOpenChange={onBusySendMenuOpenChange}>
+          <MenuTrigger render={busySendButton} />
+          <MenuPopup align="end" side="top" className="min-w-56" data-busy-send-picker="true">
+            <MenuItem onClick={() => onBusySendChoice?.("queue")} data-busy-send-choice="queue">
+              <span className="flex min-w-0 flex-col">
+                <span>Queue</span>
+                <span className="text-muted-foreground text-xs font-normal">
+                  Send after this turn finishes
+                </span>
+              </span>
+            </MenuItem>
+            <MenuItem onClick={() => onBusySendChoice?.("steer")} data-busy-send-choice="steer">
+              <span className="flex min-w-0 flex-col">
+                <span>Steer</span>
+                <span className="text-muted-foreground text-xs font-normal">
+                  Fold into the current turn
+                </span>
+              </span>
+            </MenuItem>
+            <MenuItem
+              onClick={() => onBusySendChoice?.("new-thread")}
+              data-busy-send-choice="new-thread"
+            >
+              <span className="flex min-w-0 flex-col">
+                <span>New thread</span>
+                <span className="text-muted-foreground text-xs font-normal">
+                  Run this prompt in parallel
+                </span>
+              </span>
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      ) : null}
     </>
   );
 });

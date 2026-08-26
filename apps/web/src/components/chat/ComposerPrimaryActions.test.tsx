@@ -80,6 +80,7 @@ function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent:
       isPreparingWorktree: false,
       hasSendableContent,
       showSendWhileRunning,
+      busySendMenuOpen: showSendWhileRunning && hasSendableContent,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -256,8 +257,8 @@ describe("ComposerPrimaryActions", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send message"');
-    expect(markup).toContain('type="submit"');
+    expect(markup).toContain('aria-label="Send while running"');
+    expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).toContain("size-9 sm:size-8");
   });
 

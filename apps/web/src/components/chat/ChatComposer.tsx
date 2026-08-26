@@ -20,6 +20,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
@@ -135,6 +136,7 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
+import { selectPromptQueue, usePromptQueueStore } from "../../promptQueueStore";
 import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -502,6 +504,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   showSendWhileRunning?: boolean;
+  busySendMenuOpen?: boolean;
+  onBusySendMenuOpenChange?: (open: boolean) => void;
+  onBusySendChoice?: (choice: "queue" | "steer" | "new-thread") => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -537,6 +542,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         showSendWhileRunning={props.showSendWhileRunning ?? false}
+        busySendMenuOpen={props.busySendMenuOpen}
+        onBusySendMenuOpenChange={props.onBusySendMenuOpenChange}
+        onBusySendChoice={props.onBusySendChoice}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
@@ -683,6 +691,7 @@ export interface ChatComposerProps {
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onSendInNewThread: () => void;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -771,6 +780,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
+    onSendInNewThread,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
@@ -1100,6 +1110,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
+  const [busySendMenuOpen, setBusySendMenuOpen] = useState(false);
+  const skipBusySendPickerRef = useRef(false);
   const [isTasksDrawerOpen, setIsTasksDrawerOpen] = useState(false);
   const [dismissedTasksTurnId, setDismissedTasksTurnId] = useState<TurnId | null>(null);
   const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
@@ -2023,12 +2035,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     showPlanFollowUpPrompt,
   ]);
 
+  const promptQueueThreadKey = scopedThreadKey(routeThreadRef);
+  const promptQueue = usePromptQueueStore(selectPromptQueue(promptQueueThreadKey));
+  const enqueueQueuedPrompt = usePromptQueueStore((state) => state.enqueue);
+  const removeQueuedPrompt = usePromptQueueStore((state) => state.remove);
+
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
       }
+      if (
+        phase === "running" &&
+        composerSendState.hasSendableContent &&
+        !skipBusySendPickerRef.current
+      ) {
+        event?.preventDefault();
+        setBusySendMenuOpen(true);
+        return;
+      }
+      skipBusySendPickerRef.current = false;
       // A send while a pasted image is still compressing would strand that
       // image: the turn snapshot wouldn't include it, and it would surface
       // in the *next* draft instead. Only oversized images hit this — small
@@ -2064,13 +2091,50 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activeThreadId,
       activePendingProgress,
       blurMobileComposerAfterSend,
+      composerSendState.hasSendableContent,
       isSendDisabled,
       noProviderAvailable,
       onSend,
+      phase,
       promptRef,
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+
+  const handleBusySendChoice = useCallback(
+    (choice: "queue" | "steer" | "new-thread") => {
+      setBusySendMenuOpen(false);
+      if (choice === "queue") {
+        const queued = promptRef.current.trim();
+        if (!queued) {
+          return;
+        }
+        enqueueQueuedPrompt(promptQueueThreadKey, queued);
+        promptRef.current = "";
+        setPrompt("");
+        setComposerHighlightedItemId(null);
+        setPendingSlashCommand(null);
+        setComposerCursor(0);
+        setComposerTrigger(null);
+        return;
+      }
+      if (choice === "new-thread") {
+        onSendInNewThread();
+        return;
+      }
+      skipBusySendPickerRef.current = true;
+      submitComposer(undefined, "foreground");
+    },
+    [
+      enqueueQueuedPrompt,
+      onSendInNewThread,
+      promptQueueThreadKey,
+      promptRef,
+      setPrompt,
+      submitComposer,
+    ],
+  );
+
   const compactThreadContext = useCallback(() => {
     if (
       compactDisabled ||
@@ -3183,6 +3247,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           />
         </ComposerTasksDrawerClip>
       ) : null}
+      {promptQueue.length > 0 ? (
+        <div data-composer-prompt-queue="true" className="flex flex-wrap gap-1 px-3 pb-2 sm:px-4">
+          {promptQueue.map((item) => (
+            <span
+              key={item.id}
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              <span className="min-w-0 truncate">Queued: {item.prompt}</span>
+              <button
+                type="button"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Remove queued prompt"
+                onClick={() => removeQueuedPrompt(promptQueueThreadKey, item.id)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="relative">
         {showShoulderTabs && visibleTasksProgress && visibleTaskSteps ? (
           <ComposerTasksBadge
@@ -3678,7 +3762,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
-                    showSendWhileRunning={isMobileViewport}
+                    showSendWhileRunning
+                    busySendMenuOpen={busySendMenuOpen}
+                    onBusySendMenuOpenChange={setBusySendMenuOpen}
+                    onBusySendChoice={handleBusySendChoice}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}

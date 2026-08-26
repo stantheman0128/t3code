@@ -340,6 +340,8 @@ function resolveComposerEditorPlaceholder(input: {
   readonly projectSelectionRequired: boolean;
   readonly noProviderAvailable: boolean;
   readonly isDisconnected: boolean;
+  readonly isRunning: boolean;
+  readonly lastTurnInterrupted: boolean;
   readonly pendingSlashCommand: ComposerPendingSlashCommand | null;
 }): string {
   if (input.isComposerApprovalState) {
@@ -365,6 +367,12 @@ function resolveComposerEditorPlaceholder(input: {
   }
   if (input.pendingSlashCommand) {
     return `Add arguments for /${input.pendingSlashCommand.name}, or send it`;
+  }
+  if (input.isRunning) {
+    return "Type a follow-up, then Queue, Steer, or start a new thread";
+  }
+  if (input.lastTurnInterrupted) {
+    return "Stopped. Type to continue";
   }
   return "Ask anything, @tag files/folders, $use skills, or / for commands";
 }
@@ -2902,6 +2910,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [isDragOverComposer]);
   const handleInterruptPrimaryAction = useCallback(() => {
     void onInterrupt();
+    composerEditorRef.current?.focus();
   }, [onInterrupt]);
   const handleImplementPlanInNewThreadPrimaryAction = useCallback(() => {
     void onImplementPlanInNewThread();
@@ -3601,6 +3610,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       projectSelectionRequired,
                       noProviderAvailable,
                       isDisconnected: phase === "disconnected",
+                      isRunning: phase === "running",
+                      lastTurnInterrupted: activeThread?.latestTurn?.state === "interrupted",
                       pendingSlashCommand,
                     })}
                     disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}

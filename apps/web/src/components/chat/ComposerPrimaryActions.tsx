@@ -297,7 +297,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         isEnvironmentUnavailable ||
         !hasSendableContent
       }
-      aria-label="Send while running"
+      aria-label="Queue, steer, or start a new thread"
       aria-haspopup="menu"
       aria-expanded={busySendMenuOpen}
     >
@@ -341,7 +341,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               <span className="flex min-w-0 flex-col">
                 <span>Steer</span>
                 <span className="text-muted-foreground text-xs font-normal">
-                  Fold into the current turn
+                  Inject into the current turn
                 </span>
               </span>
             </MenuItem>

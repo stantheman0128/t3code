@@ -75,6 +75,7 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
+  looksLikeBareFilePath,
   resolveAssistantMessageCopyState,
   workEntryLooksLikeOutputDump,
   workEntryProcessLabel,
@@ -2432,6 +2433,9 @@ function liveWorkEntryLabel(
   _workspaceRoot: string | undefined,
 ): string {
   const command = workEntry.command?.trim();
+  if (command && looksLikeBareFilePath(command)) {
+    return workEntryProcessLabel(workEntry);
+  }
   if (command && !workEntryLooksLikeOutputDump(command)) {
     // This row describes the active parent turn, not the command lifecycle.
     // Keep its live "Running" copy until the turn or contiguous tool run settles.

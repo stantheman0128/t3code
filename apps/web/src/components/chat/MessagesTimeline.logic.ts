@@ -15,7 +15,42 @@ export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 /** While a turn is running, keep a short procedure visible instead of one stdout line. */
 export const MAX_VISIBLE_LIVE_PROCESS_ENTRIES = 8;
 
-const GENERIC_TOOL_HEADINGS = new Set(["terminal", "tool call", "ran command", "command"]);
+const GENERIC_TOOL_HEADINGS = new Set(["terminal", "tool call", "ran command", "command", "tool"]);
+
+/** A whole command that is really just a filesystem path, not a shell invocation. */
+export function looksLikeBareFilePath(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/[\n\r|&><;]/.test(trimmed)) {
+    return false;
+  }
+  if (/(?:^|\s)--?[A-Za-z0-9]/.test(trimmed)) {
+    return false;
+  }
+  const tokens = trimmed.split(/\s+/);
+  if (tokens.length !== 1) {
+    return false;
+  }
+  const token = tokens[0]!;
+  if (!/[\\/]/.test(token)) {
+    return false;
+  }
+  if (/^[A-Za-z]:[\\/]/.test(token) || token.includes("\\")) {
+    return true;
+  }
+  if (token.startsWith("/") || token.startsWith("./") || token.startsWith("../")) {
+    return true;
+  }
+  return /\.[A-Za-z0-9]{1,8}$/.test(token);
+}
+
+function fileBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : trimmed;
+}
 
 export function workLogVisibleEntryCap(isWorking: boolean): number {
   return isWorking ? MAX_VISIBLE_LIVE_PROCESS_ENTRIES : MAX_VISIBLE_WORK_LOG_ENTRIES;
@@ -312,9 +347,17 @@ function normalizeInlinePreview(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-/** Collapsed/live headline: the action, never a stdout dump. */
+/** Collapsed/live headline: the action, never a stdout dump or a full Windows path. */
 export function workEntryProcessLabel(entry: WorkLogEntry): string {
+  const live = entry.toolLifecycleStatus === "inProgress";
   const command = entry.command?.trim();
+  if (command && looksLikeBareFilePath(command)) {
+    const name = fileBasename(command);
+    if (entry.requestKind === "file-change" || (entry.changedFiles?.length ?? 0) > 0) {
+      return compactProcessLabel(live ? `Editing ${name}` : `Edited ${name}`);
+    }
+    return compactProcessLabel(live ? `Reading ${name}` : `Read ${name}`);
+  }
   if (command && !workEntryLooksLikeOutputDump(command)) {
     return compactProcessLabel(command);
   }
@@ -329,7 +372,7 @@ export function workEntryProcessLabel(entry: WorkLogEntry): string {
   if (command) {
     const program = command.split(/\s+/).find((token) => token.length > 0);
     if (program) {
-      return compactProcessLabel(program);
+      return compactProcessLabel(looksLikeBareFilePath(program) ? fileBasename(program) : program);
     }
   }
   if (title) {
@@ -337,6 +380,12 @@ export function workEntryProcessLabel(entry: WorkLogEntry): string {
   }
   if (label && !workEntryLooksLikeOutputDump(label)) {
     return compactProcessLabel(label);
+  }
+  if (entry.itemType === "web_search") {
+    return "Search";
+  }
+  if (entry.itemType === "mcp_tool_call") {
+    return "MCP";
   }
   return "Tool";
 }
@@ -365,6 +414,9 @@ export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
     (entry.changedFiles?.length ?? 0) > 0
   ) {
     return "edit";
+  }
+  if (entry.command && looksLikeBareFilePath(entry.command)) {
+    return "read";
   }
   if (entry.requestKind === "command" || entry.itemType === "command_execution" || entry.command) {
     return "command";
@@ -848,32 +900,32 @@ export function deriveMessagesTimelineRows(input: {
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
-      showThinking:
-        activeWorkRow === null && !activeTurnHasVisibleContent && !activeTurnHasWorkLog,
+      showThinking: activeWorkRow === null && !activeTurnHasVisibleContent && !activeTurnHasWorkLog,
     });
   };
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
     if (!activeWorkRow.expanded && input.isWorking) {
       const earlier = activeWorkRow.groupedEntries.slice(0, -1);
-      const earlierCap = Math.max(0, MAX_VISIBLE_LIVE_PROCESS_ENTRIES - 1);
-      const hiddenEarlier = earlier.length > earlierCap ? earlier.slice(0, -earlierCap) : [];
-      const visibleEarlier = earlier.slice(hiddenEarlier.length);
-      if (hiddenEarlier.length > 0) {
+      const failedEarlier = earlier.filter((entry) => workEntryDisplayIndicatesToolFailure(entry));
+      const summarizedEarlier = earlier.filter(
+        (entry) => !workEntryDisplayIndicatesToolFailure(entry),
+      );
+      if (summarizedEarlier.length > 0) {
         nextRows.push({
           kind: "work-toggle",
           id: `work-toggle:${activeWorkRow.groupId}`,
-          createdAt: hiddenEarlier[0]!.createdAt,
+          createdAt: summarizedEarlier[0]!.createdAt,
           groupId: activeWorkRow.groupId,
-          hiddenCount: hiddenEarlier.length,
+          hiddenCount: summarizedEarlier.length,
           expanded: false,
-          onlyToolEntries: hiddenEarlier.every(workLogEntryIsToolLike),
-          summary: null,
-          summaryKind: null,
-          hasFailure: hiddenEarlier.some(workEntryDisplayIndicatesToolFailure),
+          onlyToolEntries: summarizedEarlier.every(workLogEntryIsToolLike),
+          summary: summarizeToolGroup(summarizedEarlier),
+          summaryKind: toolGroupSummaryKind(summarizedEarlier),
+          hasFailure: false,
         });
       }
-      for (const workEntry of visibleEarlier) {
+      for (const workEntry of failedEarlier) {
         nextRows.push({
           kind: "work",
           id: workEntry.id,
@@ -988,7 +1040,7 @@ export function deriveMessagesTimelineRows(input: {
               });
             }
           }
-        } else if (onlyToolEntries && !input.isWorking) {
+        } else if (onlyToolEntries && (!input.isWorking || visibleGroupedEntries.length > 1)) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);

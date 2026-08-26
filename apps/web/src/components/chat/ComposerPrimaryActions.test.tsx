@@ -257,7 +257,7 @@ describe("ComposerPrimaryActions", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send while running"');
+    expect(markup).toContain('aria-label="Queue, steer, or start a new thread"');
     expect(markup).toContain('aria-haspopup="menu"');
     expect(markup).toContain("size-9 sm:size-8");
   });

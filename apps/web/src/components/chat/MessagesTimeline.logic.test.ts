@@ -931,7 +931,11 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "work", "work-live"]);
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle", "work-live"]);
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
+      hiddenCount: 2,
+      summary: "Ran 1 command and changed 2 files",
+    });
     expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
       entry: { id: "running-command" },
       groupedEntries: [
@@ -1550,7 +1554,11 @@ describe("deriveMessagesTimelineRows", () => {
     });
 
     expect(rows.find((row) => row.kind === "working")).toMatchObject({ showThinking: false });
-    expect(rows.filter((row) => row.kind === "work").length).toBeGreaterThanOrEqual(7);
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
+      hiddenCount: 9,
+      summary: "Used 9 tools",
+    });
+    expect(rows.filter((row) => row.kind === "work")).toHaveLength(0);
     expect(rows.some((row) => row.kind === "work-live")).toBe(true);
   });
 });
@@ -1580,6 +1588,31 @@ describe("workEntryProcessLabel", () => {
         tone: "tool",
       }),
     ).not.toContain("HKCU Run");
+  });
+
+  it("shows a short Read label for a bare Windows path", () => {
+    expect(
+      workEntryProcessLabel({
+        id: "work-path",
+        createdAt: "2026-01-01T00:00:00Z",
+        label: "Ran command",
+        command:
+          "C:\\Users\\stans\\Projects\\t3code-grok-parity\\apps\\web\\src\\components\\ui\\tooltip.tsx",
+        tone: "tool",
+        toolLifecycleStatus: "completed",
+      }),
+    ).toBe("Read tooltip.tsx");
+    expect(
+      workEntryProcessLabel({
+        id: "work-path-live",
+        createdAt: "2026-01-01T00:00:00Z",
+        label: "Ran command",
+        command:
+          "C:\\Users\\stans\\Projects\\t3code-grok-parity\\apps\\web\\src\\components\\ComposerPromptEditor.tsx",
+        tone: "tool",
+        toolLifecycleStatus: "inProgress",
+      }),
+    ).toBe("Reading ComposerPromptEditor.tsx");
   });
 });
 

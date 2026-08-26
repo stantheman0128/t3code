@@ -27,11 +27,13 @@ export function ComposerPendingSlashCommandChip({
     >
       <span
         aria-hidden
-        className="flex size-[1.17em] shrink-0 items-center justify-center rounded-[0.28em] bg-sky-500/20 font-mono text-[0.78em] leading-none"
+        className="flex size-[1.17em] shrink-0 items-center justify-center self-center rounded-[0.28em] bg-sky-500/20 font-mono text-[0.78em] leading-none"
       >
         /
       </span>
-      <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "font-medium")}>{command.name}</span>
+      <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "font-medium leading-none")}>
+        {command.name}
+      </span>
       <button
         type="button"
         aria-label={`Remove /${command.name}`}
@@ -42,13 +44,13 @@ export function ComposerPendingSlashCommandChip({
           onRemove();
         }}
       >
-        <X className="size-3" aria-hidden />
+        <X className="size-[0.85em]" aria-hidden />
       </button>
     </span>
   );
 
   return (
-    <span className={cn("inline-flex max-w-full", className)}>
+    <span className={cn("inline-flex max-w-full items-center", className)}>
       {command.hint ? (
         <Tooltip>
           <TooltipTrigger render={chip} />

@@ -3559,89 +3559,82 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
 
               <div className="relative">
-                <div
-                  className={
-                    pendingSlashCommand !== null &&
+                <div className="relative min-w-0">
+                  <ComposerPromptEditor
+                    editorRef={composerEditorRef}
+                    value={
+                      isComposerApprovalState
+                        ? ""
+                        : activePendingProgress
+                          ? activePendingProgress.customAnswer
+                          : prompt
+                    }
+                    cursor={composerCursor}
+                    terminalContexts={
+                      !isComposerApprovalState && pendingUserInputs.length === 0
+                        ? composerTerminalContexts
+                        : []
+                    }
+                    skills={selectedProviderStatus?.skills ?? []}
+                    {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
+                    {...(pendingSlashCommand !== null &&
                     !isComposerApprovalState &&
                     pendingUserInputs.length === 0
-                      ? "flex items-start gap-1.5"
-                      : undefined
-                  }
-                >
-                  {pendingSlashCommand !== null &&
-                  !isComposerApprovalState &&
-                  pendingUserInputs.length === 0 ? (
-                    <ComposerPendingSlashCommandChip
-                      command={pendingSlashCommand}
-                      onRemove={() => setPendingSlashCommand(null)}
-                      className="mt-[0.35em] shrink-0"
-                    />
+                      ? {
+                          prefix: (
+                            <ComposerPendingSlashCommandChip
+                              command={pendingSlashCommand}
+                              onRemove={() => setPendingSlashCommand(null)}
+                            />
+                          ),
+                        }
+                      : {})}
+                    onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
+                    onChange={onPromptChange}
+                    onCommandKeyDown={onComposerCommandKey}
+                    onPaste={onComposerPaste}
+                    placeholder={resolveComposerEditorPlaceholder({
+                      approvalDetail: activePendingApproval?.detail,
+                      isComposerApprovalState,
+                      isPendingAnswer: Boolean(activePendingProgress),
+                      isPlanFollowUp: Boolean(showPlanFollowUpPrompt && activeProposedPlan),
+                      projectSelectionRequired,
+                      noProviderAvailable,
+                      isDisconnected: phase === "disconnected",
+                      pendingSlashCommand,
+                    })}
+                    disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                  />
+                  {showMobilePendingAnswerActions ? (
+                    <div
+                      data-chat-composer-mobile-pending-actions="true"
+                      className="absolute bottom-0 right-0 flex items-center justify-end gap-1"
+                    >
+                      {inlineTasksBadge}
+                      {inlineStashBadge}
+                      <ComposerPrimaryActions
+                        compact
+                        pendingAction={pendingPrimaryAction}
+                        isRunning={false}
+                        showPlanFollowUpPrompt={false}
+                        promptHasText={false}
+                        isSendBusy={isSendBusy}
+                        sendDisabledReason={sendDisabledReason}
+                        isConnecting={isConnecting}
+                        isEnvironmentUnavailable={
+                          environmentUnavailable !== null ||
+                          noProviderAvailable ||
+                          projectSelectionRequired
+                        }
+                        isPreparingWorktree={false}
+                        hasSendableContent={false}
+                        preserveComposerFocusOnPointerDown
+                        onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
+                        onInterrupt={handleInterruptPrimaryAction}
+                        onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                      />
+                    </div>
                   ) : null}
-                  <div className="relative min-w-0 flex-1">
-                    <ComposerPromptEditor
-                      editorRef={composerEditorRef}
-                      value={
-                        isComposerApprovalState
-                          ? ""
-                          : activePendingProgress
-                            ? activePendingProgress.customAnswer
-                            : prompt
-                      }
-                      cursor={composerCursor}
-                      terminalContexts={
-                        !isComposerApprovalState && pendingUserInputs.length === 0
-                          ? composerTerminalContexts
-                          : []
-                      }
-                      skills={selectedProviderStatus?.skills ?? []}
-                      {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
-                      onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
-                      onChange={onPromptChange}
-                      onCommandKeyDown={onComposerCommandKey}
-                      onPaste={onComposerPaste}
-                      placeholder={resolveComposerEditorPlaceholder({
-                        approvalDetail: activePendingApproval?.detail,
-                        isComposerApprovalState,
-                        isPendingAnswer: Boolean(activePendingProgress),
-                        isPlanFollowUp: Boolean(showPlanFollowUpPrompt && activeProposedPlan),
-                        projectSelectionRequired,
-                        noProviderAvailable,
-                        isDisconnected: phase === "disconnected",
-                        pendingSlashCommand,
-                      })}
-                      disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
-                    />
-                    {showMobilePendingAnswerActions ? (
-                      <div
-                        data-chat-composer-mobile-pending-actions="true"
-                        className="absolute bottom-0 right-0 flex items-center justify-end gap-1"
-                      >
-                        {inlineTasksBadge}
-                        {inlineStashBadge}
-                        <ComposerPrimaryActions
-                          compact
-                          pendingAction={pendingPrimaryAction}
-                          isRunning={false}
-                          showPlanFollowUpPrompt={false}
-                          promptHasText={false}
-                          isSendBusy={isSendBusy}
-                          sendDisabledReason={sendDisabledReason}
-                          isConnecting={isConnecting}
-                          isEnvironmentUnavailable={
-                            environmentUnavailable !== null ||
-                            noProviderAvailable ||
-                            projectSelectionRequired
-                          }
-                          isPreparingWorktree={false}
-                          hasSendableContent={false}
-                          preserveComposerFocusOnPointerDown
-                          onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
-                          onInterrupt={handleInterruptPrimaryAction}
-                          onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
                 </div>
               </div>
             </div>

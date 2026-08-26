@@ -52,6 +52,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  type ReactNode,
 } from "react";
 
 import {
@@ -74,6 +75,7 @@ import {
   COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME,
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
+  COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME,
   COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME,
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
@@ -877,6 +879,9 @@ export interface ComposerPromptEditorHandle {
   };
 }
 
+const COMPOSER_EDITOR_TYPE_CLASS_NAME =
+  "[font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]";
+
 interface ComposerPromptEditorProps {
   value: string;
   cursor: number;
@@ -884,6 +889,7 @@ interface ComposerPromptEditorProps {
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
+  prefix?: ReactNode;
   className?: string;
   onRemoveTerminalContext: (contextId: string) => void;
   onChange: (
@@ -1533,6 +1539,7 @@ function ComposerPromptEditorInner({
   skills,
   disabled,
   placeholder,
+  prefix,
   className,
   onRemoveTerminalContext,
   onChange,
@@ -1746,42 +1753,62 @@ function ComposerPromptEditorInner({
     });
   }, []);
 
+  const editorColumn = (
+    <div className={prefix ? "relative min-w-0 flex-1" : "relative"}>
+      <PlainTextPlugin
+        contentEditable={
+          <ContentEditable
+            className={cn(
+              // The wrapper owns the appearance preference; keep everything else here.
+              "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
+              className,
+            )}
+            data-testid="composer-editor"
+            aria-placeholder={placeholder}
+            placeholder={<span />}
+            onPaste={onPaste}
+          />
+        }
+        placeholder={
+          terminalContexts.length > 0 ? null : (
+            <div className="pointer-events-none absolute inset-0 leading-relaxed text-placeholder">
+              {placeholder}
+            </div>
+          )
+        }
+        ErrorBoundary={LexicalErrorBoundary}
+      />
+      <OnChangePlugin onChange={handleEditorChange} />
+      <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
+      <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
+      <ComposerHomeEndKeyPlugin />
+      <ComposerInlineTokenArrowPlugin />
+      <ComposerInlineTokenSelectionNormalizePlugin />
+      <ComposerInlineTokenBackspacePlugin />
+      <ComposerInlineTokenPastePlugin />
+      <ComposerChipSelectionPlugin />
+      <HistoryPlugin />
+    </div>
+  );
+
   return (
     <ComposerTerminalContextActionsContext value={terminalContextActions}>
-      <div className="relative [font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]">
-        <PlainTextPlugin
-          contentEditable={
-            <ContentEditable
-              className={cn(
-                // The wrapper owns the appearance preference; keep everything else here.
-                "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
-                className,
-              )}
-              data-testid="composer-editor"
-              aria-placeholder={placeholder}
-              placeholder={<span />}
-              onPaste={onPaste}
-            />
-          }
-          placeholder={
-            terminalContexts.length > 0 ? null : (
-              <div className="pointer-events-none absolute inset-0 leading-relaxed text-placeholder">
-                {placeholder}
-              </div>
-            )
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-        />
-        <OnChangePlugin onChange={handleEditorChange} />
-        <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
-        <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
-        <ComposerHomeEndKeyPlugin />
-        <ComposerInlineTokenArrowPlugin />
-        <ComposerInlineTokenSelectionNormalizePlugin />
-        <ComposerInlineTokenBackspacePlugin />
-        <ComposerInlineTokenPastePlugin />
-        <ComposerChipSelectionPlugin />
-        <HistoryPlugin />
+      <div
+        className={cn(
+          "relative",
+          COMPOSER_EDITOR_TYPE_CLASS_NAME,
+          prefix ? "flex items-start gap-[0.4em]" : null,
+        )}
+      >
+        {prefix ? (
+          <span
+            className={COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME}
+            data-testid="composer-inline-chip-line"
+          >
+            {prefix}
+          </span>
+        ) : null}
+        {editorColumn}
       </div>
     </ComposerTerminalContextActionsContext>
   );
@@ -1794,6 +1821,7 @@ export function ComposerPromptEditor({
   skills,
   disabled,
   placeholder,
+  prefix,
   className,
   onRemoveTerminalContext,
   onChange,
@@ -1836,6 +1864,7 @@ export function ComposerPromptEditor({
         onChange={onChange}
         onPaste={onPaste}
         editorRef={editorRef}
+        {...(prefix !== undefined ? { prefix } : {})}
         {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
         {...(className ? { className } : {})}
       />

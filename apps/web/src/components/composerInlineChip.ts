@@ -4,6 +4,13 @@
 const INLINE_CHIP_GEOMETRY_CLASS_NAME =
   "inline-flex h-[1.41em] max-w-full items-center gap-[0.33em] rounded-[0.5em] px-[0.5em] font-medium leading-none align-middle";
 
+// First-line strut for chips that sit beside the editor instead of inside a
+// Lexical decorator. Matches ContentEditable `leading-relaxed` so the pill
+// and the placeholder share one line box. File and skill chips get the same
+// alignment from `align-[-0.125em]` in the text run.
+export const COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME =
+  "inline-flex h-[1lh] max-w-full shrink-0 items-center leading-relaxed";
+
 const INLINE_CHIP_CLASS_NAME = `${INLINE_CHIP_GEOMETRY_CLASS_NAME} border border-border/70 bg-accent/40 text-foreground`;
 
 export const CHAT_INLINE_CHIP_CLASS_NAME = `${INLINE_CHIP_CLASS_NAME} text-[12px]`;

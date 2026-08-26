@@ -324,6 +324,7 @@ describe("AcpRuntimeModel", () => {
       {
         _tag: "ContentDelta",
         text: "hello from acp",
+        streamKind: "assistant_text",
         rawPayload: {
           sessionId: "session-1",
           update: {
@@ -331,6 +332,35 @@ describe("AcpRuntimeModel", () => {
             content: {
               type: "text",
               text: "hello from acp",
+            },
+          },
+        },
+      },
+    ]);
+
+    const thoughtResult = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: {
+          type: "text",
+          text: "checking the adapter",
+        },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    expect(thoughtResult.events).toEqual([
+      {
+        _tag: "ContentDelta",
+        text: "checking the adapter",
+        streamKind: "reasoning_text",
+        rawPayload: {
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: {
+              type: "text",
+              text: "checking the adapter",
             },
           },
         },

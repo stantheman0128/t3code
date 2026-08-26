@@ -289,6 +289,7 @@ export function applyThreadDetailEvent(
         id: event.payload.messageId,
         role: event.payload.role,
         text: event.payload.text,
+        ...(event.payload.thinking !== undefined ? { thinking: event.payload.thinking } : {}),
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
           : {}),
@@ -310,6 +311,11 @@ export function applyThreadDetailEvent(
                     : message.text.length > 0
                       ? message.text
                       : entry.text,
+                  thinking: message.streaming
+                    ? `${entry.thinking ?? ""}${message.thinking ?? ""}`
+                    : message.thinking !== undefined && message.thinking.length > 0
+                      ? message.thinking
+                      : entry.thinking,
                   streaming: message.streaming,
                   ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
                   ...(message.streaming ? {} : { updatedAt: message.updatedAt }),

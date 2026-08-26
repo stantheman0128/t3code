@@ -20,6 +20,7 @@ import {
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
+    thinking: Schema.NullOr(Schema.String),
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
   }),
 );
@@ -36,6 +37,7 @@ function toProjectionThreadMessage(
     isStreaming: row.isStreaming === 1,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    ...(row.thinking ? { thinking: row.thinking } : {}),
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
   };
 }
@@ -55,6 +57,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           turn_id,
           role,
           text,
+          thinking,
           attachments_json,
           is_streaming,
           created_at,
@@ -66,6 +69,14 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           ${row.turnId},
           ${row.role},
           ${row.text},
+          COALESCE(
+            ${row.thinking ?? null},
+            (
+              SELECT thinking
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
           COALESCE(
             ${nextAttachmentsJson},
             (
@@ -84,6 +95,10 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           turn_id = excluded.turn_id,
           role = excluded.role,
           text = excluded.text,
+          thinking = COALESCE(
+            excluded.thinking,
+            projection_thread_messages.thinking
+          ),
           attachments_json = COALESCE(
             excluded.attachments_json,
             projection_thread_messages.attachments_json
@@ -106,6 +121,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          thinking,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
@@ -127,6 +143,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          thinking,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",

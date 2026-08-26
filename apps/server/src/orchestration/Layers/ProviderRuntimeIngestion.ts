@@ -913,6 +913,12 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(""),
   });
 
+  const bufferedThinkingByMessageId = yield* Cache.make<MessageId, string>({
+    capacity: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY,
+    timeToLive: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL,
+    lookup: () => Effect.succeed(""),
+  });
+
   const assistantSegmentStateByTurnKey = yield* Cache.make<string, AssistantSegmentState>({
     capacity: TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY,
     timeToLive: TURN_MESSAGE_IDS_BY_TURN_TTL,
@@ -1114,6 +1120,37 @@ const make = Effect.gen(function* () {
   const clearBufferedAssistantText = (messageId: MessageId) =>
     Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
 
+  const appendBufferedThinking = (messageId: MessageId, delta: string) =>
+    Cache.getOption(bufferedThinkingByMessageId, messageId).pipe(
+      Effect.flatMap((existingText) =>
+        Effect.gen(function* () {
+          const nextText = Option.match(existingText, {
+            onNone: () => delta,
+            onSome: (text) => `${text}${delta}`,
+          });
+          if (nextText.length <= MAX_BUFFERED_ASSISTANT_CHARS) {
+            yield* Cache.set(bufferedThinkingByMessageId, messageId, nextText);
+            return "";
+          }
+
+          yield* Cache.invalidate(bufferedThinkingByMessageId, messageId);
+          return nextText;
+        }),
+      ),
+    );
+
+  const takeBufferedThinking = (messageId: MessageId) =>
+    Cache.getOption(bufferedThinkingByMessageId, messageId).pipe(
+      Effect.flatMap((existingText) =>
+        Cache.invalidate(bufferedThinkingByMessageId, messageId).pipe(
+          Effect.as(Option.getOrElse(existingText, () => "")),
+        ),
+      ),
+    );
+
+  const clearBufferedThinking = (messageId: MessageId) =>
+    Cache.invalidate(bufferedThinkingByMessageId, messageId);
+
   const appendBufferedProposedPlan = (planId: string, delta: string, createdAt: string) =>
     Cache.getOption(bufferedProposedPlanById, planId).pipe(
       Effect.flatMap((existingEntry) => {
@@ -1139,7 +1176,32 @@ const make = Effect.gen(function* () {
     Cache.invalidate(bufferedProposedPlanById, planId);
 
   const clearAssistantMessageState = (messageId: MessageId) =>
-    clearBufferedAssistantText(messageId);
+    clearBufferedAssistantText(messageId).pipe(
+      Effect.flatMap(() => clearBufferedThinking(messageId)),
+    );
+
+  const dispatchAssistantDelta = (input: {
+    event: ProviderRuntimeEvent;
+    threadId: ThreadId;
+    messageId: MessageId;
+    turnId?: TurnId;
+    createdAt: string;
+    commandTag: string;
+    delta: string;
+    channel?: "text" | "thinking";
+  }) =>
+    Effect.gen(function* () {
+      yield* orchestrationEngine.dispatch({
+        type: "thread.message.assistant.delta",
+        commandId: yield* providerCommandId(input.event, input.commandTag),
+        threadId: input.threadId,
+        messageId: input.messageId,
+        delta: input.delta,
+        ...(input.channel ? { channel: input.channel } : {}),
+        ...(input.turnId ? { turnId: input.turnId } : {}),
+        createdAt: input.createdAt,
+      });
+    });
 
   const flushBufferedAssistantMessage = (input: {
     event: ProviderRuntimeEvent;
@@ -1151,20 +1213,25 @@ const make = Effect.gen(function* () {
   }) =>
     Effect.gen(function* () {
       const bufferedText = yield* takeBufferedAssistantText(input.messageId);
-      if (!hasRenderableAssistantText(bufferedText)) {
-        return false;
-      }
+      const bufferedThinking = yield* takeBufferedThinking(input.messageId);
+      const flushedText = hasRenderableAssistantText(bufferedText);
+      const flushedThinking = hasRenderableAssistantText(bufferedThinking);
 
-      yield* orchestrationEngine.dispatch({
-        type: "thread.message.assistant.delta",
-        commandId: yield* providerCommandId(input.event, input.commandTag),
-        threadId: input.threadId,
-        messageId: input.messageId,
-        delta: bufferedText,
-        ...(input.turnId ? { turnId: input.turnId } : {}),
-        createdAt: input.createdAt,
-      });
-      return true;
+      if (flushedText) {
+        yield* dispatchAssistantDelta({
+          ...input,
+          delta: bufferedText,
+        });
+      }
+      if (flushedThinking) {
+        yield* dispatchAssistantDelta({
+          ...input,
+          commandTag: `${input.commandTag}-thinking`,
+          delta: bufferedThinking,
+          channel: "thinking",
+        });
+      }
+      return flushedText || flushedThinking;
     });
 
   const flushBufferedAssistantMessagesForTurn = (input: {
@@ -1213,6 +1280,7 @@ const make = Effect.gen(function* () {
   }) =>
     Effect.gen(function* () {
       const bufferedText = yield* takeBufferedAssistantText(input.messageId);
+      const bufferedThinking = yield* takeBufferedThinking(input.messageId);
       const text =
         bufferedText.length > 0
           ? bufferedText
@@ -1220,20 +1288,33 @@ const make = Effect.gen(function* () {
             ? input.fallbackText!
             : "";
       const hasRenderableText = hasRenderableAssistantText(text);
+      const hasRenderableThinking = hasRenderableAssistantText(bufferedThinking);
 
       if (hasRenderableText) {
-        yield* orchestrationEngine.dispatch({
-          type: "thread.message.assistant.delta",
-          commandId: yield* providerCommandId(input.event, input.finalDeltaCommandTag),
+        yield* dispatchAssistantDelta({
+          event: input.event,
           threadId: input.threadId,
           messageId: input.messageId,
-          delta: text,
-          ...(input.turnId ? { turnId: input.turnId } : {}),
+          turnId: input.turnId,
           createdAt: input.createdAt,
+          commandTag: input.finalDeltaCommandTag,
+          delta: text,
+        });
+      }
+      if (hasRenderableThinking) {
+        yield* dispatchAssistantDelta({
+          event: input.event,
+          threadId: input.threadId,
+          messageId: input.messageId,
+          turnId: input.turnId,
+          createdAt: input.createdAt,
+          commandTag: `${input.finalDeltaCommandTag}-thinking`,
+          delta: bufferedThinking,
+          channel: "thinking",
         });
       }
 
-      if (input.hasProjectedMessage || hasRenderableText) {
+      if (input.hasProjectedMessage || hasRenderableText || hasRenderableThinking) {
         yield* orchestrationEngine.dispatch({
           type: "thread.message.assistant.complete",
           commandId: yield* providerCommandId(input.event, input.commandTag),
@@ -1666,10 +1747,19 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
+      const thinkingDelta =
+        event.type === "content.delta" &&
+        (event.payload.streamKind === "reasoning_text" ||
+          event.payload.streamKind === "reasoning_summary_text")
+          ? event.payload.delta
+          : undefined;
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
-      if (assistantDelta && assistantDelta.length > 0) {
+      if (
+        (assistantDelta && assistantDelta.length > 0) ||
+        (thinkingDelta && thinkingDelta.length > 0)
+      ) {
         const turnId = toTurnId(event.turnId);
         const assistantMessageId = yield* getOrCreateAssistantMessageId({
           threadId: thread.id,
@@ -1684,29 +1774,62 @@ const make = Effect.gen(function* () {
           serverSettingsService.getSettings,
           (settings) => (settings.enableLegacyTokenStreaming ? "streaming" : "buffered"),
         );
-        if (assistantDeliveryMode === "buffered") {
-          const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
-          if (spillChunk.length > 0) {
-            yield* orchestrationEngine.dispatch({
-              type: "thread.message.assistant.delta",
-              commandId: yield* providerCommandId(event, "assistant-delta-buffer-spill"),
+        if (assistantDelta && assistantDelta.length > 0) {
+          if (assistantDeliveryMode === "buffered") {
+            const spillChunk = yield* appendBufferedAssistantText(
+              assistantMessageId,
+              assistantDelta,
+            );
+            if (spillChunk.length > 0) {
+              yield* dispatchAssistantDelta({
+                event,
+                threadId: thread.id,
+                messageId: assistantMessageId,
+                turnId,
+                createdAt: now,
+                commandTag: "assistant-delta-buffer-spill",
+                delta: spillChunk,
+              });
+            }
+          } else {
+            yield* dispatchAssistantDelta({
+              event,
               threadId: thread.id,
               messageId: assistantMessageId,
-              delta: spillChunk,
-              ...(turnId ? { turnId } : {}),
+              turnId,
               createdAt: now,
+              commandTag: "assistant-delta",
+              delta: assistantDelta,
             });
           }
-        } else {
-          yield* orchestrationEngine.dispatch({
-            type: "thread.message.assistant.delta",
-            commandId: yield* providerCommandId(event, "assistant-delta"),
-            threadId: thread.id,
-            messageId: assistantMessageId,
-            delta: assistantDelta,
-            ...(turnId ? { turnId } : {}),
-            createdAt: now,
-          });
+        }
+        if (thinkingDelta && thinkingDelta.length > 0) {
+          if (assistantDeliveryMode === "buffered") {
+            const spillChunk = yield* appendBufferedThinking(assistantMessageId, thinkingDelta);
+            if (spillChunk.length > 0) {
+              yield* dispatchAssistantDelta({
+                event,
+                threadId: thread.id,
+                messageId: assistantMessageId,
+                turnId,
+                createdAt: now,
+                commandTag: "assistant-thinking-buffer-spill",
+                delta: spillChunk,
+                channel: "thinking",
+              });
+            }
+          } else {
+            yield* dispatchAssistantDelta({
+              event,
+              threadId: thread.id,
+              messageId: assistantMessageId,
+              turnId,
+              createdAt: now,
+              commandTag: "assistant-thinking-delta",
+              delta: thinkingDelta,
+              channel: "thinking",
+            });
+          }
         }
       }
 
@@ -1761,7 +1884,8 @@ const make = Effect.gen(function* () {
       }
 
       const assistantCompletion =
-        event.type === "item.completed" && event.payload.itemType === "assistant_message"
+        event.type === "item.completed" &&
+        (event.payload.itemType === "assistant_message" || event.payload.itemType === "reasoning")
           ? {
               messageId: MessageId.make(
                 `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,

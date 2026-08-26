@@ -422,6 +422,50 @@ describe("applyThreadDetailEvent", () => {
       }
     });
 
+    it("appends thinking for streaming assistant messages", () => {
+      const threadWithMessage: OrchestrationThread = {
+        ...baseThread,
+        messages: [
+          {
+            id: MessageId.make("msg-thinking"),
+            role: "assistant",
+            text: "",
+            thinking: "Look at ",
+            turnId: TurnId.make("turn-1"),
+            streaming: true,
+            createdAt: "2026-04-01T06:00:00.000Z",
+            updatedAt: "2026-04-01T06:00:00.000Z",
+          },
+        ],
+      };
+
+      const result = applyThreadDetailEvent(threadWithMessage, {
+        ...baseEventFields,
+        sequence: 7,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("msg-thinking"),
+          role: "assistant",
+          text: "",
+          thinking: "the adapter",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages[0]?.thinking).toBe("Look at the adapter");
+        expect(result.thread.messages[0]?.text).toBe("");
+      }
+    });
+
     it("updates latestTurn for assistant messages with a turn", () => {
       const result = applyThreadDetailEvent(baseThread, {
         ...baseEventFields,

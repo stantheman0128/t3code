@@ -65,6 +65,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
@@ -1134,21 +1135,51 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 }
 
+function AssistantThinkingBlock({ thinking, streaming }: { thinking: string; streaming: boolean }) {
+  const trimmed = thinking.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return (
+    <Collapsible defaultOpen={streaming} className="mb-2">
+      <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        Thinking
+        <ChevronRightIcon className="size-3 transition-transform [[data-panel-open]_&]:rotate-90" />
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div
+          data-assistant-thinking="true"
+          className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground"
+        >
+          {thinking}
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const thinking = row.message.thinking ?? "";
+  const messageText =
+    row.message.text ||
+    (row.message.streaming || thinking.trim().length > 0 ? "" : "(empty response)");
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
-        <ChatMarkdown
-          text={messageText}
-          cwd={ctx.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          isStreaming={Boolean(row.message.streaming)}
-          lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
-          skills={ctx.skills}
-        />
+        <AssistantThinkingBlock thinking={thinking} streaming={Boolean(row.message.streaming)} />
+        {messageText ? (
+          <ChatMarkdown
+            text={messageText}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={Boolean(row.message.streaming)}
+            lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
+            skills={ctx.skills}
+          />
+        ) : null}
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
           routeThreadKey={ctx.routeThreadKey}

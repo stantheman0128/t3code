@@ -1031,6 +1031,51 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("maps reasoning content deltas onto assistant message thinking", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-thinking-delta-1"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking"),
+      itemId: asItemId("item-thinking"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "checking the adapter",
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-thinking-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking"),
+      itemId: asItemId("item-thinking"),
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id === "assistant:item-thinking" && !message.streaming,
+      ),
+    );
+    const message = thread.messages.find(
+      (entry: ProviderRuntimeTestMessage) => entry.id === "assistant:item-thinking",
+    );
+    expect(message?.thinking).toBe("checking the adapter");
+    expect(message?.text).toBe("");
+    expect(message?.streaming).toBe(false);
+  });
+
   it("uses assistant item completion detail when no assistant deltas were streamed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

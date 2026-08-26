@@ -995,6 +995,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               return event.payload.text;
             },
           });
+          const nextThinking = Option.match(existingMessage, {
+            onNone: () => event.payload.thinking,
+            onSome: (message) => {
+              if (event.payload.streaming) {
+                const combined = `${message.thinking ?? ""}${event.payload.thinking ?? ""}`;
+                return combined.length > 0 ? combined : message.thinking;
+              }
+              if (event.payload.thinking !== undefined && event.payload.thinking.length > 0) {
+                return event.payload.thinking;
+              }
+              return message.thinking;
+            },
+          });
           const nextAttachments =
             event.payload.attachments !== undefined
               ? yield* materializeAttachmentsForProjection({
@@ -1007,6 +1020,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             turnId: event.payload.turnId,
             role: event.payload.role,
             text: nextText,
+            ...(nextThinking !== undefined ? { thinking: nextThinking } : {}),
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,

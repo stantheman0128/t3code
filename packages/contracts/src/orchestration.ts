@@ -269,6 +269,8 @@ export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  /** Provider reasoning / thought text shown separately from the reply. */
+  thinking: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
@@ -1003,6 +1005,7 @@ const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   delta: Schema.String,
+  channel: Schema.optionalKey(Schema.Literals(["text", "thinking"])),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -1263,6 +1266,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  thinking: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,

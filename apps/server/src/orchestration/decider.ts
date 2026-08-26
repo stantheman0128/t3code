@@ -1235,6 +1235,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const thinkingDelta = command.channel === "thinking";
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1247,7 +1248,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           messageId: command.messageId,
           role: "assistant",
-          text: command.delta,
+          text: thinkingDelta ? "" : command.delta,
+          ...(thinkingDelta ? { thinking: command.delta } : {}),
           turnId: command.turnId ?? null,
           streaming: true,
           createdAt: command.createdAt,

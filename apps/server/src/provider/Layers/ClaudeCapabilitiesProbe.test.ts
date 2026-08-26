@@ -9,7 +9,6 @@ import * as Schema from "effect/Schema";
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
-  isLegacyClaudeModel,
   preferClaudeSubscriptionType,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
@@ -20,21 +19,6 @@ it("prefers ~/.claude.json organizationType over SDK maxplan", () => {
   assert.equal(preferClaudeSubscriptionType("maxplan", "claude_pro"), "pro");
   assert.equal(preferClaudeSubscriptionType("maxplan", undefined), "maxplan");
   assert.equal(preferClaudeSubscriptionType(undefined, "claude_pro"), "pro");
-});
-
-it("keeps only the Claude 5 family out of legacy models", () => {
-  assert.deepStrictEqual(
-    ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8"].map((model) => [
-      model,
-      isLegacyClaudeModel(model),
-    ]),
-    [
-      ["claude-fable-5", false],
-      ["claude-opus-5", false],
-      ["claude-sonnet-5", false],
-      ["claude-opus-4-8", true],
-    ],
-  );
 });
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {

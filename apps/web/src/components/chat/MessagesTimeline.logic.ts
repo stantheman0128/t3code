@@ -12,6 +12,28 @@ import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../..
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
+/** While a turn is running, keep a short procedure visible instead of one stdout line. */
+export const MAX_VISIBLE_LIVE_PROCESS_ENTRIES = 8;
+
+const GENERIC_TOOL_HEADINGS = new Set(["terminal", "tool call", "ran command", "command"]);
+
+export function workLogVisibleEntryCap(isWorking: boolean): number {
+  return isWorking ? MAX_VISIBLE_LIVE_PROCESS_ENTRIES : MAX_VISIBLE_WORK_LOG_ENTRIES;
+}
+
+export function workEntryLooksLikeOutputDump(value: string | undefined): boolean {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.includes("\n") || trimmed.includes("\r")) {
+    return true;
+  }
+  if (trimmed.startsWith("===")) {
+    return true;
+  }
+  return trimmed.length > 140;
+}
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
 export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
@@ -272,6 +294,51 @@ export function computeMessageDurationStart(
 
 export function normalizeCompactToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+}
+
+function isGenericToolHeading(value: string): boolean {
+  return GENERIC_TOOL_HEADINGS.has(normalizeCompactToolLabel(value).toLocaleLowerCase());
+}
+
+function compactProcessLabel(value: string, maxLength = 84): string {
+  const normalized = normalizeCompactToolLabel(normalizeInlinePreview(value));
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function normalizeInlinePreview(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/** Collapsed/live headline: the action, never a stdout dump. */
+export function workEntryProcessLabel(entry: WorkLogEntry): string {
+  const command = entry.command?.trim();
+  if (command && !workEntryLooksLikeOutputDump(command)) {
+    return compactProcessLabel(command);
+  }
+  const title = entry.toolTitle?.trim();
+  if (title && !isGenericToolHeading(title) && !workEntryLooksLikeOutputDump(title)) {
+    return compactProcessLabel(title);
+  }
+  const label = entry.label?.trim();
+  if (label && !isGenericToolHeading(label) && !workEntryLooksLikeOutputDump(label)) {
+    return compactProcessLabel(label);
+  }
+  if (command) {
+    const program = command.split(/\s+/).find((token) => token.length > 0);
+    if (program) {
+      return compactProcessLabel(program);
+    }
+  }
+  if (title) {
+    return compactProcessLabel(title);
+  }
+  if (label && !workEntryLooksLikeOutputDump(label)) {
+    return compactProcessLabel(label);
+  }
+  return "Tool";
 }
 
 type ToolGroupAction = "read" | "edit" | "command" | "code-search" | "search" | "other";
@@ -737,6 +804,7 @@ export function deriveMessagesTimelineRows(input: {
     if (entry.kind === "proposed-plan" || entry.kind === "turn-plan") return true;
     return false;
   });
+  const activeTurnHasWorkLog = activeEntries.some((entry) => entry.kind === "work");
 
   const activeToolEntries: Array<Extract<TimelineEntry, { kind: "work" }>> = [];
   for (let index = input.timelineEntries.length - 1; index >= activeTurnHeaderIndex; index -= 1) {
@@ -780,11 +848,42 @@ export function deriveMessagesTimelineRows(input: {
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
-      showThinking: activeWorkRow === null && !activeTurnHasVisibleContent,
+      showThinking:
+        activeWorkRow === null && !activeTurnHasVisibleContent && !activeTurnHasWorkLog,
     });
   };
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
+    if (!activeWorkRow.expanded && input.isWorking) {
+      const earlier = activeWorkRow.groupedEntries.slice(0, -1);
+      const earlierCap = Math.max(0, MAX_VISIBLE_LIVE_PROCESS_ENTRIES - 1);
+      const hiddenEarlier = earlier.length > earlierCap ? earlier.slice(0, -earlierCap) : [];
+      const visibleEarlier = earlier.slice(hiddenEarlier.length);
+      if (hiddenEarlier.length > 0) {
+        nextRows.push({
+          kind: "work-toggle",
+          id: `work-toggle:${activeWorkRow.groupId}`,
+          createdAt: hiddenEarlier[0]!.createdAt,
+          groupId: activeWorkRow.groupId,
+          hiddenCount: hiddenEarlier.length,
+          expanded: false,
+          onlyToolEntries: hiddenEarlier.every(workLogEntryIsToolLike),
+          summary: null,
+          summaryKind: null,
+          hasFailure: hiddenEarlier.some(workEntryDisplayIndicatesToolFailure),
+        });
+      }
+      for (const workEntry of visibleEarlier) {
+        nextRows.push({
+          kind: "work",
+          id: workEntry.id,
+          createdAt: workEntry.createdAt,
+          groupedEntries: [workEntry],
+          isExpandedToolGroupEntry: false,
+          isLastExpandedToolGroupEntry: false,
+        });
+      }
+    }
     nextRows.push(activeWorkRow);
     if (!activeWorkRow.expanded) return;
     for (const [entryIndex, workEntry] of activeWorkRow.groupedEntries.entries()) {
@@ -889,7 +988,7 @@ export function deriveMessagesTimelineRows(input: {
               });
             }
           }
-        } else if (onlyToolEntries) {
+        } else if (onlyToolEntries && !input.isWorking) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
@@ -917,7 +1016,7 @@ export function deriveMessagesTimelineRows(input: {
               });
             }
           }
-        } else if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
+        } else if (visibleGroupedEntries.length <= workLogVisibleEntryCap(input.isWorking)) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
@@ -938,7 +1037,10 @@ export function deriveMessagesTimelineRows(input: {
           const overflowCandidates = visibleGroupedEntries.filter(
             (entry) => entry.agentSpawn === undefined,
           );
-          const hiddenEntries = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+          const hiddenEntries = overflowCandidates.slice(
+            0,
+            -workLogVisibleEntryCap(input.isWorking),
+          );
           const hiddenIds = new Set(hiddenEntries.map((entry) => entry.id));
           const visibleEntries = visibleGroupedEntries.filter(
             (entry) => entry.agentSpawn !== undefined || !hiddenIds.has(entry.id),

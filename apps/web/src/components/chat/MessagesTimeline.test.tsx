@@ -1115,7 +1115,10 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Running pnpm");
-    expect(markup).not.toContain("tool call failed");
+    expect(markup).toContain("pnpm lint");
+    expect(markup).not.toMatch(
+      /data-timeline-row-kind="work-live"[\s\S]{0,400}aria-label="[^"]*tool call failed"/,
+    );
   });
 
   it("keeps terminal command copy live while the parent turn is active", () => {
@@ -1170,6 +1173,47 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Working for");
     expect(markup).toContain("Thinking");
     expect(markup).toContain("gap-1.5 py-0.5 px-1");
+  });
+
+  it("does not headline a live command with registry stdout", () => {
+    const dump =
+      "=== HKCU Run property names matching pulse === === HKCU Run all names === OneDrive LINE Discord Riot";
+    const turnId = TurnId.make("turn-live");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        activeTurnStartedAt={MESSAGE_CREATED_AT}
+        latestTurn={{
+          turnId,
+          state: "running",
+          startedAt: MESSAGE_CREATED_AT,
+          completedAt: null,
+        }}
+        runningTurnId={turnId}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-1",
+              createdAt: MESSAGE_CREATED_AT,
+              turnId,
+              label: "Ran command",
+              tone: "tool",
+              itemType: "command_execution",
+              command: "reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+              detail: dump,
+              toolLifecycleStatus: "completed",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Running");
+    expect(markup).not.toContain("HKCU Run property names");
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {

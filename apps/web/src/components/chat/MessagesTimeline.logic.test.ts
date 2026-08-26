@@ -6,6 +6,8 @@ import {
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
+  workEntryLooksLikeOutputDump,
+  workEntryProcessLabel,
 } from "./MessagesTimeline.logic";
 
 describe("shouldPreserveAssistantLineBreaks", () => {
@@ -929,7 +931,7 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-live"]);
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "work", "work-live"]);
     expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
       entry: { id: "running-command" },
       groupedEntries: [
@@ -1000,11 +1002,7 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle", "message", "work-live"]);
-    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      hiddenCount: 1,
-      summary: "Ran 1 command",
-    });
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
   });
 
   it("keeps separated in-progress tool runs visible", () => {
@@ -1518,6 +1516,71 @@ describe("deriveMessagesTimelineRows", () => {
       });
     },
   );
+
+  it("keeps a live procedure visible instead of one stdout line and empty Thinking", () => {
+    const dump =
+      "=== HKCU Run property names matching pulse === === HKCU Run all names === OneDrive LINE Discord Riot";
+    const timelineEntries = Array.from({ length: 10 }, (_, index) => ({
+      id: `work-entry-${index}`,
+      kind: "work" as const,
+      createdAt: `2026-01-01T00:00:${String(index).padStart(2, "0")}Z`,
+      entry: {
+        id: `work-${index}`,
+        createdAt: `2026-01-01T00:00:${String(index).padStart(2, "0")}Z`,
+        turnId: "turn-1" as never,
+        label: index === 9 ? dump : `read file ${index}`,
+        detail: index === 9 ? dump : undefined,
+        tone: "tool" as const,
+        toolLifecycleStatus: "completed" as const,
+      },
+    }));
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.find((row) => row.kind === "working")).toMatchObject({ showThinking: false });
+    expect(rows.filter((row) => row.kind === "work").length).toBeGreaterThanOrEqual(7);
+    expect(rows.some((row) => row.kind === "work-live")).toBe(true);
+  });
+});
+
+describe("workEntryProcessLabel", () => {
+  it("does not use registry stdout as the collapsed heading", () => {
+    const dump =
+      "=== HKCU Run property names matching pulse === === HKCU Run all names === OneDrive LINE Discord Riot Client";
+    expect(workEntryLooksLikeOutputDump(dump)).toBe(true);
+    expect(
+      workEntryProcessLabel({
+        id: "work-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        label: "Ran command",
+        detail: dump,
+        command: "reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        tone: "tool",
+      }),
+    ).toContain("reg query");
+    expect(
+      workEntryProcessLabel({
+        id: "work-2",
+        createdAt: "2026-01-01T00:00:00Z",
+        label: dump,
+        detail: dump,
+        toolTitle: "Terminal",
+        tone: "tool",
+      }),
+    ).not.toContain("HKCU Run");
+  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {

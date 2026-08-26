@@ -50,6 +50,10 @@ it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
           "workflow resume",
           "workflow stop",
           "loop",
+          "compact",
+          "create-workflow",
+          "deep-research",
+          "btw",
           "goal",
         ]),
       );

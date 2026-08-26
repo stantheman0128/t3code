@@ -36,6 +36,30 @@ export const GROK_LOOP_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand>
   },
 ];
 
+/** Session slashes that Grok ACP accepts as prompt text, not TUI chrome. */
+export const GROK_SESSION_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
+  {
+    name: "compact",
+    description: "Summarize this Grok thread and free context",
+    input: { hint: "optional focus" },
+  },
+  {
+    name: "create-workflow",
+    description: "Author and save a Grok workflow",
+    input: { hint: "description" },
+  },
+  {
+    name: "deep-research",
+    description: "Run a background Grok research workflow",
+    input: { hint: "query" },
+  },
+  {
+    name: "btw",
+    description: "Ask a side question without interrupting the current turn",
+    input: { hint: "question" },
+  },
+];
+
 export const GROK_GOAL_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
   {
     name: "goal",
@@ -149,7 +173,8 @@ const readWorkflowDir = Effect.fn("grok.readWorkflowDir")(function* (
 });
 
 /**
- * Built-in `/workflow`, pause/resume/stop, `/loop`, `/goal`, plus `~/.grok/workflows`
+ * Built-in `/workflow`, pause/resume/stop, `/loop`, `/compact`, `/create-workflow`,
+ * `/deep-research`, `/btw`, `/goal`, plus `~/.grok/workflows`
  * and `<project>/.grok/workflows` scripts. Project scripts override user
  * scripts of the same command name. T3 sends the slash text as a prompt — it
  * does not host Rhai.
@@ -166,6 +191,9 @@ export const readGrokWorkflowSlashCommands = Effect.fn("grok.readWorkflowSlashCo
       byName.set(command.name, command);
     }
     for (const command of GROK_LOOP_SLASH_COMMANDS) {
+      byName.set(command.name, command);
+    }
+    for (const command of GROK_SESSION_SLASH_COMMANDS) {
       byName.set(command.name, command);
     }
     for (const command of GROK_GOAL_SLASH_COMMANDS) {

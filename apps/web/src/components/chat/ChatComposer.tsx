@@ -1219,14 +1219,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
-      return workspaceEntries.entries.map((entry) => ({
-        id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
-        path: entry.path,
-        pathKind: entry.kind,
-        label: basenameOfPath(entry.path),
-        description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
-      }));
+      return workspaceEntries.entries.map((entry) => {
+        const posixPath = entry.path.replaceAll("\\", "/");
+        const slash = posixPath.lastIndexOf("/");
+        return {
+          id: `path:${entry.kind}:${entry.path}`,
+          type: "path",
+          path: entry.path,
+          pathKind: entry.kind,
+          label: basenameOfPath(posixPath),
+          description: slash >= 0 ? posixPath.slice(0, slash) : "",
+        };
+      });
     }
     if (composerTrigger.kind === "slash-command") {
       const builtInSlashCommandItems = [

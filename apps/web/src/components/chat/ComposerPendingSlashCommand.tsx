@@ -1,10 +1,9 @@
-import { Terminal, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
   COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
+  COMPOSER_INLINE_SLASH_CHIP_CLASS_NAME,
 } from "../composerInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -23,13 +22,16 @@ export function ComposerPendingSlashCommandChip({
 }: ComposerPendingSlashCommandChipProps) {
   const chip = (
     <span
-      className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}
+      className={cn(COMPOSER_INLINE_SLASH_CHIP_CLASS_NAME, "pr-1")}
       data-testid="composer-pending-slash-command"
     >
-      <Terminal className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
-      <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "font-mono")}>
-        /{command.name}
+      <span
+        aria-hidden
+        className="flex size-[1.17em] shrink-0 items-center justify-center rounded-[0.28em] bg-sky-500/20 font-mono text-[0.78em] leading-none"
+      >
+        /
       </span>
+      <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "font-medium")}>{command.name}</span>
       <button
         type="button"
         aria-label={`Remove /${command.name}`}

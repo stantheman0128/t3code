@@ -256,7 +256,7 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   const result = useEnvironmentQuery(
     debouncedTarget.environmentId !== null &&
       debouncedTarget.cwd !== null &&
-      debouncedTarget.query.length > 0
+      target.query !== null
       ? projectEnvironment.searchEntries({
           environmentId: debouncedTarget.environmentId,
           input: {

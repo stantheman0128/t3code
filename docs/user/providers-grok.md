@@ -52,9 +52,9 @@ CLI launches them with the `workflow` tool or `/workflow` and streams progress a
 `x.ai/session_notification` / `workflow_updated`.
 
 Composer `/` lists `/workflow` to start a run by name, `/workflow pause`, `/workflow resume`,
-`/workflow stop`, `/loop` (interval plus prompt, same as Grok TUI), `/goal` (status, pause,
-resume, clear), and each script in `~/.grok/workflows` plus the project `.grok/workflows`
-directory.
+`/workflow stop`, `/loop`, `/compact`, `/create-workflow`, `/deep-research`, `/btw`, `/goal`
+(status, pause, resume, clear), and each script in `~/.grok/workflows` plus the project
+`.grok/workflows` directory. TUI-only commands like `/quit` and `/theme` stay in the Grok CLI.
 
 T3 Code now maps those updates onto the same Agents / task surface used by Claude workflows and Codex collab children:
 

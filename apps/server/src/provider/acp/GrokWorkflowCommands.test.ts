@@ -104,6 +104,10 @@ it.layer(NodeServices.layer)("readGrokWorkflowSlashCommands", (it) => {
         expect(commands.map((command) => command.name)).toEqual(
           expect.arrayContaining([
             "loop",
+            "compact",
+            "create-workflow",
+            "deep-research",
+            "btw",
             "goal",
             "goal status",
             "goal pause",

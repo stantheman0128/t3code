@@ -3165,7 +3165,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (
     options.platform === "win" &&
     options.target === "nsis" &&
-    process.env.CI !== "true" &&
+    process.env.GITHUB_ACTIONS !== "true" &&
     process.env.T3CODE_SKIP_INSTALL !== "1"
   ) {
     const installer = copiedArtifacts.find(

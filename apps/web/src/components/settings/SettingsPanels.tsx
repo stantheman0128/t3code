@@ -481,7 +481,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Contrast"]
         : []),
       ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
-      ...(settings.interfaceAnimations !== DEFAULT_UNIFIED_SETTINGS.interfaceAnimations
+      ...(settings.layoutMotion !== DEFAULT_UNIFIED_SETTINGS.layoutMotion
         ? ["Panel animations"]
         : []),
       ...(settings.showProviderUsage !== DEFAULT_UNIFIED_SETTINGS.showProviderUsage
@@ -576,7 +576,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.glassOpacity,
-      settings.interfaceAnimations,
+      settings.layoutMotion,
       settings.showProviderUsage,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
@@ -663,7 +663,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
-      interfaceAnimations: DEFAULT_UNIFIED_SETTINGS.interfaceAnimations,
+      layoutMotion: DEFAULT_UNIFIED_SETTINGS.layoutMotion,
       showProviderUsage: DEFAULT_UNIFIED_SETTINGS.showProviderUsage,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
@@ -1018,7 +1018,15 @@ export function AppearanceSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="appearance" title="Appearance">
+      <SettingsSection
+        id="appearance"
+        title="Appearance"
+        headerAction={
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {APP_VERSION}
+          </span>
+        }
+      >
         <div id={searchableSetting("theme").id}>
           <ThemeLibrary
             appearanceMode={appearanceMode}
@@ -1130,15 +1138,23 @@ export function AppearanceSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("app-version")}
+          description="Installed T3 Code version. Use this to confirm a reinstall actually landed."
+          control={
+            <code className="text-xs tabular-nums text-muted-foreground">{APP_VERSION}</code>
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("interface-animations")}
           description="Animate the sidebar, right panels, and terminal drawer as they open and close."
           resetAction={
-            settings.interfaceAnimations !== DEFAULT_UNIFIED_SETTINGS.interfaceAnimations ? (
+            settings.layoutMotion !== DEFAULT_UNIFIED_SETTINGS.layoutMotion ? (
               <SettingResetButton
                 label="animations"
                 onClick={() =>
                   updateSettings({
-                    interfaceAnimations: DEFAULT_UNIFIED_SETTINGS.interfaceAnimations,
+                    layoutMotion: DEFAULT_UNIFIED_SETTINGS.layoutMotion,
                   })
                 }
               />
@@ -1146,10 +1162,8 @@ export function AppearanceSettingsPanel() {
           }
           control={
             <Switch
-              checked={settings.interfaceAnimations}
-              onCheckedChange={(checked) =>
-                updateSettings({ interfaceAnimations: Boolean(checked) })
-              }
+              checked={settings.layoutMotion}
+              onCheckedChange={(checked) => updateSettings({ layoutMotion: Boolean(checked) })}
               aria-label="Interface animations"
             />
           }

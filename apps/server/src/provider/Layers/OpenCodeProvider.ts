@@ -18,6 +18,7 @@ import {
   providerModelsFromSettings,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { readOpenCodeGoUsageLimits } from "../openCodeUsage.ts";
 import {
   OpenCodeRuntime,
   openCodeRuntimeErrorDetail,
@@ -459,12 +460,14 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   );
   const skills = flattenOpenCodeSkills(inventoryExit.value);
   const connectedCount = inventoryExit.value.providerList.connected.length;
+  const usageLimits = yield* readOpenCodeGoUsageLimits(resolvedEnvironment);
   return buildServerProvider({
     presentation: OPENCODE_PRESENTATION,
     enabled: true,
     checkedAt,
     models,
     skills,
+    ...(usageLimits ? { usageLimits } : {}),
     probe: {
       installed: true,
       version,

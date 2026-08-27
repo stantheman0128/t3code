@@ -472,3 +472,49 @@ export function mapCursorPeriodUsage(
     ],
   });
 }
+
+/**
+ * OpenCode Go remaining from GET /zen/go/v1/usage.
+ * `percent` is used 0–100 for rolling (5h), weekly, and monthly windows.
+ */
+export function mapOpenCodeGoUsage(
+  document: unknown,
+  observedAt: string,
+  planLabel?: string,
+): ProviderUsageLimits {
+  const root = asRecord(document);
+  const usage = asRecord(root?.usage) ?? root;
+  if (!usage) {
+    return {
+      status: "unsupported",
+      ...(planLabel ? { planLabel } : {}),
+      windows: [],
+    };
+  }
+  const rolling = asRecord(recordField(usage, "rolling", "session", "fiveHour", "five_hour"));
+  const weekly = asRecord(recordField(usage, "weekly", "week"));
+  const monthly = asRecord(recordField(usage, "monthly", "month"));
+  const windowRemaining = (record: Record<string, unknown> | undefined) =>
+    remainingFromUsed(
+      unwrapNumeric(recordField(record ?? {}, "percent", "usagePercent", "usage_percent")),
+    );
+  return availableUsageLimits({
+    planLabel,
+    observedAt,
+    windows: [
+      usageWindow(
+        "rolling",
+        "5h",
+        windowRemaining(rolling),
+        rolling?.resetsAt ?? rolling?.resets_at,
+      ),
+      usageWindow("weekly", "Week", windowRemaining(weekly), weekly?.resetsAt ?? weekly?.resets_at),
+      usageWindow(
+        "monthly",
+        "Month",
+        windowRemaining(monthly),
+        monthly?.resetsAt ?? monthly?.resets_at,
+      ),
+    ],
+  });
+}

@@ -227,11 +227,16 @@ export const ClientSettingsSchema = Schema.Struct({
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
-   * Opt-in motion for layout surfaces: the app sidebar's collapse, right
-   * panels opening and closing, and the terminal drawer. Off by default, so
-   * every surface snaps unless the user asks for the animation.
+   * @deprecated Kept so older settings files still decode. Layout motion
+   * is `layoutMotion`; the old default-off value is ignored.
    */
   interfaceAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Sidebar, right panel, and terminal drawer motion. On by default so
+   * those surfaces keep the same open/close animation they had before
+   * the opt-in flag. Off still snaps, and OS reduced-motion still wins.
+   */
+  layoutMotion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   showProviderUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Legacy plan mode. The composer's Build/Plan toggle was removed from the
   // default UI; this beta flag restores it (plus the /plan and /default slash
@@ -938,6 +943,7 @@ export const ClientSettingsPatch = Schema.Struct({
     ),
   ),
   interfaceAnimations: Schema.optionalKey(Schema.Boolean),
+  layoutMotion: Schema.optionalKey(Schema.Boolean),
   showProviderUsage: Schema.optionalKey(Schema.Boolean),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(

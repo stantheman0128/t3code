@@ -9,7 +9,7 @@ import { useClientSettings } from "./useSettings";
  * the `transition: none` kill-switch keyed on `html[data-interface-animations]`.
  */
 export function useInterfaceAnimationsEnabled(): boolean {
-  const interfaceAnimations = useClientSettings((settings) => settings.interfaceAnimations);
+  const layoutMotion = useClientSettings((settings) => settings.layoutMotion);
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  return interfaceAnimations && !prefersReducedMotion;
+  return layoutMotion && !prefersReducedMotion;
 }

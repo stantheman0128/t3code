@@ -188,11 +188,11 @@ function GlassAppearanceSync() {
 // in the panel presence components reads the setting through
 // `useInterfaceAnimationsEnabled` instead.
 function InterfaceAnimationsSync() {
-  const interfaceAnimations = useClientSettings((settings) => settings.interfaceAnimations);
+  const layoutMotion = useClientSettings((settings) => settings.layoutMotion);
 
   useEffect(() => {
-    document.documentElement.dataset.interfaceAnimations = interfaceAnimations ? "true" : "false";
-  }, [interfaceAnimations]);
+    document.documentElement.dataset.interfaceAnimations = layoutMotion ? "true" : "false";
+  }, [layoutMotion]);
 
   return null;
 }

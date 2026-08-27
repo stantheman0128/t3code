@@ -70,6 +70,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "app-version",
+    title: "App version",
+    to: "/settings/appearance",
+  },
+  {
     id: "interface-animations",
     title: "Panel animations",
     to: "/settings/appearance",

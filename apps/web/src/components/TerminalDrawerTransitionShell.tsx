@@ -20,7 +20,7 @@ export function TerminalDrawerTransitionShell(props: {
       className={cn(
         "terminal-drawer-inline-frame",
         props.active
-          ? "terminal-drawer-inline-gap relative isolate shrink-0 overflow-hidden"
+          ? "terminal-drawer-inline-gap relative z-0 isolate shrink-0 overflow-hidden"
           : "hidden",
       )}
       style={{ "--terminal-drawer-height": `${props.height}px` } as CSSProperties}

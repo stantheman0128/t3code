@@ -797,7 +797,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     width: var(--right-panel-width);
     overflow: hidden;
     isolation: isolate;
-    contain: paint;
     transition: width 200ms linear;
   }
 
@@ -825,7 +824,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     height: var(--terminal-drawer-height);
     overflow: hidden;
     isolation: isolate;
-    contain: paint;
     transition: height 200ms linear;
   }
 

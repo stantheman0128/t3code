@@ -117,13 +117,11 @@ describe("ClientSettings environment identification", () => {
 });
 
 describe("ClientSettings sidebar", () => {
-  it("defaults layout animations off and accepts an explicit opt-in", () => {
-    expect(decodeClientSettings({}).interfaceAnimations).toBe(false);
-    expect(decodeClientSettings({ interfaceAnimations: true }).interfaceAnimations).toBe(true);
-    expect(decodeClientSettingsPatch({ interfaceAnimations: false }).interfaceAnimations).toBe(
-      false,
-    );
-    expect(decodeClientSettingsPatch({ interfaceAnimations: true }).interfaceAnimations).toBe(true);
+  it("defaults layout motion on, ignoring the old default-off flag", () => {
+    expect(decodeClientSettings({}).layoutMotion).toBe(true);
+    expect(decodeClientSettings({ interfaceAnimations: false }).layoutMotion).toBe(true);
+    expect(decodeClientSettings({ layoutMotion: false }).layoutMotion).toBe(false);
+    expect(decodeClientSettingsPatch({ layoutMotion: true }).layoutMotion).toBe(true);
   });
 
   it("defaults provider usage on and accepts an explicit hide", () => {

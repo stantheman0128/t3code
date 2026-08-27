@@ -9,6 +9,7 @@ import {
   type ProjectId,
   type ProviderApprovalDecision,
   type PreviewAnnotationPayload,
+  type PreviewSessionSnapshot,
   ProviderInstanceId,
   type ServerProvider,
   type ResolvedKeybindingsConfig,
@@ -65,6 +66,7 @@ import {
   lazy,
   memo,
   Suspense,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -166,6 +168,10 @@ import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
+import {
+  INLINE_RIGHT_PANEL_EXIT_FALLBACK_MS,
+  InlineRightPanelPresence,
+} from "./InlineRightPanelPresence";
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
 import {
@@ -177,6 +183,7 @@ import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
+import { TerminalDrawerTransitionShell } from "./TerminalDrawerTransitionShell";
 import {
   AlarmClockIcon,
   CheckCircle2Icon,
@@ -211,6 +218,8 @@ import {
   useClientSettingsHydrated,
   useEnvironmentSettings,
 } from "../hooks/useSettings";
+import { useInterfaceAnimationsEnabled } from "../hooks/useInterfaceAnimations";
+import { usePanelControlsRidingExit } from "../hooks/usePanelControlsRidingExit";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -365,20 +374,26 @@ import {
   cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
+  previewTabIdsForRightPanelReconcile,
+  deferredRightPanelTerminalIdsForThread,
+  NO_DEFERRED_TERMINAL_IDS,
   reconcileMountedTerminalThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
+  orphanedTerminalIdsAfterReopen,
+  rightPanelSurfacesRemovedAfterExit,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  shouldDeferRightPanelTerminalClose,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
+
 import { useComposerHandleContext } from "../composerHandleContext";
 import {
   awaitAttachmentUploads,
@@ -713,10 +728,13 @@ function serverTerminalIdsStrictSubsetOfClient(
   return true;
 }
 
+const TERMINAL_DRAWER_EXIT_FALLBACK_MS = 250;
+
 interface PersistentThreadTerminalDrawerProps {
   threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
   threadId: ThreadId;
-  visible: boolean;
+  active: boolean;
+  onExitComplete: (threadKey: string) => void;
   launchContext: PersistentTerminalLaunchContext | null;
   focusRequestId: number;
   splitShortcutLabel: string | undefined;
@@ -725,12 +743,19 @@ interface PersistentThreadTerminalDrawerProps {
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  /**
+   * Terminal sessions owned by right-panel surfaces whose teardown is
+   * deferred until the panel exit lands. They must stay invisible to the
+   * drawer (no adoption, no allocation) until the deferred deletion runs.
+   */
+  deferredPanelTerminalIds: ReadonlySet<string>;
 }
 
 const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
   threadRef,
   threadId,
-  visible,
+  active,
+  onExitComplete,
   launchContext,
   focusRequestId,
   splitShortcutLabel,
@@ -739,6 +764,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   closeShortcutLabel,
   keybindings,
   onAddTerminalContext,
+  deferredPanelTerminalIds,
 }: PersistentThreadTerminalDrawerProps) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
@@ -754,6 +780,25 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const terminalUiState = useTerminalUiStateStore((state) =>
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef),
   );
+  const terminalOpen = active && terminalUiState.terminalOpen;
+  const [isResizing, setIsResizing] = useState(false);
+  const terminalDrawerFrameRef = useRef<HTMLDivElement>(null);
+  // Retained drawers stay mounted while hidden, so this instance can tell a
+  // thread-switch return (hidden with the open flag unchanged) apart from a
+  // genuine open: only the switch-back skips the slide-up. Mounts that appear
+  // already open - the first open creating the drawer, reload restores,
+  // revisits outside the retention cache - still animate; a mount cannot
+  // distinguish those from each other, and gating on mount state suppressed
+  // genuine opens.
+  const hideContextRef = useRef<{ uiOpen: boolean } | null>(null);
+  useEffect(() => {
+    if (active) {
+      hideContextRef.current = null;
+      return;
+    }
+    hideContextRef.current = { uiOpen: terminalUiState.terminalOpen };
+  }, [active, terminalUiState.terminalOpen]);
+  const animateTerminalEnter = terminalOpen && hideContextRef.current?.uiOpen !== true;
   const knownTerminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
     threadId,
@@ -772,8 +817,12 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   );
   const drawerTerminalSessions = useMemo(
     () =>
-      knownTerminalSessions.filter((session) => !panelTerminalIds.has(session.target.terminalId)),
-    [knownTerminalSessions, panelTerminalIds],
+      knownTerminalSessions.filter(
+        (session) =>
+          !panelTerminalIds.has(session.target.terminalId) &&
+          !deferredPanelTerminalIds.has(session.target.terminalId),
+      ),
+    [knownTerminalSessions, panelTerminalIds, deferredPanelTerminalIds],
   );
   const terminalLabelsById = useMemo(() => {
     const next = new Map<string, string>();
@@ -830,9 +879,15 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
         ...serverOrderedTerminalIds,
         ...terminalUiState.terminalIds,
         ...panelTerminalIds,
+        ...deferredPanelTerminalIds,
       ]),
     ],
-    [panelTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds],
+    [
+      panelTerminalIds,
+      deferredPanelTerminalIds,
+      serverOrderedTerminalIds,
+      terminalUiState.terminalIds,
+    ],
   );
   const storeSetTerminalHeight = useTerminalUiStateStore((state) => state.setTerminalHeight);
   const storeSplitTerminal = useTerminalUiStateStore((state) => state.splitTerminal);
@@ -849,12 +904,23 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       return;
     }
     if (
-      serverTerminalIdsStrictSubsetOfClient(serverOrderedTerminalIds, terminalUiState.terminalIds)
+      serverTerminalIdsStrictSubsetOfClient(serverOrderedTerminalIds, [
+        ...terminalUiState.terminalIds,
+        // Sessions pending deferred panel teardown are dying; adopting them
+        // here would put them in the drawer right before deletion.
+        ...deferredPanelTerminalIds,
+      ])
     ) {
       return;
     }
     reconcileTerminalIds(threadRef, serverOrderedTerminalIds);
-  }, [reconcileTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds, threadRef]);
+  }, [
+    reconcileTerminalIds,
+    serverOrderedTerminalIds,
+    terminalUiState.terminalIds,
+    threadRef,
+    deferredPanelTerminalIds,
+  ]);
   const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
   const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveWorktreePath = useMemo(() => {
@@ -886,11 +952,11 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   );
 
   const bumpFocusRequestId = useCallback(() => {
-    if (!visible) {
+    if (!terminalOpen) {
       return;
     }
     setLocalFocusRequestId((value) => value + 1);
-  }, [visible]);
+  }, [terminalOpen]);
 
   const setTerminalHeight = useCallback(
     (height: number) => {
@@ -898,6 +964,9 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     },
     [storeSetTerminalHeight, threadRef],
   );
+  const previewTerminalHeight = useCallback((height: number) => {
+    terminalDrawerFrameRef.current?.style.setProperty("--terminal-drawer-height", `${height}px`);
+  }, []);
 
   const splitTerminal = useCallback(() => {
     if (!cwd) {
@@ -1030,83 +1099,77 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
 
   const handleAddTerminalContext = useCallback(
     (selection: TerminalContextSelection) => {
-      if (!visible) {
+      if (!terminalOpen) {
         return;
       }
       onAddTerminalContext(selection);
     },
-    [onAddTerminalContext, visible],
+    [onAddTerminalContext, terminalOpen],
   );
 
-  const keepHidden = !visible && terminalUiState.terminalOpen;
-  const drawerOpen = visible;
-  const drawerMounted = useDelayedUnmount(drawerOpen || keepHidden, 200);
-  const [entered, setEntered] = useState(false);
-
-  useLayoutEffect(() => {
-    if (!drawerOpen) {
-      setEntered(false);
+  const terminalThreadKey = scopedThreadKey(threadRef);
+  const animationsEnabled = useInterfaceAnimationsEnabled();
+  useEffect(() => {
+    if (!active || terminalOpen) return;
+    // Without animations (setting off or reduced motion) there is no exit
+    // transition to wait for, so settle immediately.
+    if (!animationsEnabled) {
+      onExitComplete(terminalThreadKey);
       return;
     }
-    let inner = 0;
-    const outer = window.requestAnimationFrame(() => {
-      inner = window.requestAnimationFrame(() => setEntered(true));
-    });
-    return () => {
-      window.cancelAnimationFrame(outer);
-      window.cancelAnimationFrame(inner);
-    };
-  }, [drawerOpen]);
+    const timeoutId = window.setTimeout(
+      () => onExitComplete(terminalThreadKey),
+      TERMINAL_DRAWER_EXIT_FALLBACK_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [active, animationsEnabled, onExitComplete, terminalOpen, terminalThreadKey]);
 
-  if (!project || !cwd || !drawerMounted) {
+  if (!project || !cwd) {
     return null;
   }
 
-  const drawer = (
-    <ThreadTerminalDrawer
-      threadRef={threadRef}
-      threadId={threadId}
-      cwd={cwd}
-      worktreePath={effectiveWorktreePath}
-      runtimeEnv={runtimeEnv}
-      visible={visible}
-      height={terminalUiState.terminalHeight}
-      // Known-session order is MRU and changes on focus; persisted store order keeps sidebar labels stable.
-      terminalIds={terminalUiState.terminalIds}
-      activeTerminalId={terminalUiState.activeTerminalId}
-      terminalGroups={terminalUiState.terminalGroups}
-      activeTerminalGroupId={terminalUiState.activeTerminalGroupId}
-      focusRequestId={focusRequestId + localFocusRequestId + (visible ? 1 : 0)}
-      onSplitTerminal={splitTerminal}
-      onSplitTerminalVertical={splitTerminalVertical}
-      onNewTerminal={createNewTerminal}
-      splitShortcutLabel={visible ? splitShortcutLabel : undefined}
-      splitVerticalShortcutLabel={visible ? splitVerticalShortcutLabel : undefined}
-      newShortcutLabel={visible ? newShortcutLabel : undefined}
-      closeShortcutLabel={visible ? closeShortcutLabel : undefined}
-      keybindings={keybindings}
-      onActiveTerminalChange={activateTerminal}
-      onCloseTerminal={closeTerminal}
-      onHeightChange={setTerminalHeight}
-      onAddTerminalContext={handleAddTerminalContext}
-      terminalLabelsById={terminalLabelsById}
-      terminalLaunchLocationsById={terminalLaunchLocationsById}
-    />
-  );
-
-  if (keepHidden) {
-    return <div className="hidden">{drawer}</div>;
-  }
-
-  const drawerHeight = terminalUiState.terminalHeight;
-
   return (
-    <div
-      className="overflow-hidden transition-[height] duration-200 ease-linear motion-reduce:transition-none"
-      style={{ height: drawerOpen && entered ? drawerHeight : 0 }}
+    <TerminalDrawerTransitionShell
+      active={active}
+      open={terminalOpen}
+      animateEnter={animateTerminalEnter}
+      height={terminalUiState.terminalHeight}
+      resizing={terminalOpen && isResizing}
+      frameRef={terminalDrawerFrameRef}
+      onExitComplete={() => onExitComplete(terminalThreadKey)}
     >
-      <div style={{ height: drawerHeight }}>{drawer}</div>
-    </div>
+      <ThreadTerminalDrawer
+        threadRef={threadRef}
+        threadId={threadId}
+        cwd={cwd}
+        worktreePath={effectiveWorktreePath}
+        runtimeEnv={runtimeEnv}
+        visible={terminalOpen}
+        height={terminalUiState.terminalHeight}
+        // Known-session order is MRU and changes on focus; persisted store order keeps sidebar labels stable.
+        terminalIds={terminalUiState.terminalIds}
+        activeTerminalId={terminalUiState.activeTerminalId}
+        terminalGroups={terminalUiState.terminalGroups}
+        activeTerminalGroupId={terminalUiState.activeTerminalGroupId}
+        focusRequestId={focusRequestId + localFocusRequestId + (terminalOpen ? 1 : 0)}
+        onSplitTerminal={splitTerminal}
+        onSplitTerminalVertical={splitTerminalVertical}
+        onNewTerminal={createNewTerminal}
+        splitShortcutLabel={terminalOpen ? splitShortcutLabel : undefined}
+        splitVerticalShortcutLabel={terminalOpen ? splitVerticalShortcutLabel : undefined}
+        newShortcutLabel={terminalOpen ? newShortcutLabel : undefined}
+        closeShortcutLabel={terminalOpen ? closeShortcutLabel : undefined}
+        keybindings={keybindings}
+        onActiveTerminalChange={activateTerminal}
+        onCloseTerminal={closeTerminal}
+        onHeightChange={setTerminalHeight}
+        onHeightPreviewChange={previewTerminalHeight}
+        onResizeStateChange={setIsResizing}
+        onAddTerminalContext={handleAddTerminalContext}
+        terminalLabelsById={terminalLabelsById}
+        terminalLaunchLocationsById={terminalLaunchLocationsById}
+      />
+    </TerminalDrawerTransitionShell>
   );
 });
 
@@ -1278,6 +1341,20 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
     />
   );
 });
+
+type InlineRightPanelSnapshot = {
+  threadRef: ScopedThreadRef;
+  surfaces: readonly RightPanelSurface[];
+  activeSurfaceId: string | null;
+  content: ReactNode;
+  maximized: boolean;
+};
+
+type DeferredRightPanelCleanup = {
+  threadRef: ScopedThreadRef;
+  surfaces: readonly RightPanelSurface[];
+  previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
+};
 
 // Errors surface through two maps (draft-keyed and thread-keyed) whose entries
 // can race around promotion, so each write carries its time to let the latest
@@ -1605,6 +1682,11 @@ function ChatViewContent(props: ChatViewProps) {
       }),
     [mountedTerminalThreadKeys],
   );
+  const completeTerminalDrawerExit = useCallback((terminalThreadKey: string) => {
+    setMountedTerminalThreadKeys((currentThreadKeys) =>
+      currentThreadKeys.filter((threadKey) => threadKey !== terminalThreadKey),
+    );
+  }, []);
 
   const fallbackDraftProjectRef = draftThread
     ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
@@ -1789,6 +1871,89 @@ function ChatViewContent(props: ChatViewProps) {
         : undefined,
     [activeThreadRef, activePreviewServerEpoch],
   );
+  const cleanupRightPanelSurfaces = useCallback(
+    (
+      threadRef: ScopedThreadRef,
+      surfaces: readonly RightPanelSurface[],
+      previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>,
+    ) => {
+      for (const surface of surfaces) {
+        if (surface.kind === "preview" && surface.resourceId) {
+          void closePreviewSession({
+            closePreview,
+            snapshot: previewSessions[surface.resourceId] ?? null,
+            tabId: surface.resourceId,
+            threadRef,
+          });
+        }
+        if (surface.kind === "terminal") {
+          for (const terminalId of surface.terminalIds) {
+            storeCloseTerminal(threadRef, terminalId);
+            void closeTerminalMutation({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId, terminalId, deleteHistory: true },
+            });
+          }
+        }
+      }
+    },
+    [closePreview, closeTerminalMutation, storeCloseTerminal],
+  );
+  const deferredRightPanelCleanupRef = useRef<DeferredRightPanelCleanup | null>(null);
+  const runDeferredRightPanelCleanup = useCallback(
+    (pending: DeferredRightPanelCleanup) => {
+      const currentSurfaces = selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
+        pending.threadRef,
+      ).surfaces;
+      const removedSurfaces = rightPanelSurfacesRemovedAfterExit(pending.surfaces, currentSurfaces);
+      cleanupRightPanelSurfaces(pending.threadRef, removedSurfaces, pending.previewSessions);
+      // A deferred terminal surface can be reopened during the exit with
+      // fewer splits; its surface id survives the reopen, so the removal
+      // filter passes it over while the dropped splits still need teardown.
+      const reopenedSurfaces = pending.surfaces.filter(
+        (surface) => !removedSurfaces.includes(surface),
+      );
+      for (const terminalId of orphanedTerminalIdsAfterReopen(reopenedSurfaces, currentSurfaces)) {
+        storeCloseTerminal(pending.threadRef, terminalId);
+        void closeTerminalMutation({
+          environmentId: pending.threadRef.environmentId,
+          input: { threadId: pending.threadRef.threadId, terminalId, deleteHistory: true },
+        });
+      }
+    },
+    [cleanupRightPanelSurfaces, closeTerminalMutation, storeCloseTerminal],
+  );
+  const deferRightPanelCleanup = useCallback(
+    (
+      threadRef: ScopedThreadRef,
+      surfaces: readonly RightPanelSurface[],
+      previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>,
+    ) => {
+      const pending = deferredRightPanelCleanupRef.current;
+      if (pending && scopedThreadKey(pending.threadRef) !== scopedThreadKey(threadRef)) {
+        deferredRightPanelCleanupRef.current = null;
+        runDeferredRightPanelCleanup(pending);
+      }
+      const pendingForThread =
+        pending && scopedThreadKey(pending.threadRef) === scopedThreadKey(threadRef)
+          ? pending
+          : null;
+      deferredRightPanelCleanupRef.current = {
+        threadRef,
+        surfaces: [
+          ...new Map(
+            [...(pendingForThread?.surfaces ?? []), ...surfaces].map((surface) => [
+              surface.id,
+              surface,
+            ]),
+          ).values(),
+        ],
+        previewSessions: { ...pendingForThread?.previewSessions, ...previewSessions },
+      };
+    },
+    [runDeferredRightPanelCleanup],
+  );
   const activePreviewMiniPlayer = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayer(state.byThreadKey, activeThreadRef),
   );
@@ -1801,27 +1966,74 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [rightPanelState.surfaces],
   );
-  const allocatableActiveTerminalIds = useMemo(
-    () => [...new Set([...activeKnownTerminalIds, ...panelTerminalIds])],
-    [activeKnownTerminalIds, panelTerminalIds],
+  // Read straight off the ref: it is always written synchronously in an
+  // event handler followed by a store update, so the relevant renders see
+  // fresh contents. Empty result returns a stable singleton, keeping the
+  // memoized drawers from churning. Scoped per thread because terminal ids
+  // are only unique within one thread.
+  const deferredPanelTerminalIdsFor = useCallback(
+    (mountedThreadKey: string): ReadonlySet<string> =>
+      deferredRightPanelTerminalIdsForThread(
+        deferredRightPanelCleanupRef.current,
+        mountedThreadKey,
+      ),
+    [],
   );
+  const allocatableActiveTerminalIds = useMemo(() => {
+    // Deferred panel teardowns still hold a pending destructive mutation on
+    // their ids; the allocation pool must skip them even if the dying
+    // session has already dropped out of the server list, or a fresh
+    // terminal could reuse the id right before the cleanup deletes it.
+    const deferred =
+      activeThreadKey === null
+        ? NO_DEFERRED_TERMINAL_IDS
+        : deferredRightPanelTerminalIdsForThread(
+            deferredRightPanelCleanupRef.current,
+            activeThreadKey,
+          );
+    return [...new Set([...activeKnownTerminalIds, ...panelTerminalIds, ...deferred])];
+  }, [activeKnownTerminalIds, activeThreadKey, panelTerminalIds]);
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
   const canMaximizeRightPanel = rightPanelOpen && !shouldUseRightPanelSheet;
   const rightPanelMaximized =
     canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
-  const inlineRightPanelOpen = Boolean(
-    rightPanelOpen && !shouldUseRightPanelSheet && activeThreadRef,
-  );
-  const inlineRightPanelMounted = useDelayedUnmount(inlineRightPanelOpen, 200);
 
   useEffect(() => {
     if (!activeThreadRef) return;
+    const pendingCleanup = deferredRightPanelCleanupRef.current;
+    const deferredSurfaces =
+      pendingCleanup &&
+      scopedThreadKey(pendingCleanup.threadRef) === scopedThreadKey(activeThreadRef)
+        ? pendingCleanup.surfaces
+        : [];
+    const currentSurfaces = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      activeThreadRef,
+    ).surfaces;
     useRightPanelStore
       .getState()
-      .reconcileBrowserSurfaces(activeThreadRef, Object.keys(activePreviewState.sessions));
+      .reconcileBrowserSurfaces(
+        activeThreadRef,
+        previewTabIdsForRightPanelReconcile(
+          Object.keys(activePreviewState.sessions),
+          deferredSurfaces,
+          currentSurfaces,
+        ),
+      );
   }, [activePreviewState.sessions, activeThreadRef]);
+
+  useEffect(() => {
+    const pendingCleanup = deferredRightPanelCleanupRef.current;
+    if (!pendingCleanup) return;
+    const pendingThreadIsActive =
+      activeThreadRef !== null &&
+      scopedThreadKey(pendingCleanup.threadRef) === scopedThreadKey(activeThreadRef);
+    if (pendingThreadIsActive && !rightPanelOpen) return;
+    deferredRightPanelCleanupRef.current = null;
+    runDeferredRightPanelCleanup(pendingCleanup);
+  }, [activeThreadRef, rightPanelOpen, rightPanelState.surfaces, runDeferredRightPanelCleanup]);
 
   useEffect(() => {
     if (!activeThreadRef || !activePreviewMiniPlayer) return;
@@ -1874,6 +2086,11 @@ function ChatViewContent(props: ChatViewProps) {
         openThreadIds: existingOpenTerminalThreadKeys,
         activeThreadId: activeThreadKey,
         activeThreadTerminalOpen: Boolean(activeThreadKey && terminalUiState.terminalOpen),
+        activeThreadTerminalExiting: Boolean(
+          activeThreadKey &&
+          !terminalUiState.terminalOpen &&
+          currentThreadIds.includes(activeThreadKey),
+        ),
         maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
         alwaysRetainActiveThread: true,
       });
@@ -3702,17 +3919,36 @@ function ChatViewContent(props: ChatViewProps) {
   const closePanelTerminal = useCallback(
     (terminalId: string) => {
       if (!activeThreadRef || activeRightPanelSurface?.kind !== "terminal") return;
-      void closeTerminalMutation({
-        environmentId: activeThreadRef.environmentId,
-        input: { threadId: activeThreadRef.threadId, terminalId, deleteHistory: true },
+      const deferCleanup = shouldDeferRightPanelTerminalClose({
+        usesSheet: shouldUseRightPanelSheet,
+        panelOpen: rightPanelOpen,
+        surfaceCount: rightPanelState.surfaces.length,
+        terminalCount: activeRightPanelSurface.terminalIds.length,
       });
-      storeCloseTerminal(activeThreadRef, terminalId);
+      if (deferCleanup) {
+        deferRightPanelCleanup(activeThreadRef, [activeRightPanelSurface], {});
+      } else {
+        void closeTerminalMutation({
+          environmentId: activeThreadRef.environmentId,
+          input: { threadId: activeThreadRef.threadId, terminalId, deleteHistory: true },
+        });
+        storeCloseTerminal(activeThreadRef, terminalId);
+      }
       useRightPanelStore
         .getState()
         .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
       setTerminalFocusRequestId((value) => value + 1);
     },
-    [activeRightPanelSurface, activeThreadRef, closeTerminalMutation, storeCloseTerminal],
+    [
+      activeRightPanelSurface,
+      activeThreadRef,
+      closeTerminalMutation,
+      deferRightPanelCleanup,
+      rightPanelOpen,
+      rightPanelState.surfaces.length,
+      shouldUseRightPanelSheet,
+      storeCloseTerminal,
+    ],
   );
   const requestCloseTerminal = useCallback(
     (terminalId: string) => {
@@ -3762,36 +3998,41 @@ function ChatViewContent(props: ChatViewProps) {
       threadKey === routeThreadKey ? null : routeThreadKey,
     );
   }, [canMaximizeRightPanel, routeThreadKey]);
-  const cleanupRightPanelSurfaces = useCallback(
-    (surfaces: readonly RightPanelSurface[]) => {
-      if (!activeThreadRef) return;
-      for (const surface of surfaces) {
-        if (surface.kind === "preview" && surface.resourceId) {
-          void closePreviewSession({
-            closePreview,
-            snapshot: activePreviewState.sessions[surface.resourceId] ?? null,
-            tabId: surface.resourceId,
-            threadRef: activeThreadRef,
-          });
-        }
-        if (surface.kind === "terminal") {
-          for (const terminalId of surface.terminalIds) {
-            storeCloseTerminal(activeThreadRef, terminalId);
-            void closeTerminalMutation({
-              environmentId: activeThreadRef.environmentId,
-              input: { threadId: activeThreadRef.threadId, terminalId, deleteHistory: true },
-            });
-          }
-        }
+  // The layout cluster swaps containers when the inline panel closes. Keep
+  // it in its row position until the exit transition lands so it rides the
+  // collapsing gap edge instead of jumping into a header that is still inset
+  // by the not-yet-collapsed panel width. The settle timer is the source of
+  // truth for clearing. The hook uses layout timing so the close flag lands
+  // before paint and the cluster never renders in the header for one frame.
+  const inlinePanelAnimationsEnabled = useInterfaceAnimationsEnabled();
+  const { ridingExit: inlinePanelExiting, completeExit: completeInlinePanelControlsExit } =
+    usePanelControlsRidingExit(
+      rightPanelOpen && !shouldUseRightPanelSheet,
+      inlinePanelAnimationsEnabled,
+      INLINE_RIGHT_PANEL_EXIT_FALLBACK_MS,
+    );
+  const showRowPanelLayoutControls =
+    !shouldUseRightPanelSheet && (rightPanelOpen || inlinePanelExiting);
+  // In sheet mode the open panel supplies its own cluster via layoutControls,
+  // so the header must stay empty while the sheet is up - only a closed
+  // inline panel hands the cluster to the header.
+  const showHeaderPanelLayoutControls = shouldUseRightPanelSheet
+    ? !rightPanelOpen
+    : !showRowPanelLayoutControls;
+  const handleInlineRightPanelExitComplete = useCallback(
+    (snapshot: InlineRightPanelSnapshot) => {
+      completeInlinePanelControlsExit();
+      const pendingCleanup = deferredRightPanelCleanupRef.current;
+      if (
+        !pendingCleanup ||
+        scopedThreadKey(pendingCleanup.threadRef) !== scopedThreadKey(snapshot.threadRef)
+      ) {
+        return;
       }
+      deferredRightPanelCleanupRef.current = null;
+      runDeferredRightPanelCleanup(pendingCleanup);
     },
-    [
-      activeThreadRef,
-      activePreviewState.sessions,
-      closePreview,
-      closeTerminalMutation,
-      storeCloseTerminal,
-    ],
+    [completeInlinePanelControlsExit, runDeferredRightPanelCleanup],
   );
   const syncActivePreviewSurface = useCallback(() => {
     if (!activeThreadRef) return;
@@ -3807,7 +4048,13 @@ function ChatViewContent(props: ChatViewProps) {
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
       const finishClose = () => {
-        cleanupRightPanelSurfaces([surface]);
+        const deferCleanup =
+          !shouldUseRightPanelSheet && rightPanelOpen && rightPanelState.surfaces.length === 1;
+        if (deferCleanup) {
+          deferRightPanelCleanup(activeThreadRef, [surface], activePreviewState.sessions);
+        } else {
+          cleanupRightPanelSurfaces(activeThreadRef, [surface], activePreviewState.sessions);
+        }
         useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
         syncActivePreviewSurface();
       };
@@ -3828,9 +4075,14 @@ function ChatViewContent(props: ChatViewProps) {
       });
     },
     [
+      activePreviewState.sessions,
       activeThreadRef,
       activeTerminalLabelsById,
       cleanupRightPanelSurfaces,
+      deferRightPanelCleanup,
+      rightPanelOpen,
+      rightPanelState.surfaces.length,
+      shouldUseRightPanelSheet,
       syncActivePreviewSurface,
     ],
   );
@@ -3838,11 +4090,12 @@ function ChatViewContent(props: ChatViewProps) {
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
       const surfaces = rightPanelState.surfaces.filter((entry) => entry.id !== surface.id);
-      cleanupRightPanelSurfaces(surfaces);
+      cleanupRightPanelSurfaces(activeThreadRef, surfaces, activePreviewState.sessions);
       useRightPanelStore.getState().closeOtherSurfaces(activeThreadRef, surface.id);
       syncActivePreviewSurface();
     },
     [
+      activePreviewState.sessions,
       activeThreadRef,
       cleanupRightPanelSurfaces,
       rightPanelState.surfaces,
@@ -3855,11 +4108,12 @@ function ChatViewContent(props: ChatViewProps) {
       const surfaceIndex = rightPanelState.surfaces.findIndex((entry) => entry.id === surface.id);
       if (surfaceIndex < 0) return;
       const surfaces = rightPanelState.surfaces.slice(surfaceIndex + 1);
-      cleanupRightPanelSurfaces(surfaces);
+      cleanupRightPanelSurfaces(activeThreadRef, surfaces, activePreviewState.sessions);
       useRightPanelStore.getState().closeSurfacesToRight(activeThreadRef, surface.id);
       syncActivePreviewSurface();
     },
     [
+      activePreviewState.sessions,
       activeThreadRef,
       cleanupRightPanelSurfaces,
       rightPanelState.surfaces,
@@ -3868,9 +4122,30 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const closeAllRightPanelSurfaces = useCallback(() => {
     if (!activeThreadRef) return;
-    cleanupRightPanelSurfaces(rightPanelState.surfaces);
+    const deferCleanup = !shouldUseRightPanelSheet && rightPanelOpen;
+    if (deferCleanup) {
+      deferRightPanelCleanup(
+        activeThreadRef,
+        rightPanelState.surfaces,
+        activePreviewState.sessions,
+      );
+    } else {
+      cleanupRightPanelSurfaces(
+        activeThreadRef,
+        rightPanelState.surfaces,
+        activePreviewState.sessions,
+      );
+    }
     useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
-  }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
+  }, [
+    activePreviewState.sessions,
+    activeThreadRef,
+    cleanupRightPanelSurfaces,
+    deferRightPanelCleanup,
+    rightPanelOpen,
+    rightPanelState.surfaces,
+    shouldUseRightPanelSheet,
+  ]);
   const copyRightPanelFilePath = useCallback((relativePath: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
       toastManager.add(
@@ -7262,8 +7537,8 @@ function ChatViewContent(props: ChatViewProps) {
     composerBannerItems.length > 0 || Boolean(threadSyncPhase && !activeEnvironmentUnavailable);
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {rightPanelOpen && !shouldUseRightPanelSheet ? panelLayoutControls : null}
+    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background">
+      {showRowPanelLayoutControls ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -7278,7 +7553,7 @@ function ChatViewContent(props: ChatViewProps) {
           reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
           className="relative bg-background"
         >
-          {!rightPanelOpen ? panelLayoutControls : null}
+          {showHeaderPanelLayoutControls ? panelLayoutControls : null}
           <ChatHeader
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
@@ -7299,6 +7574,12 @@ function ChatViewContent(props: ChatViewProps) {
             }
             keybindings={keybindings}
             availableEditors={availableEditors}
+            // Deliberately the instantaneous open flag, not placement: the
+            // floating cluster overlaps the header actions zone whenever the
+            // panel is not genuinely open-inline (closed, or mid-exit with
+            // the gap still shrinking), so those states keep the full
+            // reserve; genuinely open clears it because the cluster anchors
+            // out over the panel instead.
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
             onNewThreadInProject={handleNewThreadInActiveProject}
@@ -7667,7 +7948,8 @@ function ChatViewContent(props: ChatViewProps) {
             key={mountedThreadKey}
             threadRef={mountedThreadRef}
             threadId={mountedThreadRef.threadId}
-            visible={mountedThreadKey === activeThreadKey && terminalUiState.terminalOpen}
+            active={mountedThreadKey === activeThreadKey}
+            onExitComplete={completeTerminalDrawerExit}
             launchContext={
               mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
             }
@@ -7678,45 +7960,63 @@ function ChatViewContent(props: ChatViewProps) {
             closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
             keybindings={keybindings}
             onAddTerminalContext={addTerminalContextToDraft}
+            deferredPanelTerminalIds={deferredPanelTerminalIdsFor(mountedThreadKey)}
           />
         ))}
       </div>
 
-      {!shouldUseRightPanelSheet && inlineRightPanelMounted && activeThreadRef ? (
-        <RightPanelTabs
-          mode="inline"
-          open={rightPanelOpen}
-          maximized={rightPanelMaximized}
-          surfaces={rightPanelState.surfaces}
-          activeSurfaceId={activeRightPanelSurface?.id ?? null}
-          pendingSurfaceIds={pendingFileSurfaceIds}
-          previewSessions={activePreviewState.sessions}
-          desktopByTabId={activePreviewState.desktopByTabId}
-          previewRuntimeTabId={resolvePreviewRuntimeTabId}
-          terminalLabelsById={activeTerminalLabelsById}
-          onActivate={activateRightPanelSurface}
-          onCloseSurface={closeRightPanelSurface}
-          onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
-          onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
-          onCloseAllSurfaces={closeAllRightPanelSurfaces}
-          onCopyFilePath={copyRightPanelFilePath}
-          onAddBrowser={createBrowserSurface}
-          onAddTerminal={addTerminalSurface}
-          onAddDiff={addDiffSurface}
-          onAddFiles={addFilesSurface}
-          onAddPullRequest={addPullRequestSurface}
-          onAddAgents={addAgentsSurface}
-          browserAvailable={isPreviewSupportedInRuntime()}
-          terminalAvailable={activeProject !== null}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          agentsAvailable
-          pullRequestStatuses={pullRequestTabStatuses}
-          liveAgentCount={agentPanelModel.liveCount}
+      {activeThreadRef ? (
+        <InlineRightPanelPresence
+          key={`${activeThreadKey}:${shouldUseRightPanelSheet ? "sheet" : "inline"}`}
+          open={!shouldUseRightPanelSheet && rightPanelOpen}
+          onExitComplete={handleInlineRightPanelExitComplete}
+          snapshot={{
+            threadRef: activeThreadRef,
+            surfaces: rightPanelState.surfaces,
+            activeSurfaceId: activeRightPanelSurface?.id ?? null,
+            content: rightPanelContent,
+            maximized: rightPanelMaximized,
+          }}
         >
-          {rightPanelContent}
-        </RightPanelTabs>
+          {(snapshot, onExitComplete, animateEnter) => (
+            <RightPanelTabs
+              mode="inline"
+              maximized={snapshot.maximized}
+              open={rightPanelOpen}
+              onExitComplete={onExitComplete}
+              animateEnter={animateEnter}
+              surfaces={snapshot.surfaces}
+              activeSurfaceId={snapshot.activeSurfaceId}
+              pendingSurfaceIds={pendingFileSurfaceIds}
+              previewSessions={activePreviewState.sessions}
+              desktopByTabId={activePreviewState.desktopByTabId}
+              previewRuntimeTabId={resolvePreviewRuntimeTabId}
+              terminalLabelsById={activeTerminalLabelsById}
+              onActivate={activateRightPanelSurface}
+              onCloseSurface={closeRightPanelSurface}
+              onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
+              onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
+              onCloseAllSurfaces={closeAllRightPanelSurfaces}
+              onCopyFilePath={copyRightPanelFilePath}
+              onAddBrowser={createBrowserSurface}
+              onAddTerminal={addTerminalSurface}
+              onAddDiff={addDiffSurface}
+              onAddFiles={addFilesSurface}
+              onAddPullRequest={addPullRequestSurface}
+              onAddAgents={addAgentsSurface}
+              browserAvailable={isPreviewSupportedInRuntime()}
+              terminalAvailable={activeProject !== null}
+              diffAvailable={isServerThread && isGitRepo}
+              filesAvailable={activeProject !== null}
+              pullRequestAvailable={pullRequestSurfaceAvailable}
+              agentsAvailable
+              pullRequestStatuses={pullRequestTabStatuses}
+              liveAgentCount={agentPanelModel.liveCount}
+            >
+              {snapshot.content}
+            </RightPanelTabs>
+          )}
+        </InlineRightPanelPresence>
       ) : null}
       {shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelSheet open onClose={closePreviewPanel}>

@@ -25,10 +25,13 @@ import {
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  previewTabIdsForRightPanelReconcile,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftPromotionNavigationTarget,
+  rightPanelSurfacesRemovedAfterExit,
+  orphanedTerminalIdsAfterReopen,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   resolveDraftHeroState,
@@ -36,9 +39,12 @@ import {
   startNewThreadForProject,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldDeferRightPanelTerminalClose,
+  deferredRightPanelTerminalIdsForThread,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
@@ -667,6 +673,188 @@ describe("reconcileMountedTerminalThreadIds", () => {
         alwaysRetainActiveThread: true,
       }),
     ).toEqual(["thread-a"]);
+  });
+
+  it("retains the active terminal while its close transition exits", () => {
+    expect(
+      reconcileMountedTerminalThreadIds({
+        currentThreadIds: ["thread-a"],
+        openThreadIds: [],
+        activeThreadId: "thread-a",
+        activeThreadTerminalOpen: false,
+        activeThreadTerminalExiting: true,
+      }),
+    ).toEqual(["thread-a"]);
+  });
+});
+
+describe("rightPanelSurfacesRemovedAfterExit", () => {
+  it("returns only resources that stayed closed through the exit", () => {
+    const browser = { id: "browser:one", kind: "preview" };
+    const terminal = { id: "terminal:one", kind: "terminal" };
+
+    expect(
+      rightPanelSurfacesRemovedAfterExit(
+        [browser, terminal],
+        [terminal, { id: "files", kind: "files" }],
+      ),
+    ).toEqual([browser]);
+  });
+
+  it("does not clean up resources when the panel was only hidden", () => {
+    const surfaces = [{ id: "browser:one", kind: "preview" }];
+
+    expect(rightPanelSurfacesRemovedAfterExit(surfaces, surfaces)).toEqual([]);
+  });
+});
+
+describe("orphanedTerminalIdsAfterReopen", () => {
+  const terminalSurface = (
+    id: `terminal:${string}`,
+    terminalIds: string[],
+    activeTerminalId = terminalIds[0] ?? "",
+  ) => ({
+    id,
+    kind: "terminal" as const,
+    resourceId: `resource-${id}`,
+    terminalIds,
+    activeTerminalId,
+  });
+
+  it("finds split sessions dropped when a deferred surface reopens shrunken", () => {
+    expect(
+      orphanedTerminalIdsAfterReopen(
+        [terminalSurface("terminal:one", ["term-1", "term-2"])],
+        [terminalSurface("terminal:one", ["term-1"])],
+      ),
+    ).toEqual(["term-2"]);
+  });
+
+  it("returns nothing for surfaces that stayed identical or vanished", () => {
+    expect(
+      orphanedTerminalIdsAfterReopen(
+        [
+          terminalSurface("terminal:kept", ["term-1", "term-2"]),
+          terminalSurface("terminal:gone", ["term-3"]),
+        ],
+        [terminalSurface("terminal:kept", ["term-1", "term-2"])],
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores non-terminal deferred surfaces", () => {
+    expect(
+      orphanedTerminalIdsAfterReopen(
+        [{ id: "agents:one", kind: "agents" } as never],
+        [{ id: "agents:one", kind: "agents" } as never],
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("previewTabIdsForRightPanelReconcile", () => {
+  it("suppresses preview sessions that are waiting for exit cleanup", () => {
+    expect(
+      previewTabIdsForRightPanelReconcile(
+        ["closing", "open"],
+        [{ id: "browser:closing", kind: "preview", resourceId: "closing" }],
+        [{ id: "browser:open" }],
+      ),
+    ).toEqual(["open"]);
+  });
+
+  it("keeps a preview session that was explicitly reopened during exit", () => {
+    expect(
+      previewTabIdsForRightPanelReconcile(
+        ["reopened"],
+        [{ id: "browser:reopened", kind: "preview", resourceId: "reopened" }],
+        [{ id: "browser:reopened" }],
+      ),
+    ).toEqual(["reopened"]);
+  });
+});
+
+describe("shouldDeferRightPanelTerminalClose", () => {
+  it("defers the last inline terminal so exit cleanup owns teardown", () => {
+    expect(
+      shouldDeferRightPanelTerminalClose({
+        usesSheet: false,
+        panelOpen: true,
+        surfaceCount: 1,
+        terminalCount: 1,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps immediate teardown when closing does not exit the inline panel", () => {
+    expect(
+      shouldDeferRightPanelTerminalClose({
+        usesSheet: false,
+        panelOpen: true,
+        surfaceCount: 2,
+        terminalCount: 1,
+      }),
+    ).toBe(false);
+    expect(
+      shouldDeferRightPanelTerminalClose({
+        usesSheet: true,
+        panelOpen: true,
+        surfaceCount: 1,
+        terminalCount: 1,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("deferredRightPanelTerminalIdsForThread", () => {
+  const threadRefA = {
+    environmentId: EnvironmentId.make("env-1"),
+    threadId: ThreadId.make("thread-a"),
+  };
+  const pending: Parameters<typeof deferredRightPanelTerminalIdsForThread>[0] = {
+    threadRef: threadRefA,
+    surfaces: [
+      {
+        kind: "terminal",
+        id: "terminal:surface-1",
+        resourceId: "resource-1",
+        terminalIds: ["t-1", "t-2"],
+        activeTerminalId: "t-1",
+      },
+    ],
+  };
+
+  it("collects terminal ids for the pending cleanup's own thread", () => {
+    expect([
+      ...deferredRightPanelTerminalIdsForThread(pending, scopedThreadKey(threadRefA)),
+    ]).toEqual(["t-1", "t-2"]);
+  });
+
+  it("returns the shared empty set for other threads and when nothing is pending", () => {
+    const otherThreadKey = scopedThreadKey({
+      environmentId: EnvironmentId.make("env-1"),
+      threadId: ThreadId.make("thread-b"),
+    });
+    expect(deferredRightPanelTerminalIdsForThread(pending, otherThreadKey)).toBe(
+      deferredRightPanelTerminalIdsForThread(null, otherThreadKey),
+    );
+    expect(
+      deferredRightPanelTerminalIdsForThread(
+        {
+          threadRef: threadRefA,
+          surfaces: [
+            {
+              kind: "terminal",
+              id: "terminal:s",
+              resourceId: "resource-s",
+              terminalIds: [],
+              activeTerminalId: "",
+            },
+          ],
+        },
+        scopedThreadKey(threadRefA),
+      ),
+    ).toBe(deferredRightPanelTerminalIdsForThread(null, otherThreadKey));
   });
 });
 

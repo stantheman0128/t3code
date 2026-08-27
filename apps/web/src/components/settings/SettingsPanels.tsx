@@ -481,6 +481,9 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Contrast"]
         : []),
       ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
+      ...(settings.interfaceAnimations !== DEFAULT_UNIFIED_SETTINGS.interfaceAnimations
+        ? ["Panel animations"]
+        : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
         ? ["Environment identification"]
@@ -570,6 +573,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.glassOpacity,
+      settings.interfaceAnimations,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.sidebarAutoSettleAfterDays,
@@ -655,6 +659,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+      interfaceAnimations: DEFAULT_UNIFIED_SETTINGS.interfaceAnimations,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1116,6 +1121,32 @@ export function AppearanceSettingsPanel() {
                 value={settings.glassOpacity}
               />
             </div>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("interface-animations")}
+          description="Animate the sidebar, right panels, and terminal drawer as they open and close."
+          resetAction={
+            settings.interfaceAnimations !== DEFAULT_UNIFIED_SETTINGS.interfaceAnimations ? (
+              <SettingResetButton
+                label="animations"
+                onClick={() =>
+                  updateSettings({
+                    interfaceAnimations: DEFAULT_UNIFIED_SETTINGS.interfaceAnimations,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.interfaceAnimations}
+              onCheckedChange={(checked) =>
+                updateSettings({ interfaceAnimations: Boolean(checked) })
+              }
+              aria-label="Interface animations"
+            />
           }
         />
 

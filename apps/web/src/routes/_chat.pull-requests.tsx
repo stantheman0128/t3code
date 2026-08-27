@@ -68,6 +68,12 @@ import { PullRequestListEmptyState } from "../components/pullRequest/PullRequest
 import { PullRequestListGhost } from "../components/pullRequest/PullRequestGhosts";
 import { PullRequestRow } from "../components/pullRequest/PullRequestRow";
 import { PullRequestsUnavailableState } from "../components/pullRequest/PullRequestsUnavailableState";
+import {
+  INLINE_RIGHT_PANEL_EXIT_FALLBACK_MS,
+  InlineRightPanelPresence,
+} from "../components/InlineRightPanelPresence";
+import { useInterfaceAnimationsEnabled } from "../hooks/useInterfaceAnimations";
+import { usePanelControlsRidingExit } from "../hooks/usePanelControlsRidingExit";
 import { RightPanelTabs, type PullRequestTabStatus } from "../components/RightPanelTabs";
 import {
   WorkspaceBreadcrumb,
@@ -1481,6 +1487,19 @@ function PullRequestsRouteView() {
       }
     />
   );
+  const rightPanelOpen =
+    rightPanelState.isOpen && activePullRequestSurface !== null && panelEnvironmentId !== null;
+  // The titlebar strip swaps containers when the panel closes. Keep it at the
+  // route-row anchor until the exit transition lands so it rides the
+  // collapsing gap edge instead of jumping into a header still inset by the
+  // not-yet-collapsed panel width; same settle-timer scheme as ChatView.
+  const panelAnimationsEnabled = useInterfaceAnimationsEnabled();
+  const { ridingExit: panelControlsRidingExit, completeExit: completePanelControlsExit } =
+    usePanelControlsRidingExit(
+      rightPanelOpen,
+      panelAnimationsEnabled,
+      INLINE_RIGHT_PANEL_EXIT_FALLBACK_MS,
+    );
   const columnProps = {
     refreshing,
     onRefresh: () => void refreshFromHost(),
@@ -1507,8 +1526,11 @@ function PullRequestsRouteView() {
       // descendant beats the header's desktop drag-region, where a floating
       // sibling loses (app-region hit-testing ignores z-index). Open, it moves
       // back out to the route container, which spans the panel too, so the
-      // toggle keeps one fixed top-right anchor and never jumps sideways.
-      pullRequestsSupported && !rightPanelState.isOpen ? openPanelControls : null,
+      // toggle keeps one fixed top-right anchor and never jumps sideways. It
+      // stays at the row anchor through the exit transition as well.
+      pullRequestsSupported && !rightPanelOpen && !panelControlsRidingExit
+        ? openPanelControls
+        : null,
     rightPanelOpen: rightPanelState.isOpen,
     listBody,
   };
@@ -1547,76 +1569,105 @@ function PullRequestsRouteView() {
     selectSurfaceInUrl(null);
   };
 
+  // Frozen into the presence snapshot so the exiting panel keeps rendering the
+  // detail view it had while open, even after the surface state clears.
+  const detailPanel =
+    activePullRequestSurface && panelEnvironmentId !== null ? (
+      <PullRequestDetailPanel
+        key={activePullRequestSurface.id}
+        environmentId={panelEnvironmentId}
+        reference={{
+          projectId: activePullRequestSurface.projectId as ProjectId,
+          repository: activePullRequestSurface.repository,
+          number: activePullRequestSurface.number,
+        }}
+        refreshToken={detailRefreshToken}
+        // Merging, closing or reopening changes the row this panel was opened from, so
+        // the list behind it is out of date the moment the host takes the action.
+        onActed={() => {
+          refreshList();
+          baselineQuery.refresh();
+          authoredQuery.refresh();
+          reviewingQuery.refresh();
+        }}
+        onStateChange={handlePullRequestTabStatusChange}
+      />
+    ) : null;
+
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="relative flex min-h-0 flex-1">
-        {pullRequestsSupported && rightPanelState.isOpen ? openPanelControls : null}
+      {/* overflow-clip (not hidden): a hidden box is still programmatically
+          scrollable, and focus scrolling during the panel's enter transition
+          shifted the whole row left. Clip forbids scrolling entirely. */}
+      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-clip">
+        {pullRequestsSupported && (rightPanelOpen || panelControlsRidingExit)
+          ? openPanelControls
+          : null}
         <PullRequestsColumn {...columnProps} />
 
-        {rightPanelState.isOpen && activePullRequestSurface && panelEnvironmentId !== null ? (
-          <RightPanelTabs
-            mode="inline"
-            widthStorageKey="t3code:pull-request-panel-width"
-            // Default to roughly half the viewport: the PR list needs more
-            // room than a chat, so the 540px chat-preview default squashes
-            // it. SSR has no window, so fall back to a reasonable width.
-            defaultWidth={typeof window === "undefined" ? 640 : Math.floor(window.innerWidth / 2)}
-            surfaces={rightPanelState.surfaces}
-            activeSurfaceId={activePullRequestSurface.id}
-            pendingSurfaceIds={EMPTY_PENDING_SURFACES}
-            previewSessions={EMPTY_PREVIEW_SESSIONS}
-            desktopByTabId={EMPTY_PREVIEW_DESKTOP_STATE}
-            terminalLabelsById={EMPTY_TERMINAL_LABELS}
-            onActivate={(surface) => {
-              if (surface.kind === "pull-request") activateSurface(surface);
-            }}
-            onCloseSurface={(surface) => {
-              if (surface.kind === "pull-request") closeSurface(surface);
-            }}
-            onCloseOtherSurfaces={(surface) => {
-              if (surface.kind === "pull-request") closeOtherSurfaces(surface);
-            }}
-            onCloseSurfacesToRight={(surface) => {
-              if (surface.kind === "pull-request") closeSurfacesToRight(surface);
-            }}
-            onCloseAllSurfaces={closeAllSurfaces}
-            onCopyFilePath={() => undefined}
-            onAddBrowser={() => undefined}
-            onAddTerminal={() => undefined}
-            onAddDiff={() => undefined}
-            onAddFiles={() => undefined}
-            onAddPullRequest={() => undefined}
-            onAddAgents={() => undefined}
-            browserAvailable={false}
-            terminalAvailable={false}
-            diffAvailable={false}
-            filesAvailable={false}
-            pullRequestAvailable={false}
-            agentsAvailable={false}
-            liveAgentCount={0}
-            pullRequestStatuses={pullRequestTabStatuses}
-          >
-            <PullRequestDetailPanel
-              key={activePullRequestSurface.id}
-              environmentId={panelEnvironmentId}
-              reference={{
-                projectId: activePullRequestSurface.projectId as ProjectId,
-                repository: activePullRequestSurface.repository,
-                number: activePullRequestSurface.number,
+        {/* Mounted regardless of open state: the presence owns the exit
+            animation, so it must survive the open flip to false and unmount
+            its children only once the width transition has landed. */}
+        <InlineRightPanelPresence
+          key="pull-requests:inline"
+          open={rightPanelOpen}
+          onExitComplete={completePanelControlsExit}
+          snapshot={{
+            surfaces: rightPanelState.surfaces,
+            activeSurfaceId: activePullRequestSurface?.id ?? null,
+            content: detailPanel,
+          }}
+        >
+          {(snapshot, onExitComplete, animateEnter) => (
+            <RightPanelTabs
+              mode="inline"
+              open={rightPanelOpen}
+              onExitComplete={onExitComplete}
+              animateEnter={animateEnter}
+              widthStorageKey="t3code:pull-request-panel-width"
+              // Default to roughly half the viewport: the PR list needs more
+              // room than a chat, so the 540px chat-preview default squashes
+              // it. SSR has no window, so fall back to a reasonable width.
+              defaultWidth={typeof window === "undefined" ? 640 : Math.floor(window.innerWidth / 2)}
+              surfaces={snapshot.surfaces}
+              activeSurfaceId={snapshot.activeSurfaceId}
+              pendingSurfaceIds={EMPTY_PENDING_SURFACES}
+              previewSessions={EMPTY_PREVIEW_SESSIONS}
+              desktopByTabId={EMPTY_PREVIEW_DESKTOP_STATE}
+              terminalLabelsById={EMPTY_TERMINAL_LABELS}
+              onActivate={(surface) => {
+                if (surface.kind === "pull-request") activateSurface(surface);
               }}
-              refreshToken={detailRefreshToken}
-              // Merging, closing or reopening changes the row this panel was opened from, so
-              // the list behind it is out of date the moment the host takes the action.
-              onActed={() => {
-                refreshList();
-                baselineQuery.refresh();
-                authoredQuery.refresh();
-                reviewingQuery.refresh();
+              onCloseSurface={(surface) => {
+                if (surface.kind === "pull-request") closeSurface(surface);
               }}
-              onStateChange={handlePullRequestTabStatusChange}
-            />
-          </RightPanelTabs>
-        ) : null}
+              onCloseOtherSurfaces={(surface) => {
+                if (surface.kind === "pull-request") closeOtherSurfaces(surface);
+              }}
+              onCloseSurfacesToRight={(surface) => {
+                if (surface.kind === "pull-request") closeSurfacesToRight(surface);
+              }}
+              onCloseAllSurfaces={closeAllSurfaces}
+              onCopyFilePath={() => undefined}
+              onAddBrowser={() => undefined}
+              onAddTerminal={() => undefined}
+              onAddDiff={() => undefined}
+              onAddFiles={() => undefined}
+              onAddPullRequest={() => undefined}
+              onAddAgents={() => undefined}
+              browserAvailable={false}
+              terminalAvailable={false}
+              diffAvailable={false}
+              filesAvailable={false}
+              pullRequestAvailable={false}
+              agentsAvailable={false}
+              liveAgentCount={0}
+              pullRequestStatuses={pullRequestTabStatuses}
+            >
+              {snapshot.content}
+            </RightPanelTabs>
+          )}
+        </InlineRightPanelPresence>
       </div>
     </SidebarInset>
   );

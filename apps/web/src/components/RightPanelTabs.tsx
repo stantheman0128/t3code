@@ -51,6 +51,14 @@ interface RightPanelTabsProps {
   widthStorageKey?: string;
   /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
   defaultWidth?: number;
+  open?: boolean;
+  onExitComplete?: () => void;
+  /**
+   * False suppresses the inline open animation (@starting-style) for mounts
+   * that are not a genuine open, e.g. a thread switch while the panel is
+   * already visible. Defaults to animating.
+   */
+  animateEnter?: boolean;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
   activeSurfaceId: string | null;
@@ -261,6 +269,8 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
+  /** False detaches the global letter shortcuts, e.g. while the inline panel exits. */
+  active?: boolean;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
@@ -343,6 +353,7 @@ function RightPanelEmptyState(props: {
     shortcutActionsRef.current = availableActions;
   });
   useEffect(() => {
+    if (props.active === false) return;
     const handler = (event: KeyboardEvent) => {
       const action = surfaceShortcutActionForKey(shortcutActionsRef.current, event);
       if (!action) return;
@@ -355,7 +366,7 @@ function RightPanelEmptyState(props: {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, []);
+  }, [props.active]);
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -387,8 +398,18 @@ function RightPanelEmptyState(props: {
 
   // Stable identity so React only runs this callback ref on mount/unmount;
   // an inline arrow would re-attach and re-focus on every render.
+  // Focus waits two frames: a synchronous focus during mount forces layout in
+  // the same task that starts the panel's enter transition, which cancels it.
   const focusOnMount = useCallback((node: HTMLDivElement | null) => {
-    node?.focus();
+    if (!node) return;
+    let innerFrame = 0;
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => node.focus());
+    });
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      cancelAnimationFrame(innerFrame);
+    };
   }, []);
 
   const isHighlighted = (action: SurfaceAction) =>
@@ -603,6 +624,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
+  // The inline panel stays mounted through its exit transition; the menu's
+  // portal escapes the shell's inert attribute, so close it explicitly.
+  const open = props.open ?? true;
+  useEffect(() => {
+    if (!open) setAddSurfaceMenuOpen(false);
+  }, [open]);
 
   const addSurfaceActions = [
     {
@@ -778,6 +805,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.open !== undefined ? { open: props.open } : {})}
       {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
+      {...(props.open !== undefined ? { open: props.open } : {})}
+      {...(props.onExitComplete !== undefined ? { onExitComplete: props.onExitComplete } : {})}
+      {...(props.animateEnter !== undefined ? { animateEnter: props.animateEnter } : {})}
     >
       <div
         className={cn(
@@ -948,6 +978,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             agentsAvailable={props.agentsAvailable}
             liveAgentCount={props.liveAgentCount}
+            active={open}
           />
         ) : (
           props.children

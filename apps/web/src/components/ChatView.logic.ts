@@ -13,6 +13,8 @@ import {
 } from "@t3tools/contracts";
 import { composeProviderSlashMessage as composeNamedProviderSlashMessage } from "@t3tools/shared/composerTrigger";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
+import { type RightPanelSurface } from "../rightPanelStore";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -224,6 +226,7 @@ export function reconcileMountedTerminalThreadIds(input: {
   openThreadIds: ReadonlyArray<string>;
   activeThreadId: string | null;
   activeThreadTerminalOpen: boolean;
+  activeThreadTerminalExiting?: boolean;
   maxHiddenThreadCount?: number;
   alwaysRetainActiveThread?: boolean;
 }): string[] {
@@ -231,7 +234,7 @@ export function reconcileMountedTerminalThreadIds(input: {
     currentThreadIds: input.currentThreadIds,
     openThreadIds: input.openThreadIds,
     activeThreadId: input.activeThreadId,
-    activeThreadOpen: input.activeThreadTerminalOpen,
+    activeThreadOpen: input.activeThreadTerminalOpen || input.activeThreadTerminalExiting === true,
     maxHiddenThreadCount: input.maxHiddenThreadCount ?? MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   });
   if (
@@ -242,6 +245,97 @@ export function reconcileMountedTerminalThreadIds(input: {
     nextThreadIds.push(input.activeThreadId);
   }
   return nextThreadIds;
+}
+
+export function rightPanelSurfacesRemovedAfterExit<T extends { id: string }>(
+  exitingSurfaces: ReadonlyArray<T>,
+  currentSurfaces: ReadonlyArray<{ id: string }>,
+): T[] {
+  const currentSurfaceIds = new Set(currentSurfaces.map((surface) => surface.id));
+  return exitingSurfaces.filter((surface) => !currentSurfaceIds.has(surface.id));
+}
+
+/**
+ * Split sessions orphaned when a deferred terminal surface is reopened
+ * during the exit with fewer terminals than it held at defer time. The
+ * surface id survives the reopen, so the removal filter passes it over;
+ * these dropped splits must still be torn down or they linger as ghost
+ * sessions the drawer can later adopt.
+ */
+export function orphanedTerminalIdsAfterReopen(
+  deferredSurfaces: readonly RightPanelSurface[],
+  currentSurfaces: readonly RightPanelSurface[],
+): string[] {
+  const orphans: string[] = [];
+  for (const deferredSurface of deferredSurfaces) {
+    if (deferredSurface.kind !== "terminal") continue;
+    const currentSurface = currentSurfaces.find((surface) => surface.id === deferredSurface.id);
+    if (!currentSurface || currentSurface.kind !== "terminal") continue;
+    const survivingTerminalIds = new Set(currentSurface.terminalIds);
+    for (const terminalId of deferredSurface.terminalIds) {
+      if (!survivingTerminalIds.has(terminalId)) orphans.push(terminalId);
+    }
+  }
+  return orphans;
+}
+
+export function previewTabIdsForRightPanelReconcile(
+  sessionTabIds: ReadonlyArray<string>,
+  deferredSurfaces: ReadonlyArray<{
+    id: string;
+    kind: string;
+    resourceId?: string | null;
+  }>,
+  currentSurfaces: ReadonlyArray<{ id: string }>,
+): string[] {
+  const reopenedSurfaceIds = new Set(currentSurfaces.map((surface) => surface.id));
+  const closingTabIds = new Set(
+    deferredSurfaces.flatMap((surface) =>
+      surface.kind === "preview" && surface.resourceId && !reopenedSurfaceIds.has(surface.id)
+        ? [surface.resourceId]
+        : [],
+    ),
+  );
+  return sessionTabIds.filter((tabId) => !closingTabIds.has(tabId));
+}
+
+export function shouldDeferRightPanelTerminalClose(input: {
+  usesSheet: boolean;
+  panelOpen: boolean;
+  surfaceCount: number;
+  terminalCount: number;
+}): boolean {
+  return (
+    !input.usesSheet && input.panelOpen && input.surfaceCount === 1 && input.terminalCount === 1
+  );
+}
+
+export const NO_DEFERRED_TERMINAL_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * Terminal session ids owned by right-panel surfaces whose cleanup is
+ * deferred until the panel's exit animation lands, scoped to the thread the
+ * pending cleanup belongs to. The surfaces are already gone from the panel
+ * store, so without this set the drawer's reconcile would adopt those
+ * sessions mid-exit and the deferred cleanup would then delete them out
+ * from under the drawer. Scoped because terminal ids are only unique per
+ * thread - another thread's `term-1` must keep reconciling normally.
+ */
+export function deferredRightPanelTerminalIdsForThread(
+  pending:
+    | { threadRef: ScopedThreadRef; surfaces: readonly RightPanelSurface[] }
+    | null
+    | undefined,
+  mountedThreadKey: string,
+): ReadonlySet<string> {
+  if (!pending || scopedThreadKey(pending.threadRef) !== mountedThreadKey) {
+    return NO_DEFERRED_TERMINAL_IDS;
+  }
+  const ids = pending.surfaces.flatMap((surface) =>
+    surface.kind === "terminal" ? surface.terminalIds : [],
+  );
+  if (ids.length === 0) return NO_DEFERRED_TERMINAL_IDS;
+  return new Set(ids);
 }
 
 export function reconcileRetainedMountedThreadIds(input: {

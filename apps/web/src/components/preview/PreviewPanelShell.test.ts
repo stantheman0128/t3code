@@ -1,8 +1,22 @@
+import { createElement, type ComponentProps } from "react";
 import { jsx } from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import { getPreviewPanelMaxWidth, PreviewPanelShell } from "./PreviewPanelShell";
+
+function renderPreviewPanelShell(
+  mode: ComponentProps<typeof PreviewPanelShell>["mode"],
+  options?: { open?: boolean; maximized?: boolean },
+): string {
+  const props: ComponentProps<typeof PreviewPanelShell> = {
+    mode,
+    ...(options?.open !== undefined ? { open: options.open } : {}),
+    ...(options?.maximized !== undefined ? { maximized: options.maximized } : {}),
+    children: createElement("div", null, "Panel content"),
+  };
+  return renderToStaticMarkup(createElement(PreviewPanelShell, props));
+}
 
 describe("getPreviewPanelMaxWidth", () => {
   it("allows the panel to use 70% of an ultra-wide viewport without a pixel ceiling", () => {
@@ -13,43 +27,12 @@ describe("getPreviewPanelMaxWidth", () => {
     expect(getPreviewPanelMaxWidth(2_001)).toBe(1_400);
   });
 
-  it("starts an opening inline panel at zero width so Toggle Right Panel can animate in", () => {
-    const markup = renderToStaticMarkup(
-      jsx(PreviewPanelShell, {
-        mode: "inline",
-        open: true,
-        defaultWidth: 540,
-        children: "Panel",
-      }),
-    );
-
-    expect(markup).toContain("width:0px");
-    expect(markup).toContain('data-preview-panel-open="true"');
-  });
-
-  it("collapses inline width when closing so the panel can animate out", () => {
-    const markup = renderToStaticMarkup(
-      jsx(PreviewPanelShell, {
-        mode: "inline",
-        open: false,
-        defaultWidth: 540,
-        children: "Panel",
-      }),
-    );
-
-    expect(markup).toContain("width:0px");
-    expect(markup).toContain('data-preview-panel-open="false"');
-  });
-
   it("keeps inline panels inside their containing workspace", () => {
     const markup = renderToStaticMarkup(
       jsx(PreviewPanelShell, { mode: "inline", defaultWidth: 1_000, children: "Panel" }),
     );
 
     expect(markup).toContain("max-w-full");
-    expect(markup).toContain("transition-[width]");
-    expect(markup).toContain("ease-linear");
-    expect(markup).toContain('data-preview-panel-open="true"');
   });
 
   it("reserves the sibling column minimum when the flex row is known", () => {
@@ -76,5 +59,60 @@ describe("getPreviewPanelMaxWidth", () => {
 
   it("stays at the panel minimum even when the row is narrower than the reservation", () => {
     expect(getPreviewPanelMaxWidth(1_512, 300)).toBe(360);
+  });
+});
+
+describe("PreviewPanelShell", () => {
+  it("isolates the inline panel surface from the animated layout gap", () => {
+    const html = renderPreviewPanelShell("inline");
+
+    expect(html).toContain("right-panel-inline-gap");
+    expect(html).toContain("right-panel-inline-surface");
+    expect(html).toContain("--right-panel-width:540px");
+    expect(html).toContain('data-preview-panel-mode="inline"');
+    expect(html).toContain('data-right-panel-open="true"');
+  });
+
+  it("exposes the closed state while the inline panel exits", () => {
+    const html = renderPreviewPanelShell("inline", { open: false });
+
+    expect(html).toContain('data-right-panel-open="false"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('inert=""');
+    expect(html).toContain("right-panel-inline-surface");
+  });
+
+  it("keeps stable inline wrappers when maximized state changes", () => {
+    const inlineHtml = renderPreviewPanelShell("inline");
+    const maximizedHtml = renderPreviewPanelShell("inline", { maximized: true });
+
+    for (const html of [inlineHtml, maximizedHtml]) {
+      expect(html).toContain("right-panel-inline-frame");
+      expect(html).toContain("right-panel-inline-body");
+      expect(html).toContain("Panel content");
+    }
+    expect(maximizedHtml).toContain('data-preview-panel-maximized="true"');
+    expect(maximizedHtml).not.toContain("right-panel-inline-gap");
+    expect(maximizedHtml).toContain("right-panel-inline-surface");
+    expect(maximizedHtml).not.toContain("right-panel-inline-maximized-exit");
+  });
+
+  it("keeps a maximized panel full-width while its surface exits", () => {
+    const html = renderPreviewPanelShell("inline", { open: false, maximized: true });
+
+    expect(html).toContain("right-panel-inline-maximized-exit");
+    expect(html).toContain("z-40");
+    expect(html).not.toContain("z-10");
+    expect(html).toContain("right-panel-inline-surface");
+    expect(html).toContain('data-preview-panel-maximized="true"');
+    expect(html).toContain('data-right-panel-open="false"');
+    expect(html).not.toContain("right-panel-inline-gap");
+  });
+
+  it("does not apply the inline opening layout to sheet panels", () => {
+    const html = renderPreviewPanelShell("sheet");
+
+    expect(html).not.toContain("right-panel-inline-gap");
+    expect(html).not.toContain("right-panel-inline-surface");
   });
 });

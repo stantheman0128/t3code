@@ -18,10 +18,7 @@ export const usePromptQueueStore = create<PromptQueueState>((set, get) => ({
   byThreadKey: {},
   enqueue: (threadKey, prompt) => {
     const item: PromptQueueItem = {
-      id:
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       prompt,
     };
     set((state) => ({

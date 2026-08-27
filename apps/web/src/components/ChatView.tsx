@@ -6115,7 +6115,7 @@ function ChatViewContent(props: ChatViewProps) {
   };
 
   useEffect(() => {
-    if (isWorking || isSendBusy || phase === "running" || sendInFlightRef.current) {
+    if (isWorking || sendInFlightRef.current) {
       return;
     }
     if (promptRef.current.trim().length > 0) {
@@ -6129,7 +6129,7 @@ function ChatViewContent(props: ChatViewProps) {
     setComposerDraftPrompt(composerDraftTarget, queued.prompt);
     composerRef.current?.resetCursorState({ prompt: queued.prompt, cursor: queued.prompt.length });
     void onSend();
-  }, [composerDraftTarget, isSendBusy, isWorking, phase, routeThreadKey, setComposerDraftPrompt]);
+  }, [composerDraftTarget, isWorking, routeThreadKey, setComposerDraftPrompt]);
 
   const onSendInNewThread = useCallback(async () => {
     if (

@@ -1533,7 +1533,7 @@ describe("deriveMessagesTimelineRows", () => {
         createdAt: `2026-01-01T00:00:${String(index).padStart(2, "0")}Z`,
         turnId: "turn-1" as never,
         label: index === 9 ? dump : `read file ${index}`,
-        detail: index === 9 ? dump : undefined,
+        ...(index === 9 ? { detail: dump } : {}),
         tone: "tool" as const,
         toolLifecycleStatus: "completed" as const,
       },

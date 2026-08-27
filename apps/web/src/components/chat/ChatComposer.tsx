@@ -137,6 +137,7 @@ import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { selectPromptQueue, usePromptQueueStore } from "../../promptQueueStore";
+import { ComposerPromptQueue } from "./ComposerPromptQueue";
 import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -342,6 +343,7 @@ function resolveComposerEditorPlaceholder(input: {
   readonly isDisconnected: boolean;
   readonly isRunning: boolean;
   readonly lastTurnInterrupted: boolean;
+  readonly queuedCount: number;
   readonly pendingSlashCommand: ComposerPendingSlashCommand | null;
 }): string {
   if (input.isComposerApprovalState) {
@@ -367,6 +369,11 @@ function resolveComposerEditorPlaceholder(input: {
   }
   if (input.pendingSlashCommand) {
     return `Add arguments for /${input.pendingSlashCommand.name}, or send it`;
+  }
+  if (input.isRunning && input.queuedCount > 0) {
+    return input.queuedCount === 1
+      ? "Queued 1 follow-up. Type another, or wait for this turn"
+      : `Queued ${input.queuedCount} follow-ups. Type another, or wait for this turn`;
   }
   if (input.isRunning) {
     return "Type a follow-up, then Queue, Steer, or start a new thread";
@@ -550,9 +557,11 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         showSendWhileRunning={props.showSendWhileRunning ?? false}
-        busySendMenuOpen={props.busySendMenuOpen}
-        onBusySendMenuOpenChange={props.onBusySendMenuOpenChange}
-        onBusySendChoice={props.onBusySendChoice}
+        busySendMenuOpen={props.busySendMenuOpen ?? false}
+        {...(props.onBusySendMenuOpenChange
+          ? { onBusySendMenuOpenChange: props.onBusySendMenuOpenChange }
+          : {})}
+        {...(props.onBusySendChoice ? { onBusySendChoice: props.onBusySendChoice } : {})}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
@@ -3260,26 +3269,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           />
         </ComposerTasksDrawerClip>
       ) : null}
-      {promptQueue.length > 0 ? (
-        <div data-composer-prompt-queue="true" className="flex flex-wrap gap-1 px-3 pb-2 sm:px-4">
-          {promptQueue.map((item) => (
-            <span
-              key={item.id}
-              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-xs text-muted-foreground"
-            >
-              <span className="min-w-0 truncate">Queued: {item.prompt}</span>
-              <button
-                type="button"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label="Remove queued prompt"
-                onClick={() => removeQueuedPrompt(promptQueueThreadKey, item.id)}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
       <div className="relative">
         {showShoulderTabs && visibleTasksProgress && visibleTaskSteps ? (
           <ComposerTasksBadge
@@ -3567,6 +3556,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   </div>
                 )}
 
+              {promptQueue.length > 0 ? (
+                <ComposerPromptQueue
+                  items={promptQueue}
+                  onRemove={(id) => removeQueuedPrompt(promptQueueThreadKey, id)}
+                  className="mb-2"
+                />
+              ) : null}
               <div className="relative">
                 <div className="relative min-w-0">
                   <ComposerPromptEditor
@@ -3612,6 +3608,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isDisconnected: phase === "disconnected",
                       isRunning: phase === "running",
                       lastTurnInterrupted: activeThread?.latestTurn?.state === "interrupted",
+                      queuedCount: promptQueue.length,
                       pendingSlashCommand,
                     })}
                     disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}

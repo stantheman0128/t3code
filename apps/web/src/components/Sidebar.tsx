@@ -31,7 +31,11 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import type { TimestampFormat } from "@t3tools/contracts/settings";
+import type {
+  SidebarProjectGroupingMode,
+  SidebarProjectSortOrder,
+  TimestampFormat,
+} from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -44,6 +48,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   GitBranchIcon,
+  GripVerticalIcon,
   MessageSquareIcon,
   PinIcon,
   PlusIcon,
@@ -102,7 +107,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -177,7 +182,16 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
@@ -457,6 +471,52 @@ function SortablePinnedThreadRow(props: {
     animateLayoutChanges: animatePinnedLayoutChanges,
   });
   return props.children({ listeners, setNodeRef, transform, transition, isDragging });
+}
+
+const SIDEBAR_PROJECT_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
+  updated_at: "Last user message",
+  created_at: "Created at",
+  manual: "Manual",
+};
+
+const SIDEBAR_PROJECT_GROUPING_LABELS: Record<SidebarProjectGroupingMode, string> = {
+  repository: "Group by repository",
+  repository_path: "Group by repository path",
+  separate: "Keep separate",
+};
+
+function SortableProjectMenuRow(props: {
+  id: string;
+  disabled: boolean;
+  children: (bag: {
+    setNodeRef: (node: HTMLElement | null) => void;
+    setActivatorNodeRef: (node: HTMLElement | null) => void;
+    listeners: ReturnType<typeof useSortable>["listeners"];
+    attributes: ReturnType<typeof useSortable>["attributes"];
+    isDragging: boolean;
+    style: { transform?: string | undefined; transition?: string | undefined };
+  }) => ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.id, disabled: props.disabled });
+  return props.children({
+    setNodeRef,
+    setActivatorNodeRef,
+    listeners,
+    attributes,
+    isDragging,
+    style: {
+      transform: CSS.Translate.toString(transform),
+      transition,
+    },
+  });
 }
 
 // One unsent draft session the user has invested content in. Two lines,
@@ -1724,6 +1784,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const reorderProjects = useUiStateStore((store) => store.reorderProjects);
+  const updateClientSettings = useUpdateClientSettings();
   const threads = useThreadShells();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -1884,6 +1946,43 @@ export default function Sidebar() {
   const projectGroups = useMemo(
     () => sortLogicalProjectsForSidebar(unsortedProjectGroups, threads, sidebarProjectSortOrder),
     [sidebarProjectSortOrder, threads, unsortedProjectGroups],
+  );
+  const isManualProjectSorting = sidebarProjectSortOrder === "manual";
+  const projectDragInProgressRef = useRef(false);
+  const projectDndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+  const handleProjectDragStart = useCallback(() => {
+    if (!isManualProjectSorting) {
+      return;
+    }
+    projectDragInProgressRef.current = true;
+  }, [isManualProjectSorting]);
+  const handleProjectDragCancel = useCallback(() => {
+    projectDragInProgressRef.current = false;
+  }, []);
+  const handleProjectDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      projectDragInProgressRef.current = false;
+      if (!isManualProjectSorting) {
+        return;
+      }
+      const { active, over } = event;
+      if (!over || active.id === over.id) {
+        return;
+      }
+      const activeProject = projectGroups.find((project) => project.projectKey === active.id);
+      const overProject = projectGroups.find((project) => project.projectKey === over.id);
+      if (!activeProject || !overProject) {
+        return;
+      }
+      reorderProjects(
+        orderedProjects.map(getProjectOrderKey),
+        activeProject.memberProjects.map((member) => member.physicalProjectKey),
+        overProject.memberProjects.map((member) => member.physicalProjectKey),
+      );
+    },
+    [isManualProjectSorting, orderedProjects, projectGroups, reorderProjects],
   );
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   // Threads on non-primary environments (T3 Connect, hosted) resolve their
@@ -3471,7 +3570,15 @@ export default function Sidebar() {
             </div>
             {projectGroups.length > 0 ? (
               <div className="flex items-center gap-1">
-                <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
+                <Menu
+                  open={projectScopeMenuOpen}
+                  onOpenChange={(open) => {
+                    if (!open && projectDragInProgressRef.current) {
+                      return;
+                    }
+                    setProjectScopeMenuOpen(open);
+                  }}
+                >
                   <MenuTrigger
                     render={
                       <SidebarMenuButton
@@ -3510,39 +3617,134 @@ export default function Sidebar() {
                         <FolderIcon className="size-4 shrink-0" />
                         <span className="min-w-0 truncate text-sm">All projects</span>
                       </MenuRadioItem>
-                      {projectGroups.map((project) => {
-                        const scopeKey = project.projectKey;
-                        return (
-                          <MenuRadioItem
-                            key={scopeKey}
-                            value={scopeKey}
-                            closeOnClick
-                            className="h-8 min-h-8 py-0 text-sm font-medium [&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-2"
-                          >
-                            <ProjectFavicon
-                              environmentId={project.environmentId}
-                              cwd={project.workspaceRoot}
-                              faviconPath={project.faviconPath}
-                              className="size-4 shrink-0"
-                            />
-                            <span className="min-w-0 truncate text-sm">{project.displayName}</span>
-                            <Button
-                              size="icon-xs"
-                              variant="ghost-muted"
-                              aria-label={`Project settings for ${project.displayName}`}
-                              title={`Project settings for ${project.displayName}`}
-                              className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                void handleProjectSettings(event, project);
-                              }}
-                            >
-                              <SettingsIcon className="size-3.5" />
-                            </Button>
-                          </MenuRadioItem>
-                        );
-                      })}
+                      <DndContext
+                        sensors={projectDndSensors}
+                        collisionDetection={closestCenter}
+                        modifiers={[restrictToVerticalAxis]}
+                        onDragStart={handleProjectDragStart}
+                        onDragEnd={handleProjectDragEnd}
+                        onDragCancel={handleProjectDragCancel}
+                      >
+                        <SortableContext
+                          items={projectGroups.map((project) => project.projectKey)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {projectGroups.map((project) => {
+                            const scopeKey = project.projectKey;
+                            return (
+                              <SortableProjectMenuRow
+                                key={scopeKey}
+                                id={scopeKey}
+                                disabled={!isManualProjectSorting}
+                              >
+                                {(bag) => (
+                                  <div
+                                    ref={bag.setNodeRef}
+                                    style={bag.style}
+                                    className={bag.isDragging ? "z-20 opacity-80" : undefined}
+                                  >
+                                    <MenuRadioItem
+                                      value={scopeKey}
+                                      closeOnClick={!isManualProjectSorting}
+                                      className="h-8 min-h-8 py-0 text-sm font-medium [&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-1.5"
+                                    >
+                                      {isManualProjectSorting ? (
+                                        <button
+                                          type="button"
+                                          ref={bag.setActivatorNodeRef}
+                                          className="flex size-4 shrink-0 cursor-grab items-center justify-center text-icon-muted active:cursor-grabbing"
+                                          aria-label={`Reorder ${project.displayName}`}
+                                          onPointerDown={(event) => event.stopPropagation()}
+                                          {...bag.attributes}
+                                          {...bag.listeners}
+                                        >
+                                          <GripVerticalIcon className="size-3.5" />
+                                        </button>
+                                      ) : null}
+                                      <ProjectFavicon
+                                        environmentId={project.environmentId}
+                                        cwd={project.workspaceRoot}
+                                        faviconPath={project.faviconPath}
+                                        className="size-4 shrink-0"
+                                      />
+                                      <span className="min-w-0 truncate text-sm">
+                                        {project.displayName}
+                                      </span>
+                                      <Button
+                                        size="icon-xs"
+                                        variant="ghost-muted"
+                                        aria-label={`Project settings for ${project.displayName}`}
+                                        title={`Project settings for ${project.displayName}`}
+                                        className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
+                                        onPointerDown={(event) => event.stopPropagation()}
+                                        onClick={(event) => {
+                                          void handleProjectSettings(event, project);
+                                        }}
+                                      >
+                                        <SettingsIcon className="size-3.5" />
+                                      </Button>
+                                    </MenuRadioItem>
+                                  </div>
+                                )}
+                              </SortableProjectMenuRow>
+                            );
+                          })}
+                        </SortableContext>
+                      </DndContext>
                     </MenuRadioGroup>
+                    <MenuSeparator />
+                    <MenuGroup>
+                      <MenuGroupLabel>Sort projects</MenuGroupLabel>
+                      <MenuRadioGroup
+                        value={sidebarProjectSortOrder}
+                        onValueChange={(value) =>
+                          updateClientSettings({
+                            sidebarProjectSortOrder: value as SidebarProjectSortOrder,
+                          })
+                        }
+                      >
+                        {(
+                          Object.entries(SIDEBAR_PROJECT_SORT_LABELS) as Array<
+                            [SidebarProjectSortOrder, string]
+                          >
+                        ).map(([value, label]) => (
+                          <MenuRadioItem
+                            key={value}
+                            value={value}
+                            closeOnClick={false}
+                            className="min-h-7 py-1 text-sm"
+                          >
+                            {label}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuGroup>
+                    <MenuGroup>
+                      <MenuGroupLabel>Group projects</MenuGroupLabel>
+                      <MenuRadioGroup
+                        value={projectGroupingSettings.sidebarProjectGroupingMode}
+                        onValueChange={(value) =>
+                          updateClientSettings({
+                            sidebarProjectGroupingMode: value as SidebarProjectGroupingMode,
+                          })
+                        }
+                      >
+                        {(
+                          Object.entries(SIDEBAR_PROJECT_GROUPING_LABELS) as Array<
+                            [SidebarProjectGroupingMode, string]
+                          >
+                        ).map(([value, label]) => (
+                          <MenuRadioItem
+                            key={value}
+                            value={value}
+                            closeOnClick={false}
+                            className="min-h-7 py-1 text-sm"
+                          >
+                            {label}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuGroup>
                   </MenuPopup>
                 </Menu>
                 <Tooltip>

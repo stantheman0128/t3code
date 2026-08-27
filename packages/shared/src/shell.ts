@@ -650,7 +650,7 @@ const POWERSHELL_EXE_PATTERN = /powershell(?:\.exe)?$/i;
 const WINDOWS_POWERSHELL_COMMAND_PATTERN = /(?:^|[\\/])(?:pwsh|powershell)(?:\.exe)?$/i;
 const POWERSHELL_SCRIPT_SWITCH_PATTERN =
   /^(?:[-/](?:Command|EncodedCommand|File)(?:$|:)|[-/](?:c|f|e|ec)$)/i;
-const QUOTED_EXE_WITH_STAR_ARGS = /"([^"\r\n]+\.exe)"\s+%\*/i;
+const QUOTED_EXE_WITH_STAR_ARGS = /"([^"\r\n]+\.exe)"((?:\s+"[^"\r\n]+")*)\s+%\*/i;
 
 export function isWindowsPowerShellCommand(command: string): boolean {
   return WINDOWS_POWERSHELL_COMMAND_PATTERN.test(command.replace(/^"+|"+$/g, ""));
@@ -663,10 +663,11 @@ function hasHiddenWindowStyle(args: ReadonlyArray<string>): boolean {
     if (/^(?:[-/]WindowStyle:Hidden)$/i.test(arg)) {
       return true;
     }
+    const nextArg = args[index + 1];
     if (
       /^(?:[-/]WindowStyle)$/i.test(arg) &&
-      args[index + 1] !== undefined &&
-      /^Hidden$/i.test(args[index + 1])
+      nextArg !== undefined &&
+      /^Hidden$/i.test(nextArg)
     ) {
       return true;
     }
@@ -719,7 +720,7 @@ export function tryUnwrapWindowsCmdShim(
   const expanded = expandWindowsCmdDirectoryVars(text, cmdPath);
   const match = QUOTED_EXE_WITH_STAR_ARGS.exec(expanded);
   const exe = match?.[1];
-  if (exe === undefined || POWERSHELL_EXE_PATTERN.test(exe)) {
+  if (match === null || exe === undefined || POWERSHELL_EXE_PATTERN.test(exe)) {
     return undefined;
   }
 
@@ -731,7 +732,15 @@ export function tryUnwrapWindowsCmdShim(
     return undefined;
   }
 
-  return { command: NodePath.win32.normalize(exe), args: [...args] };
+  const forwardedArgs = [...quotedCmdShimArgs(match[2]), ...args];
+  return { command: NodePath.win32.normalize(exe), args: forwardedArgs };
+}
+
+function quotedCmdShimArgs(group: string | undefined): Array<string> {
+  if (!group) {
+    return [];
+  }
+  return [...group.matchAll(/"([^"\r\n]+)"/g)].map((entry) => entry[1] ?? "").filter(Boolean);
 }
 
 export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(function* (

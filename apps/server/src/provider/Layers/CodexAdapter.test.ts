@@ -48,6 +48,7 @@ import {
   type CodexSessionRuntimeShape,
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
+import type { CodexGoalSlash } from "./codexGoalSlash.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
 
 type CodexSessionRuntimeGoalSetInput = Parameters<CodexSessionRuntimeShape["setGoal"]>[0];
@@ -148,6 +149,29 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   public readonly clearGoalImpl = vi.fn(() => Promise.resolve({ cleared: true }));
 
+  public readonly applyGoalCommandImpl = vi.fn(async (command: CodexGoalSlash) => {
+    switch (command.kind) {
+      case "clear":
+        await this.clearGoalImpl();
+        return;
+      case "status":
+        await this.getGoalImpl();
+        return;
+      case "pause":
+        await this.setGoalImpl({ status: "paused" });
+        return;
+      case "resume":
+        await this.setGoalImpl({ status: "active" });
+        return;
+      case "set":
+        await this.setGoalImpl({
+          objective: command.objective,
+          status: "active",
+          ...(command.tokenBudget !== null ? { tokenBudget: command.tokenBudget } : {}),
+        });
+    }
+  });
+
   public readonly respondToRequestImpl = vi.fn(
     (_requestId: ApprovalRequestId, _decision: ProviderApprovalDecision): Promise<void> =>
       Promise.resolve(undefined),
@@ -201,6 +225,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   }
 
   clearGoal = Effect.promise(() => this.clearGoalImpl());
+
+  applyGoalCommand(command: CodexGoalSlash) {
+    return Effect.promise(() => this.applyGoalCommandImpl(command));
+  }
 
   respondToRequest(requestId: ApprovalRequestId, decision: ProviderApprovalDecision) {
     return Effect.promise(() => this.respondToRequestImpl(requestId, decision));

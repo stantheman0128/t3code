@@ -113,7 +113,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-mock-alt" }]);
-      expect(result).toBe("grok-mock-alt");
+      expect(result).toEqual({ modelId: "grok-mock-alt", reasoningEffort: undefined });
     }),
   );
 
@@ -129,7 +129,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
-      expect(result).toBe("grok-4.6");
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "xhigh" });
     }),
   );
 
@@ -145,7 +145,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-4.6");
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "high" });
     }),
   );
 
@@ -174,7 +174,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
+      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
     }),
   );
 
@@ -188,7 +188,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
+      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
     }),
   );
 

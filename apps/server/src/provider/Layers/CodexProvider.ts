@@ -44,35 +44,11 @@ const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
 } as const;
-const CODEX_SLASH_COMMANDS = [
+const CODEX_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
   {
     name: "goal",
     description: "Manage the native Codex Goal for this thread",
     input: { hint: "[status|create|steer|pause|resume|clear|reset] [objective]" },
-  },
-] as const;
-
-const CODEX_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
-  {
-    name: "goal",
-    description: "Set a durable Codex objective",
-    input: { hint: "objective" },
-  },
-  {
-    name: "goal status",
-    description: "Show the current Codex goal",
-  },
-  {
-    name: "goal pause",
-    description: "Pause the current Codex goal",
-  },
-  {
-    name: "goal resume",
-    description: "Resume a paused Codex goal",
-  },
-  {
-    name: "goal clear",
-    description: "Clear the current Codex goal",
   },
   {
     name: "feedback",
@@ -451,7 +427,6 @@ const makePendingCodexProvider = (
         enabled: false,
         checkedAt,
         models,
-        slashCommands: CODEX_SLASH_COMMANDS,
         skills: [],
         probe: {
           installed: false,
@@ -469,7 +444,6 @@ const makePendingCodexProvider = (
       enabled: true,
       checkedAt,
       models,
-      slashCommands: CODEX_SLASH_COMMANDS,
       skills: [],
       probe: {
         installed: false,
@@ -541,7 +515,6 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       enabled: false,
       checkedAt,
       models: emptyModels,
-      slashCommands: CODEX_SLASH_COMMANDS,
       skills: [],
       probe: {
         installed: false,
@@ -575,7 +548,6 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       enabled: codexSettings.enabled,
       checkedAt,
       models: emptyModels,
-      slashCommands: CODEX_SLASH_COMMANDS,
       skills: [],
       probe: {
         installed,
@@ -596,7 +568,6 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       enabled: codexSettings.enabled,
       checkedAt,
       models: emptyModels,
-      slashCommands: CODEX_SLASH_COMMANDS,
       skills: [],
       probe: {
         installed: true,

@@ -26,6 +26,7 @@ import {
   SpawnExecutableResolution,
   WindowsShellEnvironment,
   isWindowsPowerShellCommand,
+  tryUnwrapWindowsCmdShim,
   withHiddenWindowsPowerShellArgs,
   type WindowsShellEnvironmentReader,
 } from "./shell.ts";
@@ -39,6 +40,27 @@ const withWindowsEnvironmentMocks = <A, E, R>(
     Effect.provideService(WindowsShellEnvironment, readEnvironment),
     Effect.provideService(CommandAvailability, commandAvailable),
   );
+
+describe("tryUnwrapWindowsCmdShim", () => {
+  it("keeps quoted node script args in front of %*", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cmd-shim-"));
+    const cmdPath = NodePath.join(dir, "fake-grok.cmd");
+    const scriptPath = NodePath.join(dir, "acp-mock-agent.ts");
+    NodeFS.writeFileSync(
+      cmdPath,
+      `@echo off\r\n"${process.execPath}" "${scriptPath}" %*\r\n`,
+      "utf8",
+    );
+    try {
+      expect(tryUnwrapWindowsCmdShim(cmdPath, ["agent", "stdio"])).toEqual({
+        command: NodePath.win32.normalize(process.execPath),
+        args: [scriptPath, "agent", "stdio"],
+      });
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("withHiddenWindowsPowerShellArgs", () => {
   it("recognizes Windows PowerShell and pwsh command names", () => {

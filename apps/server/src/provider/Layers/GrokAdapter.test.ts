@@ -36,11 +36,15 @@ const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
 const mockAgentCommand = process.execPath;
+const mockWrapperEnv = new Map<string, Record<string, string>>();
 
 async function makeMockGrokWrapper(extraEnv?: Record<string, string>) {
   const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-mock-"));
   const isWindows = process.platform === "win32";
   const wrapperPath = NodePath.join(dir, isWindows ? "fake-grok.cmd" : "fake-grok.sh");
+  if (extraEnv && Object.keys(extraEnv).length > 0) {
+    mockWrapperEnv.set(wrapperPath, extraEnv);
+  }
   if (isWindows) {
     const envExports = Object.entries(extraEnv ?? {})
       .map(([key, value]) => `set "${key}=${value.replace(/%/g, "%%")}"`)
@@ -99,8 +103,17 @@ const grokAdapterTestLayer = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3code-grok-adapter-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
-const makeTestAdapter = (binaryPath: string, options?: Parameters<typeof makeGrokAdapter>[1]) =>
-  makeGrokAdapter(decodeGrokSettings({ binaryPath }), options).pipe(Effect.orDie);
+const makeTestAdapter = (binaryPath: string, options?: Parameters<typeof makeGrokAdapter>[1]) => {
+  const wrapperEnv = mockWrapperEnv.get(binaryPath);
+  return makeGrokAdapter(decodeGrokSettings({ binaryPath }), {
+    ...options,
+    ...(wrapperEnv
+      ? { environment: { ...process.env, ...wrapperEnv, ...options?.environment } }
+      : options?.environment
+        ? { environment: options.environment }
+        : {}),
+  }).pipe(Effect.orDie);
+};
 
 it("falls back to allow_once when Grok omits allow_always", () => {
   const request = {
@@ -244,9 +257,16 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       yield* adapter.stopSession(threadId);
 
+      // Node on Windows treats SIGTERM as TerminateProcess, so the mock's
+      // SIGTERM/exit handlers never flush. stopSession returning is the
+      // Windows proof the ACP child was reaped.
+      if (process.platform === "win32") {
+        return;
+      }
+
       const exitLog = yield* waitForFileContent(exitLogPath);
       assert.include(exitLog, "SIGTERM");
-    }),
+    }).pipe(TestClock.withLive),
   );
 
   it.effect("reports a Grok session running only while the prompt is in flight", () =>

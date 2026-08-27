@@ -105,8 +105,8 @@ export function buildGrokAcpSpawnInput(
   grokSettings: GrokAcpRuntimeGrokSettings | null | undefined,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
-  reasoningEffort?: string,
   runtimeMode?: RuntimeMode,
+  reasoningEffort?: string,
 ): AcpSessionRuntime.AcpSpawnInput {
   const args = [...grokAcpSpawnArgs(runtimeMode)];
   const spawnEffort = spawnableGrokReasoningEffort(reasoningEffort);
@@ -150,8 +150,8 @@ export const makeGrokAcpRuntime = (
           input.grokSettings,
           input.cwd,
           input.environment,
-          input.reasoningEffort,
           input.runtimeMode,
+          input.reasoningEffort,
         ),
         authMethodId: resolveGrokAuthMethodId(input.environment),
       }).pipe(
@@ -506,42 +506,35 @@ export function applyGrokAcpModelSelection<E>(input: {
           availableIds: input.availableModelIds,
         })
       : input.requestedModelId;
-  const nextModelId = requestedModelId ?? input.currentModelId;
-  const shouldSwitchModel =
+  const modelChanged =
     requestedModelId !== undefined && requestedModelId !== input.currentModelId;
-  const nextEffort = shouldSwitchModel
-    ? input.requestedReasoningEffort
-    : (input.requestedReasoningEffort ?? input.currentReasoningEffort);
-  const shouldSwitchEffort =
-    input.requestedReasoningEffort !== undefined &&
-    input.requestedReasoningEffort !== input.currentReasoningEffort;
-
-  if (!shouldSwitchModel && !shouldSwitchEffort) {
+  const reasoningProvided = input.requestedReasoningEffort !== undefined;
+  const reasoningEffort = reasoningProvided
+    ? normalizeGrokReasoningEffort(input.requestedReasoningEffort)
+    : undefined;
+  const reasoningEffortChanged =
+    reasoningProvided && reasoningEffort !== input.currentReasoningEffort;
+  const targetModelId = requestedModelId ?? input.currentModelId;
+  if ((!modelChanged && !reasoningEffortChanged) || targetModelId === undefined) {
     return Effect.succeed({
       modelId: input.currentModelId,
       reasoningEffort: input.currentReasoningEffort,
     });
   }
-
-  if (nextModelId === undefined) {
-    return Effect.succeed({
-      modelId: undefined,
-      reasoningEffort: nextEffort,
-    });
-  }
-
-  return input.runtime
-    .setSessionModel(
-      nextModelId,
-      nextEffort ? { _meta: { reasoningEffort: nextEffort } } : undefined,
-    )
-    .pipe(
-      Effect.mapError(input.mapError),
-      Effect.as({
-        modelId: nextModelId,
-        reasoningEffort: nextEffort,
-      }),
-    );
+  const reasoningMeta =
+    reasoningProvided && reasoningEffort !== undefined ? { reasoningEffort } : undefined;
+  // When reasoning was explicitly provided but invalid (normalize => undefined), we deliberately
+  // send no meta so the invalid value is dropped rather than forwarded. When reasoning was not
+  // provided at all, we also send no meta, but we only reach this call when the model itself
+  // changed - an omitted reasoning preference must not be treated as an explicit clear of the
+  // CLI-advertised default (e.g. Extra High) on same-model reselections.
+  return input.runtime.setSessionModel(targetModelId, reasoningMeta).pipe(
+    Effect.mapError(input.mapError),
+    Effect.as({
+      modelId: targetModelId,
+      reasoningEffort: reasoningEffort ?? input.currentReasoningEffort,
+    }),
+  );
 }
 
 const GROK_PLAN_MODE_ALIASES = ["plan", "architect"];

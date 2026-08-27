@@ -43,6 +43,7 @@ import {
   readGrokWorkflowSlashCommands,
 } from "../acp/GrokWorkflowCommands.ts";
 import { readGrokAuthFromHome } from "../acp/grokAuth.ts";
+import { discoverGrokSkills } from "../Drivers/GrokSkills.ts";
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
@@ -114,7 +115,7 @@ export function buildInitialGrokProviderSnapshot(
     };
     const loginAuth = yield* readGrokAuthFromHome(
       grokWorkflowHomeDirFromEnvironment(resolvedDiscovery.environment),
-    );
+    ).pipe(Effect.catch(() => Effect.succeed(null)));
     if (!grokSettings.enabled) {
       return yield* buildGrokServerProvider(
         {
@@ -238,7 +239,9 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = grokModelsFromSettings(grokSettings.customModels);
   const discovery = { environment, projectRoot };
-  const loginAuth = yield* readGrokAuthFromHome(grokWorkflowHomeDirFromEnvironment(environment));
+  const loginAuth = yield* readGrokAuthFromHome(grokWorkflowHomeDirFromEnvironment(environment)).pipe(
+    Effect.catch(() => Effect.succeed(null)),
+  );
   const providerDraft = (input: Parameters<typeof buildServerProvider>[0]) =>
     buildGrokServerProvider(input, discovery);
 
@@ -324,6 +327,8 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     });
   }
 
+  const skills = yield* discoverGrokSkills(grokSettings, environment, projectRoot);
+
   const discoveryExit = yield* discoverGrokModelsViaAcp(grokSettings, environment).pipe(
     Effect.timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
     Effect.exit,
@@ -339,6 +344,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      skills,
       probe: {
         installed: true,
         version,
@@ -359,6 +365,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      skills,
       probe: {
         installed: true,
         version,
@@ -379,6 +386,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     enabled: grokSettings.enabled,
     checkedAt,
     models,
+    skills,
     probe: {
       installed: true,
       version,

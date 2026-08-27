@@ -26,7 +26,8 @@ export const PROVIDER_PRESENTATION = {
   },
   grok: {
     label: "Grok Build",
-    color: "#1a1a1a",
+    // Contrast-aware neutral between the Codex series and muted chart chrome.
+    color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
     mark: GrokIcon,
   },
   cursor: {

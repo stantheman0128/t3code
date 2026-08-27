@@ -1,3 +1,6 @@
+// @effect-diagnostics globalFetchInEffect:off
+// @effect-diagnostics globalErrorInEffectCatch:off
+// @effect-diagnostics globalErrorInEffectFailure:off
 /**
  * Grok login identity from `~/.grok/auth.json`.
  *
@@ -111,23 +114,18 @@ function grokPlanLabelFromSettingsDocument(document: unknown): string | undefine
 const fetchGrokSubscriptionLabel = (token: string) =>
   Effect.tryPromise({
     try: async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), GROK_SETTINGS_TIMEOUT_MS);
-      try {
-        const response = await fetch(GROK_SETTINGS_URL, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          return undefined;
-        }
-        return grokPlanLabelFromSettingsDocument(await response.json());
-      } finally {
-        clearTimeout(timer);
+      // @effect-diagnostics globalFetch:off
+      const response = await fetch(GROK_SETTINGS_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(GROK_SETTINGS_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        return undefined;
       }
+      return grokPlanLabelFromSettingsDocument(await response.json());
     },
-    catch: () => undefined,
-  });
+    catch: () => new Error("grok-settings-fetch-failed"),
+  }).pipe(Effect.orElseSucceed((): string | undefined => undefined));
 
 export function parseGrokAuthFile(document: unknown): ServerProviderAuth | null {
   if (!document || typeof document !== "object" || Array.isArray(document)) {

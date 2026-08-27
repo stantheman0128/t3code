@@ -36,6 +36,31 @@ const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 export const GROK_REASONING_EFFORT_OPTION_ID = "reasoningEffort";
 
 const GROK_SPAWN_EFFORT_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+const GROK_REASONING_EFFORT_TOKEN = /^[a-z0-9][a-z0-9._-]{0,31}$/i;
+
+export function grokAcpSpawnArgs(runtimeMode?: RuntimeMode): ReadonlyArray<string> {
+  switch (runtimeMode) {
+    case "approval-required":
+      return ["--permission-mode", "default", "agent", "stdio"];
+    case "auto-accept-edits":
+      return ["--permission-mode", "acceptEdits", "agent", "stdio"];
+    case "auto":
+      return ["--permission-mode", "auto", "agent", "stdio"];
+    case "full-access":
+      return ["agent", "--always-approve", "stdio"];
+    default:
+      return ["agent", "stdio"];
+  }
+}
+
+export function isValidGrokReasoningEffortToken(value: string): boolean {
+  return GROK_REASONING_EFFORT_TOKEN.test(value);
+}
+
+export function normalizeGrokReasoningEffort(value: string | undefined): string | undefined {
+  const effort = value?.trim();
+  return effort && isValidGrokReasoningEffortToken(effort) ? effort : undefined;
+}
 
 export const FALLBACK_GROK_REASONING_EFFORTS = [
   { id: "xhigh", label: "Extra High", description: "Highest effort and reasoning level" },
@@ -54,6 +79,7 @@ interface GrokAcpRuntimeInput extends Omit<
   readonly grokSettings: GrokAcpRuntimeGrokSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
   readonly reasoningEffort?: string;
+  readonly runtimeMode?: RuntimeMode;
 }
 
 export interface GrokReasoningEffortChoice {
@@ -80,11 +106,21 @@ export function buildGrokAcpSpawnInput(
   cwd: string,
   environment?: NodeJS.ProcessEnv,
   reasoningEffort?: string,
+  runtimeMode?: RuntimeMode,
 ): AcpSessionRuntime.AcpSpawnInput {
+  const args = [...grokAcpSpawnArgs(runtimeMode)];
   const spawnEffort = spawnableGrokReasoningEffort(reasoningEffort);
+  if (spawnEffort) {
+    const stdioAt = args.lastIndexOf("stdio");
+    if (stdioAt >= 0) {
+      args.splice(stdioAt, 0, "--reasoning-effort", spawnEffort);
+    } else {
+      args.push("--reasoning-effort", spawnEffort);
+    }
+  }
   return {
     command: grokSettings?.binaryPath || "grok",
-    args: spawnEffort ? ["agent", "--reasoning-effort", spawnEffort, "stdio"] : ["agent", "stdio"],
+    args,
     cwd,
     env: {
       ...environment,
@@ -115,6 +151,7 @@ export const makeGrokAcpRuntime = (
           input.cwd,
           input.environment,
           input.reasoningEffort,
+          input.runtimeMode,
         ),
         authMethodId: resolveGrokAuthMethodId(input.environment),
       }).pipe(

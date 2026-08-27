@@ -67,6 +67,11 @@ const CODEX_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
     name: "goal clear",
     description: "Clear the current Codex goal",
   },
+  {
+    name: "feedback",
+    description: "Send this thread and Codex logs to OpenAI",
+    input: { hint: "Describe the issue (optional)" },
+  },
 ];
 
 export interface CodexAppServerProviderSnapshot {
@@ -601,13 +606,6 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
-    slashCommands: [
-      {
-        name: "feedback",
-        description: "Send this thread and Codex logs to OpenAI",
-        input: { hint: "Describe the issue (optional)" },
-      },
-    ],
     probe: {
       installed: true,
       version: snapshot.version ?? null,

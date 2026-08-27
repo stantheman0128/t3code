@@ -15,15 +15,15 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
 };
 
 /**
- * Claude's brand orange holds in both themes; Codex is neutral and must flip
- * with the theme or its bars vanish against the matching background.
+ * Claude's brand orange holds in both themes; Codex and Grok are neutrals and
+ * must flip with the theme or their bars vanish against the matching background.
  */
 export function useProviderColors(): Record<UsageProviderKind, string> {
   const { themeAppearance: scheme } = useAppearancePreferences();
   return {
     claude: "#d97757",
     codex: scheme === "dark" ? "#e6e6e6" : "#3c3c43",
-    grok: scheme === "dark" ? "#e6e6e6" : "#1a1a1a",
+    grok: scheme === "dark" ? "#a1a1aa" : "#52525b",
     cursor: "#f54e00",
   };
 }

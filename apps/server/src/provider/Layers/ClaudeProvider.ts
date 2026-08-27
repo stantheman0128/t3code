@@ -591,6 +591,7 @@ const readClaudeOrganizationType = Effect.fn("readClaudeOrganizationType")(funct
     return undefined;
   }
   try {
+    // @effect-diagnostics preferSchemaOverJson:off
     const document = JSON.parse(raw) as {
       oauthAccount?: { organizationType?: unknown };
     };

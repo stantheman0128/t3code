@@ -566,8 +566,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         onChangeDraftMessage(composeProviderSlashMessage(pendingSlashCommand.name, draftMessage));
         setPendingSlashCommand(null);
       }
-      const messageId = await onSendMessage();
-      if (messageId === null) {
+      const sentMessageId = await onSendMessage();
+      if (sentMessageId === null) {
         return;
       }
       // Sending a prompt starts agent work: arm the lock-screen card while the

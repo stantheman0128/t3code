@@ -184,6 +184,7 @@ import {
   GitBranchIcon,
   Minimize2Icon,
   PaperclipIcon,
+  TargetIcon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -265,7 +266,14 @@ import {
   serverEnvironment,
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
-import { threadEnvironment, useEnvironmentThread } from "../state/threads";
+import { threadEnvironment, useCodexGoal, useEnvironmentThread } from "../state/threads";
+import {
+  formatCodexGoalDescription,
+  formatCodexGoalError,
+  formatCodexGoalStatus,
+  parseCodexGoalCommand,
+  toCodexGoalSetInput,
+} from "@t3tools/client-runtime/state/threads";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
@@ -1351,6 +1359,11 @@ function ChatViewContent(props: ChatViewProps) {
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
+  const getCodexGoal = useAtomCommand(threadEnvironment.getCodexGoal, { reportFailure: false });
+  const setCodexGoal = useAtomCommand(threadEnvironment.setCodexGoal, { reportFailure: false });
+  const clearCodexGoal = useAtomCommand(threadEnvironment.clearCodexGoal, {
+    reportFailure: false,
+  });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const { environments } = useEnvironments();
@@ -1467,6 +1480,10 @@ function ChatViewContent(props: ChatViewProps) {
   const feedbackUploading = feedbackSubmissions.some(
     (submission) => submission.status === "uploading",
   );
+  const [goalCommandThreadKeysInFlight, setGoalCommandThreadKeysInFlight] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const goalCommandRunning = goalCommandThreadKeysInFlight.has(routeThreadKey);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
   const [localDraftErrorsByDraftId, setLocalDraftErrorsByDraftId] = useState<
@@ -1529,6 +1546,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
   const feedbackUploadsInFlightRef = useRef(new Set<string>());
+  const goalCommandsInFlightRef = useRef(new Set<string>());
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   useLayoutEffect(() => {
@@ -1722,6 +1740,10 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadEnvironmentId, activeThreadId],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  const activeThreadKeyRef = useRef(activeThreadKey);
+  useLayoutEffect(() => {
+    activeThreadKeyRef.current = activeThreadKey;
+  }, [activeThreadKey]);
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -2356,6 +2378,20 @@ function ChatViewContent(props: ChatViewProps) {
     selectedProviderByThreadId ?? threadProvider,
   );
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
+  const hasActiveCodexGoalSession =
+    isServerThread &&
+    selectedProvider === "codex" &&
+    activeThread !== null &&
+    activeThread !== undefined &&
+    activeThread.session !== null &&
+    activeThread.session.status !== "stopped";
+  const codexGoal = useCodexGoal(
+    hasActiveCodexGoalSession ? environmentId : null,
+    hasActiveCodexGoalSession ? activeThreadId : null,
+    hasActiveCodexGoalSession
+      ? (activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId)
+      : null,
+  );
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const activeContextWindow = useMemo(
@@ -4876,8 +4912,8 @@ function ChatViewContent(props: ChatViewProps) {
   // calm-styled live states flagged `urgent`, like update progress), then
   // background liveness — its Stop button is the only stop affordance for
   // settled turns, so a passive "update available" notice must not cover it —
-  // then calm system banners, the woke and branch-mismatch notices, and the
-  // informational parked-thread banner last — it must never cover another.
+  // then calm system banners, the woke and branch-mismatch notices, the parked
+  // banner, and the passive Goal banner last — it must never cover another.
   const parkedThreadBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (!activeThreadSnoozed && !activeThreadSettled) {
       return null;
@@ -5020,6 +5056,24 @@ function ChatViewContent(props: ChatViewProps) {
     resumeCompactionPermanentlyDismissed,
     selectedProvider,
   ]);
+  const codexGoalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (codexGoal === null) return null;
+    const goalDescription = formatCodexGoalDescription(codexGoal);
+    return {
+      id: `codex-goal:${activeThread?.id ?? "unknown"}`,
+      variant: "info",
+      icon: <TargetIcon />,
+      title: `Goal ${formatCodexGoalStatus(codexGoal.status)}`,
+      description: (
+        <Tooltip>
+          <TooltipTrigger render={<span className="line-clamp-2">{goalDescription}</span>} />
+          <TooltipPopup side="top" className="max-w-96">
+            {goalDescription}
+          </TooltipPopup>
+        </Tooltip>
+      ),
+    };
+  }, [activeThread?.id, codexGoal]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
@@ -5038,6 +5092,7 @@ function ChatViewContent(props: ChatViewProps) {
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
+    const codexGoalItems = codexGoalBannerItem === null ? [] : [codexGoalBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...urgentSystemItems,
@@ -5046,6 +5101,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
+        ...codexGoalItems,
       ];
     }
     return [
@@ -5094,10 +5150,12 @@ function ChatViewContent(props: ChatViewProps) {
         },
       },
       ...parkedThreadItems,
+      ...codexGoalItems,
     ];
   }, [
     activeBranchMismatchKey,
     backgroundLivenessBannerItem,
+    codexGoalBannerItem,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
@@ -5463,7 +5521,8 @@ function ChatViewContent(props: ChatViewProps) {
       isConnecting ||
       threadDetailLoading ||
       sendInFlightRef.current ||
-      feedbackUploadsInFlightRef.current.has(routeThreadKey)
+      feedbackUploadsInFlightRef.current.has(routeThreadKey) ||
+      goalCommandsInFlightRef.current.has(routeThreadKey)
     ) {
       notifyDirectAnnotationAttached();
       return;
@@ -5539,15 +5598,15 @@ function ChatViewContent(props: ChatViewProps) {
         composerReviewComments.length,
       slashCommandActive: sendCtx.slashCommand !== null,
     });
-    const feedbackCommand =
+    const isUnadornedCodexCommand =
       ctxSelectedProvider === "codex" &&
+      !directAnnotation &&
       composerImages.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0
-        ? parseCodexFeedbackCommand(trimmed)
-        : null;
+      composerReviewComments.length === 0;
+    const feedbackCommand = isUnadornedCodexCommand ? parseCodexFeedbackCommand(trimmed) : null;
     if (feedbackCommand) {
       if (!isServerThread || activeThread.session === null) {
         toastManager.add(
@@ -5633,6 +5692,111 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
       return;
+    }
+    const codexGoalCommand = isUnadornedCodexCommand ? parseCodexGoalCommand(trimmed) : null;
+    if (codexGoalCommand !== null) {
+      if (codexGoalCommand.action === "invalid") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Invalid Goal command",
+            description: codexGoalCommand.message,
+          }),
+        );
+        return;
+      }
+      if (!isServerThread || activeThreadId === null || activeThread.session === null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Start the Codex thread first",
+            description: "Send a message before managing its native Goal.",
+          }),
+        );
+        return;
+      }
+
+      const target = { environmentId, input: { threadId: activeThreadId } };
+      const submittedThreadKey = activeThreadKey;
+      const submittedGoalCommandThreadKey = routeThreadKey;
+      const stillOnSubmittedThread = () => activeThreadKeyRef.current === submittedThreadKey;
+      const clearSubmittedGoalCommandDraft = () => {
+        if (!stillOnSubmittedThread() || promptRef.current !== promptForSend) return;
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      };
+      goalCommandsInFlightRef.current.add(submittedGoalCommandThreadKey);
+      setGoalCommandThreadKeysInFlight((current) => {
+        const next = new Set(current);
+        next.add(submittedGoalCommandThreadKey);
+        return next;
+      });
+      try {
+        if (codexGoalCommand.action === "status") {
+          const sessionWasStopped = activeThread.session.status === "stopped";
+          const result = await getCodexGoal(target);
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result) && stillOnSubmittedThread()) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: sessionWasStopped ? "warning" : "error",
+                  title: sessionWasStopped
+                    ? "Wake the Codex thread first"
+                    : "Codex Goal operation failed",
+                  description: sessionWasStopped
+                    ? "/goal status does not wake a stopped provider session."
+                    : formatCodexGoalError(squashAtomCommandFailure(result)),
+                }),
+              );
+            }
+            return;
+          }
+          clearSubmittedGoalCommandDraft();
+          if (!stillOnSubmittedThread()) return;
+          toastManager.add(
+            stackedThreadToast(
+              result.value === null
+                ? { type: "info", title: "No active Codex Goal" }
+                : {
+                    type: "info",
+                    title: `Goal ${formatCodexGoalStatus(result.value.status)}`,
+                    description: formatCodexGoalDescription(result.value),
+                  },
+            ),
+          );
+          return;
+        }
+        const result =
+          codexGoalCommand.action === "clear"
+            ? await clearCodexGoal(target)
+            : await setCodexGoal({
+                environmentId,
+                input: toCodexGoalSetInput(activeThreadId, codexGoalCommand),
+              });
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result) && stillOnSubmittedThread()) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Codex Goal operation failed",
+                description: formatCodexGoalError(squashAtomCommandFailure(result)),
+              }),
+            );
+          }
+          return;
+        }
+
+        clearSubmittedGoalCommandDraft();
+        return;
+      } finally {
+        goalCommandsInFlightRef.current.delete(submittedGoalCommandThreadKey);
+        setGoalCommandThreadKeysInFlight((current) => {
+          const next = new Set(current);
+          next.delete(submittedGoalCommandThreadKey);
+          return next;
+        });
+      }
     }
     if (!directAnnotation && showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -7322,9 +7486,11 @@ function ChatViewContent(props: ChatViewProps) {
                             sendDisabledReason={
                               feedbackUploading
                                 ? "Sending feedback"
-                                : threadDetailLoading
-                                  ? "Messages loading"
-                                  : null
+                                : goalCommandRunning
+                                  ? "Running Goal command"
+                                  : threadDetailLoading
+                                    ? "Messages loading"
+                                    : null
                             }
                             isPreparingWorktree={isPreparingWorktree}
                             externalDrawerAttached={externalComposerDrawerAttached}

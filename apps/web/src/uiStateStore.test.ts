@@ -10,6 +10,7 @@ import {
   type PersistedUiState,
   persistState,
   reorderProjects,
+  reorderThreads,
   resolveProjectExpanded,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
@@ -21,6 +22,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
   return {
     projectExpandedById: {},
     projectOrder: [],
+    threadOrder: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -117,6 +119,16 @@ describe("uiStateStore pure functions", () => {
     );
   });
 
+  it("reorders threads from the currently displayed order", () => {
+    const currentOrder = ["env:thread-a", "env:thread-b", "env:thread-c"];
+    const next = reorderThreads(makeUiState(), currentOrder, "env:thread-a", "env:thread-c");
+
+    expect(next.threadOrder).toEqual(["env:thread-b", "env:thread-c", "env:thread-a"]);
+    expect(reorderThreads(makeUiState(), currentOrder, "env:thread-a", "env:thread-a")).toEqual(
+      makeUiState(),
+    );
+  });
+
   it("stores explicit changed-file expansion choices", () => {
     const threadId = ThreadId.make("thread-1");
     const collapsed = setThreadChangedFilesExpanded(makeUiState(), threadId, "turn-1", false);
@@ -174,6 +186,7 @@ describe("parsePersistedState", () => {
         logical: false,
       },
       projectOrder: ["physical-b", "physical-a"],
+      threadOrder: [],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
@@ -301,6 +314,7 @@ describe("uiStateStore persistence", () => {
         logical: false,
       },
       projectOrder: ["physical-b", "physical-a"],
+      threadOrder: [],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },

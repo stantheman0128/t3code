@@ -64,10 +64,43 @@ export function formatCodexWindowLabel(minutes: number | null): string | null {
   return `${minutes}m`;
 }
 
+export function formatCodexPlanType(planType: string | null | undefined): string | null {
+  if (!planType) {
+    return null;
+  }
+  switch (planType) {
+    case "free":
+      return "ChatGPT Free";
+    case "go":
+      return "ChatGPT Go";
+    case "plus":
+      return "ChatGPT Plus";
+    case "pro":
+      return "ChatGPT Pro 20x";
+    case "prolite":
+      return "ChatGPT Pro 5x";
+    case "team":
+      return "ChatGPT Team";
+    case "self_serve_business_usage_based":
+    case "business":
+      return "ChatGPT Business";
+    case "enterprise_cbp_usage_based":
+    case "enterprise":
+      return "ChatGPT Enterprise";
+    case "edu":
+      return "ChatGPT Edu";
+    case "unknown":
+      return "ChatGPT";
+    default:
+      return planType;
+  }
+}
+
 export function formatCodexAccountLine(snapshot: CodexAccountUsageSnapshot): string | null {
   if (snapshot.status !== "ok") return snapshot.message;
   const parts: string[] = [];
-  if (snapshot.planType) parts.push(snapshot.planType);
+  const planLabel = formatCodexPlanType(snapshot.planType);
+  if (planLabel) parts.push(planLabel);
   const primaryLabel = formatCodexWindowLabel(snapshot.primaryWindowMinutes);
   if (snapshot.primaryUsedPercent !== null) {
     parts.push(`${primaryLabel ?? "primary"} ${Math.round(snapshot.primaryUsedPercent)}% used`);

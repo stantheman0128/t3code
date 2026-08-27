@@ -350,6 +350,55 @@ export function orderItemsByPreferredIds<TItem, TId>(input: {
   return [...ordered, ...remaining];
 }
 
+export interface SidebarThreadProviderGroup {
+  readonly key: string;
+  readonly label: string;
+}
+
+export function groupSidebarThreadsByProvider<T>(
+  threads: readonly T[],
+  getGroup: (thread: T) => SidebarThreadProviderGroup,
+): Array<SidebarThreadProviderGroup & { readonly threads: T[] }> {
+  const groups = new Map<string, { key: string; label: string; threads: T[] }>();
+  const order: string[] = [];
+  for (const thread of threads) {
+    const group = getGroup(thread);
+    const existing = groups.get(group.key);
+    if (existing) {
+      existing.threads.push(thread);
+      continue;
+    }
+    groups.set(group.key, { key: group.key, label: group.label, threads: [thread] });
+    order.push(group.key);
+  }
+  return order.map((key) => groups.get(key)!);
+}
+
+export function sortActiveThreadsForSidebar<
+  T extends {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly unsettledAt?: string | null | undefined;
+  } & ThreadSortInput,
+>(
+  threads: readonly T[],
+  sortOrder: SidebarThreadSortOrder,
+  preferredIds: readonly string[],
+  getId: (thread: T) => string,
+): T[] {
+  if (sortOrder === "manual") {
+    return orderItemsByPreferredIds({
+      items: sortThreadsForSidebar(threads),
+      preferredIds,
+      getId,
+    });
+  }
+  if (sortOrder === "created_at") {
+    return sortThreads(threads, "created_at");
+  }
+  return sortThreads(threads, "updated_at");
+}
+
 export function getVisibleSidebarThreadIds<TThreadId>(
   renderedProjects: readonly {
     shouldShowThreadPanel?: boolean;

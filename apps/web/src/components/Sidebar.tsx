@@ -34,6 +34,7 @@ import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import type {
   SidebarProjectGroupingMode,
   SidebarProjectSortOrder,
+  SidebarThreadSortOrder,
   TimestampFormat,
 } from "@t3tools/contracts/settings";
 import {
@@ -132,6 +133,7 @@ import {
   buildBulkTitleRegenerationContextMenuItem,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
+  groupSidebarThreadsByProvider,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
@@ -143,10 +145,10 @@ import {
   searchSidebarThreadsByTitle,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
+  sortActiveThreadsForSidebar,
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
-  sortThreadsForSidebar,
   useThreadJumpHintVisibility,
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
@@ -483,6 +485,13 @@ const SIDEBAR_PROJECT_GROUPING_LABELS: Record<SidebarProjectGroupingMode, string
   repository: "Group by repository",
   repository_path: "Group by repository path",
   separate: "Keep separate",
+};
+
+const SIDEBAR_THREAD_SORT_LABELS: Record<SidebarThreadSortOrder, string> = {
+  updated_at: "Last user message",
+  created_at: "Created at",
+  manual: "Manual",
+  provider: "By provider",
 };
 
 function SortableProjectMenuRow(props: {
@@ -1785,6 +1794,8 @@ export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
+  const threadOrder = useUiStateStore((store) => store.threadOrder);
+  const reorderThreads = useUiStateStore((store) => store.reorderThreads);
   const updateClientSettings = useUpdateClientSettings();
   const threads = useThreadShells();
   const router = useRouter();
@@ -1795,6 +1806,7 @@ export default function Sidebar() {
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
+  const sidebarThreadSortOrder = useClientSettings((s) => s.sidebarThreadSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
@@ -2119,7 +2131,7 @@ export default function Sidebar() {
   const {
     pinnedThreads,
     reorderablePinnedKeys,
-    activeThreads,
+    unsortedActiveThreads,
     snoozedThreads,
     settledThreads,
     snoozeNow,
@@ -2196,7 +2208,7 @@ export default function Sidebar() {
           )
           .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
       ),
-      activeThreads: sortThreadsForSidebar(active),
+      unsortedActiveThreads: active,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
@@ -2216,6 +2228,31 @@ export default function Sidebar() {
     snoozeWakeTick,
     threads,
   ]);
+
+  const activeThreads = useMemo(
+    () =>
+      sortActiveThreadsForSidebar(
+        unsortedActiveThreads,
+        sidebarThreadSortOrder,
+        threadOrder,
+        (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      ),
+    [sidebarThreadSortOrder, threadOrder, unsortedActiveThreads],
+  );
+  const isManualThreadSorting = sidebarThreadSortOrder === "manual";
+  const activeThreadProviderGroups = useMemo(() => {
+    if (sidebarThreadSortOrder !== "provider") {
+      return null;
+    }
+    return groupSidebarThreadsByProvider(activeThreads, (thread) => {
+      const instanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+      const entry = providerEntriesByEnvironment.get(thread.environmentId)?.get(instanceId) ?? null;
+      return {
+        key: entry?.instanceId ?? instanceId,
+        label: entry?.displayName ?? thread.session?.providerName ?? "Unknown provider",
+      };
+    });
+  }, [activeThreads, providerEntriesByEnvironment, sidebarThreadSortOrder]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -2837,6 +2874,23 @@ export default function Sidebar() {
       })();
     },
     [orderedPinnedThreads, reorderPinnedThread, reorderablePinnedKeys],
+  );
+  const handleActiveThreadDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (!isManualThreadSorting) {
+        return;
+      }
+      const activeKey = String(event.active.id);
+      const overKey = event.over === null ? null : String(event.over.id);
+      if (overKey === null || activeKey === overKey) {
+        return;
+      }
+      const keys = activeThreads.map((thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      );
+      reorderThreads(keys, activeKey, overKey);
+    },
+    [activeThreads, isManualThreadSorting, reorderThreads],
   );
   // One snooze per thread at a time — same double-dispatch guard as settle.
   const snoozingThreadKeysRef = useRef(new Set<string>());
@@ -3745,6 +3799,32 @@ export default function Sidebar() {
                         ))}
                       </MenuRadioGroup>
                     </MenuGroup>
+                    <MenuGroup>
+                      <MenuGroupLabel>Sort threads</MenuGroupLabel>
+                      <MenuRadioGroup
+                        value={sidebarThreadSortOrder}
+                        onValueChange={(value) =>
+                          updateClientSettings({
+                            sidebarThreadSortOrder: value as SidebarThreadSortOrder,
+                          })
+                        }
+                      >
+                        {(
+                          Object.entries(SIDEBAR_THREAD_SORT_LABELS) as Array<
+                            [SidebarThreadSortOrder, string]
+                          >
+                        ).map(([value, label]) => (
+                          <MenuRadioItem
+                            key={value}
+                            value={value}
+                            closeOnClick={false}
+                            className="min-h-7 py-1 text-sm"
+                          >
+                            {label}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuGroup>
                   </MenuPopup>
                 </Menu>
                 <Tooltip>
@@ -4015,8 +4095,71 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  for (const thread of activeThreads) {
-                    items.push(renderThreadRow(thread, "active"));
+                  if (activeThreadProviderGroups) {
+                    for (const [groupIndex, group] of activeThreadProviderGroups.entries()) {
+                      items.push(
+                        <li
+                          key={`provider-group:${group.key}`}
+                          data-thread-selection-safe
+                          data-testid="sidebar-thread-provider-group"
+                          className="list-none"
+                        >
+                          <div
+                            className={cn(
+                              "mb-1 flex w-full items-center gap-2 px-2.5",
+                              groupIndex === 0 && pinnedThreads.length === 0 ? "mt-0.5" : "mt-3",
+                            )}
+                          >
+                            <span className="text-xs font-medium text-sidebar-muted-foreground">
+                              {group.label}
+                            </span>
+                            <span className="h-px flex-1 bg-sidebar-border/60" />
+                          </div>
+                        </li>,
+                      );
+                      for (const thread of group.threads) {
+                        items.push(renderThreadRow(thread, "active"));
+                      }
+                    }
+                  } else if (isManualThreadSorting) {
+                    items.push(
+                      <li key="active-thread-dnd" className="list-none">
+                        <DndContext
+                          sensors={pinnedDndSensors}
+                          collisionDetection={closestCenter}
+                          modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+                          onDragEnd={handleActiveThreadDragEnd}
+                        >
+                          <SortableContext
+                            items={activeThreads.map((thread) =>
+                              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                            )}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <ul
+                              role="list"
+                              aria-label="Active threads"
+                              className="flex flex-col gap-px"
+                            >
+                              {activeThreads.map((thread) => {
+                                const threadKey = scopedThreadKey(
+                                  scopeThreadRef(thread.environmentId, thread.id),
+                                );
+                                return (
+                                  <SortablePinnedThreadRow key={threadKey} id={threadKey}>
+                                    {(bag) => renderThreadRow(thread, "active", bag)}
+                                  </SortablePinnedThreadRow>
+                                );
+                              })}
+                            </ul>
+                          </SortableContext>
+                        </DndContext>
+                      </li>,
+                    );
+                  } else {
+                    for (const thread of activeThreads) {
+                      items.push(renderThreadRow(thread, "active"));
+                    }
                   }
                   // Snoozed shelf: between the inbox and Settled — out of the
                   // way, never gone. The header always renders while anything

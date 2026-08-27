@@ -8,7 +8,9 @@ import {
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
+  groupSidebarThreadsByProvider,
   resolveAdjacentThreadId,
+  sortActiveThreadsForSidebar,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
@@ -1708,5 +1710,78 @@ describe("sortLogicalProjectsForSidebar", () => {
         (project) => project.projectKey,
       ),
     ).toEqual(["logical-newer", "logical-older"]);
+  });
+});
+
+describe("sortActiveThreadsForSidebar", () => {
+  const thread = (input: {
+    id: string;
+    createdAt: string;
+    updatedAt?: string;
+    latestUserMessageAt?: string;
+  }) => ({
+    id: input.id,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt ?? input.createdAt,
+    ...(input.latestUserMessageAt ? { latestUserMessageAt: input.latestUserMessageAt } : {}),
+  });
+
+  it("honors a stored manual order and keeps new threads at the end of inbox order", () => {
+    const threads = [
+      thread({ id: "a", createdAt: "2026-03-09T08:00:00.000Z" }),
+      thread({ id: "b", createdAt: "2026-03-09T10:00:00.000Z" }),
+      thread({ id: "c", createdAt: "2026-03-09T12:00:00.000Z" }),
+    ];
+
+    expect(
+      sortActiveThreadsForSidebar(threads, "manual", ["a", "c"], (item) => item.id).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["a", "c", "b"]);
+  });
+
+  it("sorts by last user message unless created_at is selected", () => {
+    const threads = [
+      thread({
+        id: "old",
+        createdAt: "2026-03-09T08:00:00.000Z",
+        latestUserMessageAt: "2026-03-09T13:00:00.000Z",
+      }),
+      thread({
+        id: "new",
+        createdAt: "2026-03-09T12:00:00.000Z",
+        latestUserMessageAt: "2026-03-09T12:05:00.000Z",
+      }),
+    ];
+
+    expect(
+      sortActiveThreadsForSidebar(threads, "updated_at", [], (item) => item.id).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["old", "new"]);
+    expect(
+      sortActiveThreadsForSidebar(threads, "created_at", [], (item) => item.id).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["new", "old"]);
+  });
+});
+
+describe("groupSidebarThreadsByProvider", () => {
+  it("keeps first-seen provider order and preserves thread order inside a group", () => {
+    const grouped = groupSidebarThreadsByProvider(
+      [
+        { id: "g1", provider: "grok" },
+        { id: "c1", provider: "claude" },
+        { id: "g2", provider: "grok" },
+      ],
+      (thread) => ({
+        key: thread.provider,
+        label: thread.provider === "grok" ? "Grok" : "Claude",
+      }),
+    );
+
+    expect(grouped.map((group) => group.label)).toEqual(["Grok", "Claude"]);
+    expect(grouped[0]?.threads.map((thread) => thread.id)).toEqual(["g1", "g2"]);
   });
 });

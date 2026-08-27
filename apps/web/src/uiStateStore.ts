@@ -21,6 +21,7 @@ const LEGACY_PERSISTED_STATE_KEYS = [
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
+  threadOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
@@ -34,6 +35,7 @@ export interface PersistedUiState {
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
+  threadOrder: string[];
 }
 
 export interface UiThreadState {
@@ -54,6 +56,7 @@ export interface UiState extends UiProjectState, UiThreadState, UiEndpointState,
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
+  threadOrder: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -132,6 +135,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
   return {
     projectExpandedById,
     projectOrder,
+    threadOrder: sanitizeStringArray(parsed.threadOrder),
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
     threadChangedFilesExpandedById:
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
@@ -211,6 +215,7 @@ export function persistState(state: UiState): void {
       JSON.stringify({
         projectExpandedById,
         projectOrder: state.projectOrder,
+        threadOrder: state.threadOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
@@ -401,6 +406,32 @@ export function reorderProjects(
   };
 }
 
+export function reorderThreads(
+  state: UiState,
+  currentThreadOrder: readonly string[],
+  draggedId: string,
+  targetId: string,
+): UiState {
+  if (draggedId === targetId) {
+    return state;
+  }
+  const fromIndex = currentThreadOrder.indexOf(draggedId);
+  const toIndex = currentThreadOrder.indexOf(targetId);
+  if (fromIndex < 0 || toIndex < 0) {
+    return state;
+  }
+  const threadOrder = [...currentThreadOrder];
+  const [removed] = threadOrder.splice(fromIndex, 1);
+  if (removed === undefined) {
+    return state;
+  }
+  threadOrder.splice(toIndex, 0, removed);
+  return {
+    ...state,
+    threadOrder,
+  };
+}
+
 interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
@@ -412,6 +443,11 @@ interface UiStateStore extends UiState {
     currentProjectOrder: readonly string[],
     draggedProjectIds: readonly string[],
     targetProjectIds: readonly string[],
+  ) => void;
+  reorderThreads: (
+    currentThreadOrder: readonly string[],
+    draggedId: string,
+    targetId: string,
   ) => void;
 }
 
@@ -439,6 +475,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
     ),
+  reorderThreads: (currentThreadOrder, draggedId, targetId) =>
+    set((state) => reorderThreads(state, currentThreadOrder, draggedId, targetId)),
 }));
 
 useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));

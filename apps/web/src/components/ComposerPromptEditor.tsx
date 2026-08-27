@@ -52,6 +52,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 
@@ -1753,62 +1754,87 @@ function ComposerPromptEditorInner({
     });
   }, []);
 
-  const editorColumn = (
-    <div className={prefix ? "relative min-w-0 flex-1" : "relative"}>
-      <PlainTextPlugin
-        contentEditable={
-          <ContentEditable
-            className={cn(
-              // The wrapper owns the appearance preference; keep everything else here.
-              "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
-              className,
-            )}
-            data-testid="composer-editor"
-            aria-placeholder={placeholder}
-            placeholder={<span />}
-            onPaste={onPaste}
-          />
-        }
-        placeholder={
-          terminalContexts.length > 0 ? null : (
-            <div className="pointer-events-none absolute inset-0 leading-relaxed text-placeholder">
-              {placeholder}
-            </div>
-          )
-        }
-        ErrorBoundary={LexicalErrorBoundary}
-      />
-      <OnChangePlugin onChange={handleEditorChange} />
-      <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
-      <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
-      <ComposerHomeEndKeyPlugin />
-      <ComposerInlineTokenArrowPlugin />
-      <ComposerInlineTokenSelectionNormalizePlugin />
-      <ComposerInlineTokenBackspacePlugin />
-      <ComposerInlineTokenPastePlugin />
-      <ComposerChipSelectionPlugin />
-      <HistoryPlugin />
-    </div>
-  );
+  const prefixRef = useRef<HTMLSpanElement>(null);
+  const [firstLineIndentPx, setFirstLineIndentPx] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!prefix) {
+      setFirstLineIndentPx(0);
+      return;
+    }
+    const node = prefixRef.current;
+    if (!node) {
+      return;
+    }
+    const update = () => {
+      const width = node.offsetWidth;
+      setFirstLineIndentPx(width > 0 ? width + 6 : 0);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [prefix]);
+
+  const firstLineIndentStyle =
+    firstLineIndentPx > 0 ? { textIndent: `${firstLineIndentPx}px` } : undefined;
 
   return (
     <ComposerTerminalContextActionsContext value={terminalContextActions}>
-      <div
-        className={cn(
-          "relative",
-          COMPOSER_EDITOR_TYPE_CLASS_NAME,
-          prefix ? "flex items-start gap-[0.4em]" : null,
-        )}
-      >
+      <div className={cn("relative", COMPOSER_EDITOR_TYPE_CLASS_NAME)}>
         {prefix ? (
           <span
-            className={COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME}
+            ref={prefixRef}
+            className={cn(
+              "pointer-events-none absolute left-0 top-0 z-1",
+              COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME,
+            )}
             data-testid="composer-inline-chip-line"
           >
-            {prefix}
+            <span className="pointer-events-auto inline-flex max-w-full items-center">
+              {prefix}
+            </span>
           </span>
         ) : null}
-        {editorColumn}
+        <div className="relative">
+          <PlainTextPlugin
+            contentEditable={
+              <ContentEditable
+                className={cn(
+                  // The wrapper owns the appearance preference; keep everything else here.
+                  "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
+                  className,
+                )}
+                style={firstLineIndentStyle}
+                data-testid="composer-editor"
+                aria-placeholder={placeholder}
+                placeholder={<span />}
+                onPaste={onPaste}
+              />
+            }
+            placeholder={
+              terminalContexts.length > 0 ? null : (
+                <div
+                  className="pointer-events-none absolute inset-0 leading-relaxed text-placeholder"
+                  style={firstLineIndentStyle}
+                >
+                  {placeholder}
+                </div>
+              )
+            }
+            ErrorBoundary={LexicalErrorBoundary}
+          />
+          <OnChangePlugin onChange={handleEditorChange} />
+          <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
+          <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
+          <ComposerHomeEndKeyPlugin />
+          <ComposerInlineTokenArrowPlugin />
+          <ComposerInlineTokenSelectionNormalizePlugin />
+          <ComposerInlineTokenBackspacePlugin />
+          <ComposerInlineTokenPastePlugin />
+          <ComposerChipSelectionPlugin />
+          <HistoryPlugin />
+        </div>
       </div>
     </ComposerTerminalContextActionsContext>
   );

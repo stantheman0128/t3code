@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   enumerateHourStarts,
   formatCodexAccountLine,
+  formatCodexPlanType,
   formatCodexWindowLabel,
   formatDateTimeShort,
   formatHourShort,
@@ -97,6 +98,16 @@ describe("formatCodexWindowLabel", () => {
   });
 });
 
+describe("formatCodexPlanType", () => {
+  it("maps ChatGPT plan slugs to subscription labels", () => {
+    expect(formatCodexPlanType("plus")).toBe("ChatGPT Plus");
+    expect(formatCodexPlanType("pro")).toBe("ChatGPT Pro 20x");
+    expect(formatCodexPlanType("prolite")).toBe("ChatGPT Pro 5x");
+    expect(formatCodexPlanType("go")).toBe("ChatGPT Go");
+    expect(formatCodexPlanType(null)).toBeNull();
+  });
+});
+
 describe("formatCodexAccountLine", () => {
   it("formats Plus 5h and weekly windows", () => {
     const snapshot: CodexAccountUsageSnapshot = {
@@ -111,6 +122,6 @@ describe("formatCodexAccountLine", () => {
       lifetimeTokens: 12_000_000,
       message: null,
     };
-    expect(formatCodexAccountLine(snapshot)).toBe("plus · 5h 42% used · weekly 18% used");
+    expect(formatCodexAccountLine(snapshot)).toBe("ChatGPT Plus · 5h 42% used · weekly 18% used");
   });
 });

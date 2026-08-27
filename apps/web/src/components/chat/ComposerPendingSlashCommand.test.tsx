@@ -5,15 +5,17 @@ import { COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME } from "../composerInlineChi
 import { ComposerPendingSlashCommandChip } from "./ComposerPendingSlashCommand";
 
 describe("ComposerPendingSlashCommandChip", () => {
-  it("renders the command name without extra label leading", () => {
+  it("renders the command as blue inline text on the first line", () => {
     const markup = renderToStaticMarkup(
       <ComposerPendingSlashCommandChip command={{ name: "goal", hint: null }} onRemove={vi.fn()} />,
     );
 
     expect(markup).toContain('data-testid="composer-pending-slash-command"');
-    expect(markup).toContain("goal");
-    expect(markup).toContain("leading-none");
+    expect(markup).toContain("/goal");
+    expect(markup).toContain("text-sky-700");
+    expect(markup).toContain("leading-relaxed");
     expect(markup).not.toContain("mt-[0.35em]");
+    expect(markup).not.toContain("h-[1.41em]");
   });
 
   it("keeps a hinted chip as a tooltip trigger", () => {

@@ -2,7 +2,6 @@ import { X } from "lucide-react";
 
 import {
   COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
   COMPOSER_INLINE_SLASH_CHIP_CLASS_NAME,
 } from "../composerInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -25,15 +24,7 @@ export function ComposerPendingSlashCommandChip({
       className={cn(COMPOSER_INLINE_SLASH_CHIP_CLASS_NAME, "pr-1")}
       data-testid="composer-pending-slash-command"
     >
-      <span
-        aria-hidden
-        className="flex size-[1.17em] shrink-0 items-center justify-center self-center rounded-[0.28em] bg-sky-500/20 font-mono text-[0.78em] leading-none"
-      >
-        /
-      </span>
-      <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "font-medium leading-none")}>
-        {command.name}
-      </span>
+      <span className="font-medium leading-relaxed">{`/${command.name}`}</span>
       <button
         type="button"
         aria-label={`Remove /${command.name}`}

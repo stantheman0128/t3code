@@ -229,6 +229,17 @@ interface GrokSessionContext {
   workflowTrack: GrokWorkflowTrackState;
   readonly toolUpdateGates: Map<string, GrokToolUpdateGate>;
   readonly lastChildToolNameBySubagentId: Map<string, string>;
+  readonly pendingChildToolsBySessionId: Map<
+    string,
+    Array<{
+      readonly toolCall: {
+        readonly title?: string;
+        readonly kind?: string;
+        readonly command?: string;
+      };
+      readonly rawPayload: unknown;
+    }>
+  >;
   readonly scheduledTaskIds: Set<string>;
   stopped: boolean;
 }
@@ -511,6 +522,74 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         { discard: true },
       );
 
+    const emitGrokChildToolProgress = (input: {
+      readonly ctx: GrokSessionContext;
+      readonly turnId: TurnId | undefined;
+      readonly sessionId: string | undefined;
+      readonly toolCall: {
+        readonly title?: string;
+        readonly kind?: string;
+        readonly command?: string;
+      };
+      readonly rawPayload: unknown;
+    }) =>
+      Effect.gen(function* () {
+        const childProgress = grokChildToolProgressEvent(
+          input.ctx.workflowTrack,
+          input.sessionId,
+          input.toolCall,
+        );
+        const childTaskId =
+          typeof childProgress?.payload.taskId === "string"
+            ? childProgress.payload.taskId
+            : undefined;
+        const childToolName =
+          typeof childProgress?.payload.lastToolName === "string"
+            ? childProgress.payload.lastToolName
+            : undefined;
+        if (!childProgress || !childTaskId || !childToolName) {
+          if (input.sessionId) {
+            const pending = input.ctx.pendingChildToolsBySessionId.get(input.sessionId) ?? [];
+            pending.push({ toolCall: input.toolCall, rawPayload: input.rawPayload });
+            input.ctx.pendingChildToolsBySessionId.set(input.sessionId, pending);
+          }
+          return;
+        }
+        if (input.ctx.lastChildToolNameBySubagentId.get(childTaskId) === childToolName) {
+          return;
+        }
+        input.ctx.lastChildToolNameBySubagentId.set(childTaskId, childToolName);
+        yield* emitGrokTaskSpecs({
+          threadId: input.ctx.threadId,
+          turnId: input.turnId,
+          method: "session/update",
+          payload: input.rawPayload,
+          specs: [childProgress],
+        });
+      });
+
+    const flushPendingChildTools = (
+      ctx: GrokSessionContext,
+      turnId: TurnId | undefined,
+      sessionId: string,
+    ) =>
+      Effect.gen(function* () {
+        const pending = ctx.pendingChildToolsBySessionId.get(sessionId);
+        if (!pending || pending.length === 0) {
+          return;
+        }
+        ctx.pendingChildToolsBySessionId.delete(sessionId);
+        for (const item of pending) {
+          yield* emitGrokChildToolProgress({
+            ctx,
+            turnId,
+            sessionId,
+            toolCall: item.toolCall,
+            rawPayload: item.rawPayload,
+          });
+        }
+      });
+
     const emitGrokExtraSpecs = (input: {
       readonly threadId: ThreadId;
       readonly turnId: TurnId | undefined;
@@ -608,6 +687,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             | "AssistantItemCompleted"
             | "PlanUpdated"
             | "ToolCallUpdated"
+            | "ChildSessionToolCallUpdated"
             | "ContentDelta";
         }
       >,
@@ -1288,6 +1368,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   payload: params,
                   specs: applied.events,
                 });
+                if (subagent.childSessionId) {
+                  yield* flushPendingChildTools(ctx, turnId, subagent.childSessionId);
+                }
                 return;
               }
               const hook = parseXAiHookExecution(params);
@@ -1760,6 +1843,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             workflowTrack: emptyGrokWorkflowTrackState(),
             toolUpdateGates: new Map(),
             lastChildToolNameBySubagentId: new Map(),
+            pendingChildToolsBySessionId: new Map(),
             scheduledTaskIds: new Set(),
             stopped: false,
           };
@@ -1774,6 +1858,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 if (
                   event._tag === "PlanUpdated" ||
                   event._tag === "ToolCallUpdated" ||
+                  event._tag === "ChildSessionToolCallUpdated" ||
                   event._tag === "ContentDelta"
                 ) {
                   yield* logNative(ctx.threadId, "session/update", event.rawPayload);
@@ -1788,6 +1873,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   notificationTurnId === undefined ||
                   ctx.interruptedTurnIds.has(notificationTurnId)
                 ) {
+                  if (event._tag === "ChildSessionToolCallUpdated") {
+                    yield* emitGrokChildToolProgress({
+                      ctx,
+                      turnId: ctx.activeTurnId ?? ctx.turns.at(-1)?.id,
+                      sessionId: event.sessionId,
+                      toolCall: event.toolCall,
+                      rawPayload: event.rawPayload,
+                    });
+                  }
                   return;
                 }
                 if (
@@ -1795,6 +1889,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   event._tag === "AssistantItemCompleted" ||
                   event._tag === "PlanUpdated" ||
                   event._tag === "ToolCallUpdated" ||
+                  event._tag === "ChildSessionToolCallUpdated" ||
                   event._tag === "ContentDelta"
                 ) {
                   yield* recordTurnActivity(ctx, notificationTurnId, event);
@@ -1836,36 +1931,25 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                       "session/update",
                     );
                     return;
+                  case "ChildSessionToolCallUpdated": {
+                    yield* emitGrokChildToolProgress({
+                      ctx,
+                      turnId: notificationTurnId,
+                      sessionId: event.sessionId,
+                      toolCall: event.toolCall,
+                      rawPayload: event.rawPayload,
+                    });
+                    return;
+                  }
                   case "ToolCallUpdated": {
                     yield* publishGrokSessionOccupancy(ctx, notificationTurnId, event.rawPayload);
-                    const childProgress = grokChildToolProgressEvent(
-                      ctx.workflowTrack,
-                      grokSessionIdFromRaw(event.rawPayload),
-                      event.toolCall,
-                    );
-                    const childTaskId =
-                      typeof childProgress?.payload.taskId === "string"
-                        ? childProgress.payload.taskId
-                        : undefined;
-                    const childToolName =
-                      typeof childProgress?.payload.lastToolName === "string"
-                        ? childProgress.payload.lastToolName
-                        : undefined;
-                    if (
-                      childProgress &&
-                      childTaskId &&
-                      childToolName &&
-                      ctx.lastChildToolNameBySubagentId.get(childTaskId) !== childToolName
-                    ) {
-                      ctx.lastChildToolNameBySubagentId.set(childTaskId, childToolName);
-                      yield* emitGrokTaskSpecs({
-                        threadId: ctx.threadId,
-                        turnId: notificationTurnId,
-                        method: "session/update",
-                        payload: event.rawPayload,
-                        specs: [childProgress],
-                      });
-                    }
+                    yield* emitGrokChildToolProgress({
+                      ctx,
+                      turnId: notificationTurnId,
+                      sessionId: grokSessionIdFromRaw(event.rawPayload),
+                      toolCall: event.toolCall,
+                      rawPayload: event.rawPayload,
+                    });
                     const nowMs = yield* Clock.currentTimeMillis;
                     if (
                       !shouldEmitGrokToolUpdate({

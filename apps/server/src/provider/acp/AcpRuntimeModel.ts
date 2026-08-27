@@ -104,6 +104,12 @@ export type AcpParsedSessionEvent =
       readonly rawPayload: unknown;
     }
   | {
+      readonly _tag: "ChildSessionToolCallUpdated";
+      readonly sessionId: string;
+      readonly toolCall: AcpToolCallState;
+      readonly rawPayload: unknown;
+    }
+  | {
       readonly _tag: "ContentDelta";
       readonly itemId?: string;
       readonly text: string;

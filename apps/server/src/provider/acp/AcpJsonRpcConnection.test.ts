@@ -163,13 +163,11 @@ describe("AcpSessionRuntime", () => {
       });
       expect(promptResult).toMatchObject({ stopReason: "end_turn" });
 
-      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 4)));
-      expect(notes.map((note) => note._tag)).toEqual([
-        "AssistantItemStarted",
-        "ContentDelta",
-        "ContentDelta",
-        "AssistantItemCompleted",
-      ]);
+      const notes = Array.from(
+        yield* Stream.runCollect(
+          Stream.takeUntil(runtime.getEvents(), (note) => note._tag === "AssistantItemCompleted"),
+        ),
+      );
       expect(
         notes
           .filter((note) => note._tag === "ContentDelta")
@@ -177,6 +175,12 @@ describe("AcpSessionRuntime", () => {
           .join(""),
       ).toBe("root before child root after child");
       expect(notes.some((note) => note._tag === "ToolCallUpdated")).toBe(false);
+      const childTool = notes.find((note) => note._tag === "ChildSessionToolCallUpdated");
+      expect(childTool?._tag).toBe("ChildSessionToolCallUpdated");
+      if (childTool?._tag === "ChildSessionToolCallUpdated") {
+        expect(childTool.sessionId).toBe("mock-child-session-1");
+        expect(childTool.toolCall.title).toBe("Child-only tool");
+      }
     }).pipe(
       Effect.provide(
         AcpSessionRuntime.layer({

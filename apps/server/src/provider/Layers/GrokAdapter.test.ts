@@ -7,6 +7,7 @@ import * as NodeURL from "node:url";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -1696,10 +1697,16 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
       const started = yield* Deferred.make<ProviderRuntimeEvent>();
+      const progressed = yield* Deferred.make<ProviderRuntimeEvent>();
       const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
-        event.type === "task.started" && event.payload.timelineBypass === true
-          ? Deferred.succeed(started, event)
-          : Effect.void,
+        Effect.gen(function* () {
+          if (event.type === "task.started" && event.payload.timelineBypass === true) {
+            yield* Deferred.succeed(started, event).pipe(Effect.ignore);
+          }
+          if (event.type === "task.progress" && event.payload.lastToolName !== undefined) {
+            yield* Deferred.succeed(progressed, event).pipe(Effect.ignore);
+          }
+        }),
       ).pipe(Effect.forkChild);
 
       yield* adapter.startSession({
@@ -1710,12 +1717,19 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
       });
       yield* adapter.sendTurn({ threadId, input: "explore", attachments: [] });
-      const event = yield* Deferred.await(started);
+      const event = yield* Deferred.await(started).pipe(Effect.timeout(Duration.seconds(8)));
       assert.equal(event.type, "task.started");
       if (event.type === "task.started") {
         assert.equal(event.payload.role, "explore");
         assert.equal(event.payload.timelineBypass, true);
         assert.equal(event.payload.taskType, "subagent");
+      }
+      const progressEvent = yield* Deferred.await(progressed).pipe(
+        Effect.timeout(Duration.seconds(8)),
+      );
+      assert.equal(progressEvent.type, "task.progress");
+      if (progressEvent.type === "task.progress") {
+        assert.equal(progressEvent.payload.lastToolName, "Read file");
       }
 
       yield* Fiber.interrupt(eventsFiber);

@@ -1095,6 +1095,18 @@ const program = Effect.gen(function* () {
             parent_session_id: requestedSessionId,
             child_session_id: "child-explore-1",
             subagent_type: "explore",
+            description: "Investigate T3 UI bugs",
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: "child-explore-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "sa-tool-1",
+            title: "read_file",
+            kind: "read",
+            status: "in_progress",
+            rawInput: {},
           },
         });
       }

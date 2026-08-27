@@ -394,12 +394,26 @@ export const make = (
           return;
         }
         const startState = yield* Ref.get(startStateRef);
-        // One runtime projects one root ACP session. Child-session updates need
-        // explicit lineage routing and must never be flattened into this stream.
-        if (
-          startState._tag !== "Started" ||
-          notification.sessionId !== startState.result.sessionId
-        ) {
+        if (startState._tag !== "Started") {
+          return;
+        }
+        // Child ACP sessions (Grok subagents) share this stdio connection.
+        // Flattening their text into the parent stream mixed chats; dropping
+        // them entirely hid the child's tools from the Agents panel. Route
+        // only tool calls, tagged with the child session id.
+        if (notification.sessionId !== startState.result.sessionId) {
+          const parsed = parseSessionUpdateEvent(notification);
+          for (const event of parsed.events) {
+            if (event._tag !== "ToolCallUpdated") {
+              continue;
+            }
+            yield* Queue.offer(eventQueue, {
+              _tag: "ChildSessionToolCallUpdated",
+              sessionId: notification.sessionId,
+              toolCall: event.toolCall,
+              rawPayload: event.rawPayload,
+            });
+          }
           return;
         }
         yield* handleSessionUpdate({

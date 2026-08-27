@@ -72,6 +72,12 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { isUserMessageEditIgnoredTarget, shouldBeginUserMessageEdit } from "./userMessageEdit";
+import {
+  UserMessageEditPanel,
+  UserMessageEditTraits,
+  type UserMessageEditSession,
+} from "./UserMessageEditPanel";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -144,6 +150,8 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onSubmitEditedUserMessage: (messageId: MessageId, text: string) => void;
+  userMessageEditSession: UserMessageEditSession | null;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
@@ -221,6 +229,8 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onSubmitEditedUserMessage: (messageId: MessageId, text: string) => void;
+  userMessageEditSession?: UserMessageEditSession | null;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   activeThreadEnvironmentId: EnvironmentId;
@@ -266,6 +276,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  onSubmitEditedUserMessage,
+  userMessageEditSession = null,
   isRevertingCheckpoint,
   onImageExpand,
   activeThreadEnvironmentId,
@@ -525,6 +537,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onSubmitEditedUserMessage,
+      userMessageEditSession,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -541,6 +555,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onSubmitEditedUserMessage,
+      userMessageEditSession,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -992,6 +1008,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+  const [editing, setEditing] = useState(false);
   const userImages = row.message.attachments ?? [];
   const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
   const terminalContexts = displayedUserMessage.contexts;
@@ -1008,18 +1026,52 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ...displayedUserMessage.elementContexts,
     ...elementContextState.contexts,
   ];
+  const editableText = elementContextState.promptText;
+  const [draft, setDraft] = useState(editableText);
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
+  const canSendEditedMessage =
+    canRevertAgentWork && !activity.isWorking && !activity.isRevertingCheckpoint;
+  const sendDisabledReason = activity.isWorking
+    ? "Interrupt the current turn before editing this message."
+    : canRevertAgentWork
+      ? null
+      : "No checkpoint to rewind from this message.";
+
+  const beginEdit = () => {
+    setDraft(editableText);
+    setEditing(true);
+  };
 
   return (
-    <div className="group flex flex-col items-end gap-1">
+    <div className={cn("group flex flex-col gap-1", editing ? "items-stretch" : "items-end")}>
       <div
-        className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground"
+        className={cn(
+          "relative rounded-2xl p-3 text-message-foreground",
+          editing ? "w-full bg-card ring-1 ring-border/80" : "max-w-[80%] cursor-text bg-message",
+        )}
         data-user-bubble=""
+        data-user-bubble-editing={editing ? "true" : "false"}
+        onClick={(event) => {
+          if (editing) return;
+          if (
+            !shouldBeginUserMessageEdit({
+              ignored: isUserMessageEditIgnoredTarget(event.target),
+              inside: event.currentTarget.contains(event.target as Node),
+              selectionText: window.getSelection()?.toString() ?? "",
+            })
+          ) {
+            return;
+          }
+          beginEdit();
+        }}
       >
         {regularImages.length > 0 && (
-          <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
+          <div
+            className="mb-2 grid max-w-[420px] grid-cols-2 gap-2"
+            data-user-message-edit-ignore=""
+          >
             {regularImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
               <div
                 key={image.id}
@@ -1068,32 +1120,80 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
-        <CollapsibleUserMessageBody
-          text={elementContextState.promptText}
-          terminalContexts={terminalContexts}
-          skills={ctx.skills}
-          markdownCwd={ctx.markdownCwd}
-        />
+        {editing ? (
+          <UserMessageEditPanel
+            draft={draft}
+            onDraftChange={setDraft}
+            onSubmit={() => {
+              if (!canSendEditedMessage) return;
+              ctx.onSubmitEditedUserMessage(row.message.id, draft);
+            }}
+            onCancel={() => setEditing(false)}
+            traits={
+              ctx.userMessageEditSession ? (
+                <UserMessageEditTraits
+                  prompt={draft}
+                  onPromptChange={setDraft}
+                  session={ctx.userMessageEditSession}
+                />
+              ) : null
+            }
+            canSend={canSendEditedMessage}
+            sendDisabledReason={sendDisabledReason}
+            isBusy={activity.isRevertingCheckpoint}
+          />
+        ) : (
+          <CollapsibleUserMessageBody
+            text={elementContextState.promptText}
+            terminalContexts={terminalContexts}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        )}
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
-        <div className="flex shrink-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipPopup>
-          </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
-            )}
+      {editing ? null : (
+        <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+          <div className="flex shrink-0 items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+                {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+              </TooltipTrigger>
+              <TooltipPopup>
+                {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+              </TooltipPopup>
+            </Tooltip>
+            <div className="flex items-center gap-0.5">
+              {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
+              <EditUserMessageButton onEdit={beginEdit} />
+              {displayedUserMessage.copyText && (
+                <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
+  );
+}
+
+function EditUserMessageButton({ onEdit }: { onEdit: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={onEdit}
+            aria-label="Edit message"
+          />
+        }
+      >
+        <SquarePenIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Edit message</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -1799,7 +1899,10 @@ function UserMessagePreviewAnnotationCard(props: {
 }) {
   const ctx = use(TimelineRowCtx);
   return (
-    <div className="mb-2 flex max-w-full items-center overflow-hidden rounded-lg border border-border/70 bg-background/70">
+    <div
+      className="mb-2 flex max-w-full items-center overflow-hidden rounded-lg border border-border/70 bg-background/70"
+      data-user-message-edit-ignore=""
+    >
       {props.image?.previewUrl ? (
         <button
           type="button"

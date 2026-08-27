@@ -51,7 +51,6 @@ interface RightPanelTabsProps {
   widthStorageKey?: string;
   /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
   defaultWidth?: number;
-  open?: boolean;
   onExitComplete?: () => void;
   /**
    * False suppresses the inline open animation (@starting-style) for mounts

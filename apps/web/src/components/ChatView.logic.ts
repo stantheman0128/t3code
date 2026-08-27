@@ -12,7 +12,13 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { composeProviderSlashMessage as composeNamedProviderSlashMessage } from "@t3tools/shared/composerTrigger";
-import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
+import {
+  type ChatImageAttachment,
+  type ChatMessage,
+  type SessionPhase,
+  type Thread,
+  type ThreadShell,
+} from "../types";
 import { type RightPanelSurface } from "../rightPanelStore";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
@@ -446,6 +452,42 @@ export function resolveBackgroundDraftWorkspaceOptions(input: {
     worktreePath: null,
     startFromOrigin: input.envMode === "worktree" && input.startFromOrigin,
   };
+}
+
+export async function composerImagesFromTimelineAttachments(
+  attachments: ReadonlyArray<ChatImageAttachment> | undefined,
+): Promise<ComposerImageAttachment[]> {
+  if (!attachments || attachments.length === 0 || typeof fetch === "undefined") {
+    return [];
+  }
+
+  const images: ComposerImageAttachment[] = [];
+  for (const attachment of attachments) {
+    if (attachment.type !== "image" || !attachment.previewUrl) {
+      continue;
+    }
+    try {
+      const response = await fetch(attachment.previewUrl);
+      if (!response.ok) {
+        continue;
+      }
+      const blob = await response.blob();
+      const mimeType = attachment.mimeType || blob.type || "image/png";
+      const file = new File([blob], attachment.name, { type: mimeType });
+      const previewUrl = attachment.previewUrl.startsWith("blob:")
+        ? URL.createObjectURL(file)
+        : attachment.previewUrl;
+      images.push({
+        ...attachment,
+        mimeType,
+        previewUrl,
+        file,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return images;
 }
 
 export function cloneComposerImageForRetry(

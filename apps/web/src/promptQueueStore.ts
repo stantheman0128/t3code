@@ -20,9 +20,19 @@ export interface PromptQueueEnqueueInput {
   readonly images?: readonly PromptQueueImage[];
 }
 
+export interface PromptQueueUpdateInput {
+  readonly prompt?: string;
+  readonly images?: readonly PromptQueueImage[];
+}
+
 interface PromptQueueState {
   readonly byThreadKey: Readonly<Record<string, readonly PromptQueueItem[]>>;
   enqueue: (threadKey: string, input: PromptQueueEnqueueInput) => PromptQueueItem;
+  update: (
+    threadKey: string,
+    id: string,
+    patch: PromptQueueUpdateInput,
+  ) => PromptQueueItem | undefined;
   remove: (threadKey: string, id: string) => void;
   dequeue: (threadKey: string) => PromptQueueItem | undefined;
 }
@@ -44,6 +54,35 @@ export const usePromptQueueStore = create<PromptQueueState>((set, get) => ({
       },
     }));
     return item;
+  },
+  update: (threadKey, id, patch) => {
+    const current = get().byThreadKey[threadKey] ?? EMPTY_QUEUE;
+    const index = current.findIndex((item) => item.id === id);
+    const existing = current[index];
+    if (!existing) {
+      return undefined;
+    }
+    const nextItem: PromptQueueItem = {
+      id: existing.id,
+      prompt: patch.prompt ?? existing.prompt,
+      images: patch.images ? [...patch.images] : existing.images,
+    };
+    set((state) => {
+      const items = state.byThreadKey[threadKey] ?? EMPTY_QUEUE;
+      const itemIndex = items.findIndex((item) => item.id === id);
+      if (itemIndex < 0) {
+        return state;
+      }
+      const nextItems = [...items];
+      nextItems[itemIndex] = nextItem;
+      return {
+        byThreadKey: {
+          ...state.byThreadKey,
+          [threadKey]: nextItems,
+        },
+      };
+    });
+    return nextItem;
   },
   remove: (threadKey, id) => {
     set((state) => {

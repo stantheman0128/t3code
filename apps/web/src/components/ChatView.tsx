@@ -250,7 +250,9 @@ import {
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
-import { usePromptQueueStore } from "../promptQueueStore";
+import { selectPromptQueue, usePromptQueueStore } from "../promptQueueStore";
+import { ComposerPromptQueue } from "./chat/ComposerPromptQueue";
+import type { UserMessageEditSession } from "./chat/UserMessageEditPanel";
 import {
   appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
@@ -373,6 +375,7 @@ import {
   type LocalDispatchSnapshot,
   PullRequestDialogState,
   cloneComposerImageForRetry,
+  composerImagesFromTimelineAttachments,
   deriveLockedProvider,
   readFileAsDataUrl,
   previewTabIdsForRightPanelReconcile,
@@ -1402,6 +1405,9 @@ function ChatViewContent(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  const promptQueue = usePromptQueueStore(selectPromptQueue(routeThreadKey));
+  const updateQueuedPrompt = usePromptQueueStore((state) => state.update);
+  const removeQueuedPrompt = usePromptQueueStore((state) => state.remove);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
@@ -1623,6 +1629,7 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const suppressQueueDrainRef = useRef(false);
   const feedbackUploadsInFlightRef = useRef(new Set<string>());
   const goalCommandsInFlightRef = useRef(new Set<string>());
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
@@ -5714,31 +5721,33 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (turnCount: number, options?: { skipConfirm?: boolean }): Promise<boolean> => {
       const localApi = readLocalApi();
-      if (!localApi || !activeThread || isRevertingCheckpoint) return;
+      if (!localApi || !activeThread || isRevertingCheckpoint) return false;
 
       if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
           activeThread.id,
           `Reconnect ${activeEnvironmentUnavailableLabel} before reverting checkpoints.`,
         );
-        return;
+        return false;
       }
       if (phase === "running" || isSendBusy || isConnecting) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
-        return;
+        return false;
       }
-      const confirmed = await localApi.dialogs.confirm(
-        [
-          `Revert this thread to checkpoint ${turnCount}?`,
-          "This will discard newer messages and turn diffs in this thread.",
-          "This action cannot be undone.",
-        ].join("\n"),
-        { variant: "destructive" },
-      );
-      if (!confirmed) {
-        return;
+      if (!options?.skipConfirm) {
+        const confirmed = await localApi.dialogs.confirm(
+          [
+            `Revert this thread to checkpoint ${turnCount}?`,
+            "This will discard newer messages and turn diffs in this thread.",
+            "This action cannot be undone.",
+          ].join("\n"),
+          { variant: "destructive" },
+        );
+        if (!confirmed) {
+          return false;
+        }
       }
 
       setIsRevertingCheckpoint(true);
@@ -5756,8 +5765,11 @@ function ChatViewContent(props: ChatViewProps) {
           activeThread.id,
           error instanceof Error ? error.message : "Failed to revert thread state.",
         );
+        setIsRevertingCheckpoint(false);
+        return false;
       }
       setIsRevertingCheckpoint(false);
+      return result._tag !== "Failure";
     },
     [
       activeThread,
@@ -6556,7 +6568,7 @@ function ChatViewContent(props: ChatViewProps) {
   };
 
   useEffect(() => {
-    if (isWorking || sendInFlightRef.current) {
+    if (isWorking || sendInFlightRef.current || suppressQueueDrainRef.current) {
       return;
     }
     if (promptRef.current.trim().length > 0 || composerImagesRef.current.length > 0) {
@@ -7365,6 +7377,10 @@ function ChatViewContent(props: ChatViewProps) {
   revertTurnCountRef.current = revertTurnCountByUserMessageId;
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
   onRevertToTurnCountRef.current = onRevertToTurnCount;
+  const timelineMessagesRef = useRef(timelineMessages);
+  timelineMessagesRef.current = timelineMessages;
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
   const onRevertUserMessage = useCallback((messageId: MessageId) => {
     const targetTurnCount = revertTurnCountRef.current.get(messageId);
     if (typeof targetTurnCount !== "number") {
@@ -7372,6 +7388,94 @@ function ChatViewContent(props: ChatViewProps) {
     }
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
+  const onSubmitEditedUserMessage = useCallback(
+    (messageId: MessageId, text: string) => {
+      const localApi = readLocalApi();
+      const targetTurnCount = revertTurnCountRef.current.get(messageId);
+      if (!localApi || typeof targetTurnCount !== "number") {
+        return;
+      }
+      void (async () => {
+        const confirmed = await localApi.dialogs.confirm(
+          [
+            "Edit this message and rewind later turns?",
+            "Newer messages and diffs in this thread will be discarded, then the edited prompt will be sent.",
+            "This action cannot be undone.",
+          ].join("\n"),
+          { variant: "destructive" },
+        );
+        if (!confirmed) {
+          return;
+        }
+
+        const sourceMessage = timelineMessagesRef.current.find(
+          (message) => message.id === messageId,
+        );
+        const resentImages = await composerImagesFromTimelineAttachments(
+          sourceMessage?.attachments,
+        );
+        suppressQueueDrainRef.current = true;
+        const reverted = await onRevertToTurnCountRef.current(targetTurnCount, {
+          skipConfirm: true,
+        });
+        if (!reverted) {
+          suppressQueueDrainRef.current = false;
+          for (const image of resentImages) {
+            revokeBlobPreviewUrl(image.previewUrl);
+          }
+          return;
+        }
+
+        const parkedPrompt = promptRef.current.trim();
+        const parkedImages = useComposerDraftStore.getState().takeImages(composerDraftTarget);
+        if (parkedPrompt.length > 0 || parkedImages.length > 0) {
+          usePromptQueueStore.getState().enqueue(routeThreadKey, {
+            prompt: parkedPrompt,
+            images: parkedImages,
+          });
+        }
+
+        composerRef.current?.applyQueuedItem({
+          id: `edit-${String(messageId)}`,
+          prompt: text,
+          images: resentImages.map((image) => ({
+            id: image.id,
+            name: image.name,
+            previewUrl: image.previewUrl,
+            mimeType: image.mimeType,
+            sizeBytes: image.sizeBytes,
+            file: image.file,
+          })),
+        });
+        suppressQueueDrainRef.current = false;
+        await onSendRef.current();
+      })();
+    },
+    [composerDraftTarget, routeThreadKey],
+  );
+  const userMessageEditSession = useMemo<UserMessageEditSession | null>(() => {
+    if (!activeThread) {
+      return null;
+    }
+    return {
+      provider: selectedProvider,
+      providers: providerStatuses,
+      ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+      ...(routeKind === "draft" && draftId ? { draftId } : {}),
+      settings,
+      threadModelSelection: activeThread.modelSelection,
+      projectModelSelection: activeProject?.defaultModelSelection,
+    };
+  }, [
+    activeProject?.defaultModelSelection,
+    activeThread,
+    draftId,
+    providerStatuses,
+    routeKind,
+    routeThreadRef,
+    selectedProvider,
+    settings,
+  ]);
 
   // Empty state: no active thread
   if (!activeThread) {
@@ -7664,6 +7768,8 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
+                onSubmitEditedUserMessage={onSubmitEditedUserMessage}
+                userMessageEditSession={userMessageEditSession}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
                 markdownCwd={gitCwd ?? undefined}
@@ -7741,6 +7847,24 @@ function ChatViewContent(props: ChatViewProps) {
                   )}
                   {threadSyncPhase && !activeEnvironmentUnavailable ? (
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
+                  ) : null}
+                  {promptQueue.length > 0 ? (
+                    <div className="relative z-10 mx-auto mb-2 w-full max-w-3xl">
+                      <ComposerPromptQueue
+                        items={promptQueue}
+                        onUpdate={(id, prompt) => {
+                          updateQueuedPrompt(routeThreadKey, id, { prompt });
+                        }}
+                        onRemove={(id) => {
+                          const item = promptQueue.find((entry) => entry.id === id);
+                          for (const image of item?.images ?? []) {
+                            revokeBlobPreviewUrl(image.previewUrl);
+                          }
+                          removeQueuedPrompt(routeThreadKey, id);
+                        }}
+                        onExpandImage={onExpandTimelineImage}
+                      />
+                    </div>
                   ) : null}
                   <div
                     className="relative"

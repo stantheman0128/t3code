@@ -186,6 +186,7 @@ function buildProps() {
     onOpenTurnDiff: () => {},
     revertTurnCountByUserMessageId: new Map(),
     onRevertUserMessage: () => {},
+    onSubmitEditedUserMessage: () => {},
     isRevertingCheckpoint: false,
     onImageExpand: () => {},
     activeThreadEnvironmentId: ACTIVE_THREAD_ENVIRONMENT_ID,
@@ -531,6 +532,9 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-maintain-visible-content-position-restore="true"');
     expect(onAnchorReady).toHaveBeenCalledOnce();
     expect(onAnchorReady).toHaveBeenCalledWith(firstEntry.message.id, 0);
+    expect(markup).toContain("Preview screenshot.png");
+    expect(markup).toContain("Edit message");
+    expect(markup).toContain('data-user-bubble=""');
   });
 
   it("does not reserve end space for a follow-up user message", () => {
@@ -680,7 +684,8 @@ describe("MessagesTimeline", () => {
 
     expect(markup).not.toContain("Show full message");
     expect(markup).toContain('data-user-message-collapsible="false"');
-    expect(markup).toContain("rounded-2xl bg-message p-3");
+    expect(markup).toContain("rounded-2xl p-3");
+    expect(markup).toContain("cursor-text bg-message");
   });
 
   it("preserves arbitrary XML-like tags and comparisons in rendered user messages", async () => {

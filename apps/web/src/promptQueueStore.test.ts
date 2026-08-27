@@ -38,6 +38,20 @@ describe("promptQueueStore", () => {
     });
   });
 
+  it("updates a queued prompt in place", () => {
+    const first = usePromptQueueStore.getState().enqueue("thread-a", { prompt: "alpha" });
+    usePromptQueueStore.getState().enqueue("thread-a", { prompt: "beta" });
+
+    const updated = usePromptQueueStore.getState().update("thread-a", first.id, {
+      prompt: "alpha edited",
+    });
+
+    expect(updated?.prompt).toBe("alpha edited");
+    expect(
+      usePromptQueueStore.getState().byThreadKey["thread-a"]?.map((item) => item.prompt),
+    ).toEqual(["alpha edited", "beta"]);
+  });
+
   it("keeps queues isolated per thread", () => {
     usePromptQueueStore.getState().enqueue("thread-a", { prompt: "alpha" });
     usePromptQueueStore.getState().enqueue("thread-b", { prompt: "beta" });

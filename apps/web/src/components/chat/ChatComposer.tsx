@@ -141,7 +141,7 @@ import {
   usePromptQueueStore,
   type PromptQueueItem,
 } from "../../promptQueueStore";
-import { ComposerPromptQueue } from "./ComposerPromptQueue";
+
 import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -2065,7 +2065,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const promptQueueThreadKey = scopedThreadKey(routeThreadRef);
   const promptQueue = usePromptQueueStore(selectPromptQueue(promptQueueThreadKey));
   const enqueueQueuedPrompt = usePromptQueueStore((state) => state.enqueue);
-  const removeQueuedPrompt = usePromptQueueStore((state) => state.remove);
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
@@ -3033,9 +3032,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         promptRef.current = item.prompt;
         setComposerDraftPrompt(composerDraftTarget, item.prompt);
         if (item.images.length > 0) {
-          addComposerDraftImages(composerDraftTarget, [
-            ...item.images,
-          ] as ComposerImageAttachment[]);
+          const queuedImages = item.images.map((image) => ({
+            type: "image" as const,
+            id: image.id,
+            name: image.name,
+            mimeType: image.mimeType,
+            sizeBytes: image.sizeBytes,
+            previewUrl: image.previewUrl,
+            file: image.file,
+          }));
+          addComposerDraftImages(composerDraftTarget, queuedImages);
+          composerImagesRef.current = [...composerImagesRef.current, ...queuedImages];
         }
         const cursor = clampCollapsedComposerCursor(item.prompt, item.prompt.length);
         setComposerHighlightedItemId(null);
@@ -3584,21 +3591,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   </div>
                 )}
 
-              {promptQueue.length > 0 ? (
-                <ComposerPromptQueue
-                  items={promptQueue}
-                  onRemove={(id) => {
-                    const item = promptQueue.find((entry) => entry.id === id);
-                    for (const image of item?.images ?? []) {
-                      if (image.previewUrl.startsWith("blob:")) {
-                        URL.revokeObjectURL(image.previewUrl);
-                      }
-                    }
-                    removeQueuedPrompt(promptQueueThreadKey, id);
-                  }}
-                  className="mb-2"
-                />
-              ) : null}
               <div className="relative">
                 <div className="relative min-w-0">
                   <ComposerPromptEditor

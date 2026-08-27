@@ -789,11 +789,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
 
-  /* Match the thread sidebar's 200ms motion. The gap changes only while the
-     panel enters or exits; its fixed-width surface slides independently so
-     expensive browser, terminal, and diff contents do not reflow each frame. */
+  /* Animate the layout gap only. Keep the heavy surface in place and clip it
+     so xterm canvases cannot punch through the composer. Translating a GPU
+     layer out of overflow-clip was what made the terminal prompt paint onto
+     the chat. */
   .right-panel-inline-gap {
     width: var(--right-panel-width);
+    overflow: hidden;
+    isolation: isolate;
+    contain: paint;
     transition: width 200ms linear;
   }
 
@@ -801,53 +805,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     transition: none;
   }
 
-  .right-panel-inline-surface {
-    translate: 0;
-    transition: translate 200ms linear;
-  }
-
   .right-panel-inline-gap[data-right-panel-open="false"] {
     width: 0;
-  }
-
-  .right-panel-inline-gap[data-right-panel-open="false"] .right-panel-inline-surface {
-    translate: 100%;
-  }
-
-  .right-panel-inline-maximized-exit[data-right-panel-open="false"] .right-panel-inline-surface {
-    translate: 100%;
   }
 
   @starting-style {
     .right-panel-inline-gap[data-right-panel-open="true"][data-right-panel-animate-enter="true"] {
       width: 0;
     }
-
-    .right-panel-inline-gap[data-right-panel-open="true"][data-right-panel-animate-enter="true"]
-      .right-panel-inline-surface {
-      translate: 100%;
-    }
-
-    /* Maximized panels have no gap; their full-width surface slides in to
-       mirror the maximized-exit translate. */
-    .right-panel-inline-frame[data-preview-panel-maximized="true"][data-right-panel-animate-enter="true"]
-      .right-panel-inline-surface {
-      translate: 100%;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .right-panel-inline-gap,
-    .right-panel-inline-surface {
+    .right-panel-inline-gap {
       transition: none;
     }
   }
 
-  /* Match both sidebars' 200ms motion without resizing the terminal canvas on
-     every frame. The gap reallocates chat height while the fixed-size terminal
-     surface moves independently. */
   .terminal-drawer-inline-gap {
     height: var(--terminal-drawer-height);
+    overflow: hidden;
+    isolation: isolate;
+    contain: paint;
     transition: height 200ms linear;
   }
 
@@ -855,33 +833,18 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     transition: none;
   }
 
-  .terminal-drawer-inline-surface {
-    translate: 0;
-    transition: translate 200ms linear;
-  }
-
   .terminal-drawer-inline-gap[data-terminal-drawer-open="false"] {
     height: 0;
-  }
-
-  .terminal-drawer-inline-gap[data-terminal-drawer-open="false"] .terminal-drawer-inline-surface {
-    translate: 0 100%;
   }
 
   @starting-style {
     .terminal-drawer-inline-gap[data-terminal-drawer-open="true"][data-terminal-drawer-animate-enter="true"] {
       height: 0;
     }
-
-    .terminal-drawer-inline-gap[data-terminal-drawer-open="true"][data-terminal-drawer-animate-enter="true"]
-      .terminal-drawer-inline-surface {
-      translate: 0 100%;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .terminal-drawer-inline-gap,
-    .terminal-drawer-inline-surface {
+    .terminal-drawer-inline-gap {
       transition: none;
     }
   }
@@ -2632,9 +2595,7 @@ code {
 html:not([data-interface-animations="true"])
   :is(
     .right-panel-inline-gap,
-    .right-panel-inline-surface,
     .terminal-drawer-inline-gap,
-    .terminal-drawer-inline-surface,
     [data-slot="sidebar-gap"],
     [data-slot="sidebar-container"],
     [data-workspace-page-header],

@@ -94,6 +94,13 @@ export function PreviewPanelShell(props: {
     edge: "left",
   });
 
+  useEffect(() => {
+    if (!isInline || !maximized || open) {
+      return;
+    }
+    props.onExitComplete?.();
+  }, [isInline, maximized, open, props.onExitComplete]);
+
   const panelContents = (
     <>
       {isInline && !maximized ? (
@@ -115,8 +122,8 @@ export function PreviewPanelShell(props: {
           maximized
             ? open
               ? "flex-1"
-              : "right-panel-inline-maximized-exit absolute inset-0 z-40"
-            : "right-panel-inline-gap shrink-0",
+              : "hidden"
+            : "right-panel-inline-gap isolate shrink-0 overflow-hidden",
         )}
         style={maximized ? undefined : ({ "--right-panel-width": `${width}px` } as CSSProperties)}
         data-preview-panel-mode={props.mode}
@@ -142,17 +149,6 @@ export function PreviewPanelShell(props: {
             "right-panel-inline-body right-panel-inline-surface flex h-full min-h-0 min-w-0 flex-col border-l border-border bg-background",
             maximized ? "relative w-full" : "absolute inset-y-0 right-0 w-(--right-panel-width)",
           )}
-          onTransitionEnd={(event) => {
-            if (
-              open ||
-              !maximized ||
-              event.target !== event.currentTarget ||
-              event.propertyName !== "translate"
-            ) {
-              return;
-            }
-            props.onExitComplete?.();
-          }}
         >
           {panelContents}
         </div>

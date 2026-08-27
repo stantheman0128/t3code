@@ -67,6 +67,7 @@ describe("PreviewPanelShell", () => {
     const html = renderPreviewPanelShell("inline");
 
     expect(html).toContain("right-panel-inline-gap");
+    expect(html).toContain("overflow-hidden");
     expect(html).toContain("right-panel-inline-surface");
     expect(html).toContain("--right-panel-width:540px");
     expect(html).toContain('data-preview-panel-mode="inline"');
@@ -97,12 +98,11 @@ describe("PreviewPanelShell", () => {
     expect(maximizedHtml).not.toContain("right-panel-inline-maximized-exit");
   });
 
-  it("keeps a maximized panel full-width while its surface exits", () => {
+  it("hides a maximized panel on close instead of overlaying the chat", () => {
     const html = renderPreviewPanelShell("inline", { open: false, maximized: true });
 
-    expect(html).toContain("right-panel-inline-maximized-exit");
-    expect(html).toContain("z-40");
-    expect(html).not.toContain("z-10");
+    expect(html).toContain("hidden");
+    expect(html).not.toContain("z-40");
     expect(html).toContain("right-panel-inline-surface");
     expect(html).toContain('data-preview-panel-maximized="true"');
     expect(html).toContain('data-right-panel-open="false"');

@@ -35,7 +35,6 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { Collapsible, CollapsibleTrigger } from "~/components/ui/collapsible";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
 
 const EMPTY_STOPPING_AGENT_IDS: ReadonlySet<string> = new Set();
@@ -217,7 +216,9 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
         </p>
       ) : null}
       {preview ? (
-        <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">{preview}</p>
+        <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">
+          {preview}
+        </p>
       ) : null}
       {live && agent.lastToolName ? (
         <p className="text-[.7rem] text-foreground/80">
@@ -225,14 +226,16 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
         </p>
       ) : null}
       {steps.length > 0 ? (
-        <ol className="list-decimal space-y-0.5 pl-4 text-[.7rem] leading-5 text-foreground/80">
-          {steps.slice(-16).map((step, index) => (
+        <ol className="max-h-56 list-decimal space-y-0.5 overflow-y-auto pl-4 text-[.7rem] leading-5 text-foreground/80">
+          {steps.map((step, index) => (
             <li key={`${index}-${step}`}>{step}</li>
           ))}
         </ol>
       ) : toolUses > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">
-          {live ? `${toolUses} tools so far` : `${toolUses} tools`}
+          {live
+            ? `${toolUses} tools so far. Step names were not recorded for this run.`
+            : `${toolUses} tools. Step names were not recorded for this run.`}
         </p>
       ) : null}
       {agent.outputFile ? (
@@ -754,7 +757,7 @@ export function AgentsPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <ScrollArea className="h-0 min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="flex flex-col gap-2 p-2">
           {model.workflows.map((group) => (
             <WorkflowSection
@@ -840,7 +843,7 @@ export function AgentsPanel({
             </section>
           ) : null}
         </div>
-      </ScrollArea>
+      </div>
       <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
         <span className="flex items-center gap-2">
           {model.runningCount + model.waitingCount > 0 ? (

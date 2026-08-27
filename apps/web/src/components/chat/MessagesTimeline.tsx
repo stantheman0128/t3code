@@ -795,133 +795,135 @@ function TimelineMinimap({
   return (
     <div
       className={cn(
-        "group/minimap pointer-events-none absolute top-8 left-0 z-40 hidden w-18 overflow-hidden [@media(pointer:fine)]:block",
+        "group/minimap pointer-events-none absolute top-8 left-0 z-40 hidden [@media(pointer:fine)]:block",
         hasPersistentGutter
           ? "opacity-100"
           : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
-      style={{ bottom: `max(2rem, ${bottomInset}px)` }}
+      style={{
+        bottom: `max(2rem, ${bottomInset}px)`,
+        width: resolveTimelineMinimapInteractiveWidth(hitStripWidth, activeItem !== null),
+      }}
     >
-      <div className="relative h-full w-full select-none">
-        <button
-          aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
-          className={cn(
-            "absolute top-1/2 left-3 -translate-y-1/2 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
-            // The strip is width-capped to the side gutter so it never overlays
-            // the centered content column; with no usable gutter it goes inert.
-            hitStripWidth > 0 ? "pointer-events-auto" : "pointer-events-none",
-          )}
-          onBlur={() => setActiveIndex(null)}
-          onClick={(event) => {
-            if (timelineMinimapEventTargetsPreview(event.target)) {
-              return;
-            }
-            const nextIndex = resolveActiveIndexFromPointer(event);
-            const nextItem = nextIndex === null ? null : (items[nextIndex] ?? null);
-            if (nextItem) {
-              onSelect(nextItem);
-            }
-            event.currentTarget.blur();
-          }}
-          onFocus={() => setActiveIndex((current) => current ?? 0)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              moveActiveIndex(1);
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              moveActiveIndex(-1);
-            } else if (event.key === "Home") {
-              event.preventDefault();
-              setActiveIndex(0);
-            } else if (event.key === "End") {
-              event.preventDefault();
-              setActiveIndex(items.length - 1);
-            } else if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              if (activeItem) {
-                onSelect(activeItem);
+      <div className="relative h-full w-full select-none" onMouseLeave={() => setActiveIndex(null)}>
+        <div className="absolute inset-y-0 left-0 w-10 overflow-hidden">
+          <button
+            aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
+            className={cn(
+              "absolute top-1/2 left-3 -translate-y-1/2 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
+              hitStripWidth > 0 ? "pointer-events-auto" : "pointer-events-none",
+            )}
+            onBlur={() => setActiveIndex(null)}
+            onClick={(event) => {
+              if (timelineMinimapEventTargetsPreview(event.target)) {
+                return;
               }
-            }
-          }}
-          onMouseLeave={() => setActiveIndex(null)}
-          onMouseMove={updateActiveIndexFromPointer}
-          onMouseDown={(event) => {
-            if (timelineMinimapEventTargetsPreview(event.target)) {
-              return;
-            }
-            event.preventDefault();
-          }}
-          style={{
-            height: resolveTimelineMinimapHeightStyle(items.length),
-            width: resolveTimelineMinimapInteractiveWidth(hitStripWidth, activeItem !== null),
-          }}
-          type="button"
-        >
-          <div className="absolute top-0 left-3 h-full w-px bg-border/15" />
-          {items.map((item, index) => {
-            const top = `${resolveTimelineMinimapTopPercent(index, items.length)}%`;
-            const activeDistance =
-              resolvedActiveIndex === null ? null : Math.abs(index - resolvedActiveIndex);
-            return (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "pointer-events-none absolute left-0 h-0.5 -translate-y-1/2 rounded-full bg-muted-foreground/35 transition-[background-color,width] duration-150 data-[in-view=true]:bg-foreground/90",
-                  activeDistance === 0
-                    ? "w-6 bg-muted-foreground/75"
-                    : activeDistance === 1
-                      ? "w-4"
-                      : activeDistance === 2
-                        ? "w-2.5"
-                        : "w-2",
-                )}
-                data-in-view="false"
-                data-minimap-strip
-                key={item.id}
-                ref={(node) => {
-                  if (node) {
-                    stripMap.set(item.id, node);
-                  } else {
-                    stripMap.delete(item.id);
-                  }
-                }}
-                style={{ top }}
-              />
-            );
-          })}
-          {activeItem ? (
-            <span
-              className="pointer-events-auto absolute left-8 w-80 cursor-text select-text"
-              data-minimap-preview
-              onMouseMove={(event) => event.stopPropagation()}
-              style={{
-                top: `${activeTopPercent}%`,
-                transform: `translateY(${activeTooltipTranslate})`,
-              }}
-            >
-              <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
-                <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
-                  {activeItem.userText ?? "User message"}
-                </span>
-                {activeItem.assistantText ? (
-                  <span
-                    className="mt-1 max-h-[3.75rem] overflow-hidden text-muted-foreground text-sm leading-5"
-                    style={{
-                      display: "-webkit-box",
-                      WebkitBoxOrient: "vertical",
-                      WebkitLineClamp: 3,
-                    }}
-                  >
-                    {activeItem.assistantText}
-                  </span>
-                ) : null}
+              const nextIndex = resolveActiveIndexFromPointer(event);
+              const nextItem = nextIndex === null ? null : (items[nextIndex] ?? null);
+              if (nextItem) {
+                onSelect(nextItem);
+              }
+              event.currentTarget.blur();
+            }}
+            onFocus={() => setActiveIndex((current) => current ?? 0)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                moveActiveIndex(1);
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                moveActiveIndex(-1);
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                setActiveIndex(0);
+              } else if (event.key === "End") {
+                event.preventDefault();
+                setActiveIndex(items.length - 1);
+              } else if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                if (activeItem) {
+                  onSelect(activeItem);
+                }
+              }
+            }}
+            onMouseMove={updateActiveIndexFromPointer}
+            onMouseDown={(event) => {
+              if (timelineMinimapEventTargetsPreview(event.target)) {
+                return;
+              }
+              event.preventDefault();
+            }}
+            style={{
+              height: resolveTimelineMinimapHeightStyle(items.length),
+              width: hitStripWidth,
+            }}
+            type="button"
+          >
+            <div className="absolute top-0 left-3 h-full w-px bg-border/15" />
+            {items.map((item, index) => {
+              const top = `${resolveTimelineMinimapTopPercent(index, items.length)}%`;
+              const activeDistance =
+                resolvedActiveIndex === null ? null : Math.abs(index - resolvedActiveIndex);
+              return (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "pointer-events-none absolute left-0 h-0.5 -translate-y-1/2 rounded-full bg-muted-foreground/35 transition-[background-color,width] duration-150 data-[in-view=true]:bg-foreground/90",
+                    activeDistance === 0
+                      ? "w-6 bg-muted-foreground/75"
+                      : activeDistance === 1
+                        ? "w-4"
+                        : activeDistance === 2
+                          ? "w-2.5"
+                          : "w-2",
+                  )}
+                  data-in-view="false"
+                  data-minimap-strip
+                  key={item.id}
+                  ref={(node) => {
+                    if (node) {
+                      stripMap.set(item.id, node);
+                    } else {
+                      stripMap.delete(item.id);
+                    }
+                  }}
+                  style={{ top }}
+                />
+              );
+            })}
+          </button>
+        </div>
+        {activeItem ? (
+          <span
+            className="pointer-events-auto absolute left-8 w-80 cursor-text select-text"
+            data-minimap-preview
+            onMouseMove={(event) => event.stopPropagation()}
+            style={{
+              top: `${activeTopPercent}%`,
+              transform: `translateY(${activeTooltipTranslate})`,
+            }}
+          >
+            <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
+              <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
+                {activeItem.userText ?? "User message"}
               </span>
+              {activeItem.assistantText ? (
+                <span
+                  className="mt-1 max-h-[3.75rem] overflow-hidden text-muted-foreground text-sm leading-5"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: 3,
+                  }}
+                >
+                  {activeItem.assistantText}
+                </span>
+              ) : null}
             </span>
-          ) : null}
-        </button>
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -1630,43 +1632,55 @@ function WorkGroupToggleTimelineRow({
       ? "log entry"
       : "log entries";
   const showHiddenFailure = row.hasFailure && !row.expanded;
+  const processLabels = row.expanded ? [] : (row.processLabels ?? []);
 
   return (
-    <button
-      type="button"
-      className="flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-expanded={row.expanded}
-      onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
-    >
-      <span
-        className={cn(
-          "flex size-6 shrink-0 items-center justify-center",
-          showHiddenFailure ? "text-destructive" : "text-icon-muted",
-        )}
-        role={showHiddenFailure ? "img" : undefined}
-        aria-label={showHiddenFailure ? "Hidden work includes a failure" : undefined}
+    <div className="flex flex-col gap-0.5">
+      <button
+        type="button"
+        className="flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        aria-expanded={row.expanded}
+        onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
       >
-        {showHiddenFailure ? (
-          <WorkEntryIconSvg name="x" className="size-4 shrink-0 stroke-[1.8] opacity-70" />
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center",
+            showHiddenFailure ? "text-destructive" : "text-icon-muted",
+          )}
+          role={showHiddenFailure ? "img" : undefined}
+          aria-label={showHiddenFailure ? "Hidden work includes a failure" : undefined}
+        >
+          {showHiddenFailure ? (
+            <WorkEntryIconSvg name="x" className="size-4 shrink-0 stroke-[1.8] opacity-70" />
+          ) : (
+            <ChevronDownIcon
+              className={cn(
+                "size-4 shrink-0 opacity-70 transition-transform duration-200",
+                row.expanded && "rotate-180",
+              )}
+            />
+          )}
+        </span>
+        {row.expanded ? (
+          <span className="font-medium text-foreground">
+            Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
+          </span>
         ) : (
-          <ChevronDownIcon
-            className={cn(
-              "size-4 shrink-0 opacity-70 transition-transform duration-200",
-              row.expanded && "rotate-180",
-            )}
-          />
+          <span className="font-medium text-foreground">
+            +{row.hiddenCount} previous {labelNoun}
+          </span>
         )}
-      </span>
-      {row.expanded ? (
-        <span className="font-medium text-foreground">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
-        </span>
-      ) : (
-        <span className="font-medium text-foreground">
-          +{row.hiddenCount} previous {labelNoun}
-        </span>
-      )}
-    </button>
+      </button>
+      {processLabels.length > 0 ? (
+        <ol className="ml-7 list-none space-y-px pb-0.5 text-[12px] leading-5 text-muted-foreground">
+          {processLabels.map((label, index) => (
+            <li key={`${index}-${label}`} className="min-w-0 truncate">
+              {label}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
   );
 }
 

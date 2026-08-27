@@ -245,6 +245,28 @@ describe("foldSubagentActivities", () => {
     expect(agents[0]!.title).toBe("Good");
   });
 
+  it("folds agent-attributed tool rows into the procedure list", () => {
+    const agents = fold([
+      activity("task.started", { taskId: "task-tools", title: "Explore", taskType: "local_agent" }),
+      activity("tool.completed", {
+        agentId: "task-tools",
+        toolName: "Read",
+        title: "Read file",
+      }),
+      activity("tool.completed", {
+        agentId: "task-tools",
+        toolName: "Grep",
+      }),
+      activity("task.completed", {
+        taskId: "task-tools",
+        status: "completed",
+        typedUsage: { totalTokens: 100, toolUses: 2 },
+      }),
+    ]);
+    expect(agents[0]!.recentActivity.map((entry) => entry.summary)).toEqual(["▸ Read", "▸ Grep"]);
+    expect(agents[0]!.lastToolName).toBe("Grep");
+  });
+
   it("bounds repeated strings at 180 chars and the activity ring at 24 deduped entries", () => {
     const long = "x".repeat(500);
     const rows = [activity("task.started", { taskId: "task-8", taskType: "local_agent" })];

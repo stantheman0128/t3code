@@ -129,7 +129,7 @@ export function compareAgentsByLiveThenIndex(a: RuntimeSubagent, b: RuntimeSubag
   );
 }
 
-const RECENT_ACTIVITY_LIMIT = 24;
+const RECENT_ACTIVITY_LIMIT = 80;
 const SUMMARY_CHAR_LIMIT = 180;
 const ROSTER_LIMIT = 100;
 
@@ -772,14 +772,17 @@ export function foldSubagentActivities(
         agent.updatedAt = at;
         break;
       }
-      case "tool.progress": {
-        // Agent-owned heartbeat: "what it's doing right now".
-        const taskId = asString(payload.taskId);
-        if (!taskId) break;
-        const agent = agents.get(taskId);
+      case "tool.progress":
+      case "tool.started":
+      case "tool.updated":
+      case "tool.completed": {
+        const agentId = asString(payload.agentId) ?? asString(payload.taskId);
+        if (!agentId) break;
+        const agent = agents.get(agentId);
         if (!agent) break;
-        const toolName = asString(payload.toolName);
-        if (toolName) {
+        const toolName =
+          asString(payload.toolName) ?? asString(payload.title) ?? asString(payload.summary);
+        if (toolName && toolName !== activity.kind) {
           agent.lastToolName = toolName;
           agent.recentActivity = appendActivity(agent.recentActivity, at, `▸ ${toolName}`);
         }

@@ -186,7 +186,7 @@ function TimelineLoadEarlierHeader({
 }) {
   return (
     <div className={fade ? "pt-10 sm:pt-12" : "pt-3 sm:pt-4"}>
-      <div className="mx-auto w-full max-w-3xl pb-2">
+      <div className="mx-auto w-full max-w-[var(--provider-chrome-column,48rem)] pb-2">
         <button
           type="button"
           onClick={onLoadEarlier}
@@ -579,7 +579,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // from TimelineRowCtx, which propagates through LegendList's memo.
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
-      <div className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip" data-timeline-root="true">
+      <div
+        className="mx-auto w-full min-w-0 max-w-[var(--provider-chrome-column,48rem)] overflow-x-clip"
+        data-timeline-root="true"
+      >
         <TimelineRowContent row={item} />
       </div>
     ),
@@ -1049,7 +1052,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div
         className={cn(
           "relative rounded-2xl p-3 text-message-foreground",
-          editing ? "w-full bg-card ring-1 ring-border/80" : "max-w-[80%] cursor-text bg-message",
+          editing
+            ? "w-full bg-card ring-1 ring-border/80"
+            : "max-w-[var(--provider-chrome-user-max,80%)] cursor-text bg-message",
         )}
         data-user-bubble=""
         data-user-bubble-editing={editing ? "true" : "false"}
@@ -1152,7 +1157,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
       </div>
       {editing ? null : (
-        <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex w-full max-w-[var(--provider-chrome-user-max,80%)] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
           <div className="flex shrink-0 items-center gap-2">
             <Tooltip>
               <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>

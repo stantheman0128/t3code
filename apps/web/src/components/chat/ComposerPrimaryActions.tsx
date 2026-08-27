@@ -233,6 +233,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
       )}
+      data-chat-send=""
       {...pointerFocusProps}
       disabled={
         isSendBusy ||
@@ -289,6 +290,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
       )}
+      data-chat-send=""
       {...pointerFocusProps}
       disabled={
         isSendBusy ||

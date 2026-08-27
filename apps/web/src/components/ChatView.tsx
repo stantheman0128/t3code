@@ -7849,7 +7849,7 @@ function ChatViewContent(props: ChatViewProps) {
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
                   {promptQueue.length > 0 ? (
-                    <div className="relative z-10 mx-auto mb-2 w-full max-w-3xl">
+                    <div className="relative z-10 mx-auto mb-2 w-full max-w-[var(--provider-chrome-column,48rem)]">
                       <ComposerPromptQueue
                         items={promptQueue}
                         onUpdate={(id, prompt) => {
@@ -7876,12 +7876,12 @@ function ChatViewContent(props: ChatViewProps) {
                   >
                     <div
                       className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
+                        "chat-composer-glass-shell relative mx-auto w-full max-w-[var(--provider-chrome-column,48rem)]",
                         externalComposerDrawerAttached && "chat-composer-glass-shell-attached",
                         showComposerContextStrip && "chat-composer-glass-shell-with-context",
                       )}
                     >
-                      <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                      <div className="chat-composer-glass-host relative z-10 w-full rounded-[var(--provider-chrome-radius,22px)]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}

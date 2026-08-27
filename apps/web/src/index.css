@@ -2626,12 +2626,15 @@ html:not([data-interface-animations="true"])
   }
 }
 
-/* Opt-in provider chrome. Tokens from apps on this machine (OpenCode
-   desktop asar oc-2, Cursor glass workbench, Grok Bot asar) plus published
-   Claude layout notes. Their CSS is not copied. */
+/* Opt-in provider chrome. This restyles the chat surface (column, composer
+   shell, bubbles, type, density). Sidebar, title bar, terminal, and panels
+   stay T3. Tokens from grok.com composer layout, OpenCode desktop oc-2 CSS,
+   Cursor workbench, and Claude/Codex published layout. Their CSS is not copied. */
 [data-provider-chrome] {
   --provider-chrome-on-accent: #fff;
   --provider-chrome-radius: 1.25rem;
+  --provider-chrome-column: 48rem;
+  --provider-chrome-user-max: 80%;
   --primary: var(--provider-chrome-accent);
   --primary-foreground: var(--provider-chrome-on-accent);
   --message-action: var(--provider-chrome-accent);
@@ -2665,14 +2668,20 @@ html:not([data-interface-animations="true"])
   );
 }
 
-/* Claude: cream page, serif column, flat composer. */
+/* Claude: cream reading page, serif column, flat white composer, no glass. */
 [data-provider-chrome="claudeAgent"] {
   --provider-chrome-accent: #c96442;
   --provider-chrome-radius: 1.375rem;
+  --provider-chrome-column: 42rem;
+  --provider-chrome-user-max: 100%;
   --glass-blur: 0px;
   --glass-opacity: 100%;
   background-color: #f0ece0;
   font-feature-settings: "ss01";
+}
+
+[data-provider-chrome="claudeAgent"] [data-chat-header] {
+  box-shadow: none;
 }
 
 [data-provider-chrome="claudeAgent"] .chat-markdown {
@@ -2685,7 +2694,12 @@ html:not([data-interface-animations="true"])
 [data-provider-chrome="claudeAgent"] [data-user-bubble] {
   background-color: #e5e0d6;
   color: #1a1a18;
+  border-radius: 1.25rem;
   box-shadow: none;
+}
+
+[data-provider-chrome="claudeAgent"] .chat-composer-glass-shell {
+  --chat-composer-glass-surface: #fff;
 }
 
 [data-provider-chrome="claudeAgent"] .chat-composer-glass-shell::before {
@@ -2697,6 +2711,7 @@ html:not([data-interface-animations="true"])
 [data-provider-chrome="codex"] {
   --provider-chrome-accent: #10a37f;
   --provider-chrome-radius: 1.75rem;
+  --provider-chrome-user-max: 72%;
   background-color: color-mix(in srgb, #10a37f 6%, var(--background));
 }
 
@@ -2709,6 +2724,7 @@ html:not([data-interface-animations="true"])
 
 [data-provider-chrome="codex"] [data-user-bubble] {
   border-radius: 1.25rem;
+  padding: 0.875rem 1.125rem;
 }
 
 [data-provider-chrome="codex"] [data-assistant-thinking] {
@@ -2716,14 +2732,29 @@ html:not([data-interface-animations="true"])
   font-size: 0.8125rem;
 }
 
-/* Grok: tight type and black send. Stay on the user's light/dark canvas.
-   Do not paint the thread #0a0a0a in light theme; body text still uses
-   --foreground and goes invisible on a forced night page. */
+/* Grok.com: paper pill composer, inverted circular send, tight system sans.
+   Canvas stays on the user's theme so light-mode text remains readable. */
 [data-provider-chrome="grok"] {
-  --provider-chrome-accent: #171717;
+  --provider-chrome-accent: #0d0d0d;
   --provider-chrome-on-accent: #fafafa;
-  --provider-chrome-radius: 0.75rem;
-  --glass-blur: 18px;
+  --provider-chrome-radius: 2rem;
+  --provider-chrome-user-max: 68%;
+  --glass-blur: 0px;
+  --glass-opacity: 100%;
+}
+
+[data-provider-chrome="grok"] [data-chat-header] {
+  box-shadow: none;
+}
+
+[data-provider-chrome="grok"] .chat-composer-glass-shell {
+  --chat-composer-glass-surface: #f8f8f8;
+  --chat-composer-outline: #e5e5e5;
+}
+
+[data-provider-chrome="grok"] .chat-composer-glass-shell::before {
+  background: #f8f8f8;
+  box-shadow: inset 0 0 0 1px #e5e5e5;
 }
 
 [data-provider-chrome="grok"] .chat-markdown {
@@ -2734,17 +2765,26 @@ html:not([data-interface-animations="true"])
 }
 
 [data-provider-chrome="grok"] [data-user-bubble] {
-  background-color: color-mix(in srgb, #171717 8%, var(--background));
-  color: var(--foreground);
-  border-radius: 0.75rem;
+  background-color: #f0f0f0;
+  color: #0d0d0d;
+  border-radius: 1.25rem;
+  padding: 0.625rem 0.875rem;
 }
 
-/* Cursor: orange action, compact editor density, heavy glass. */
+[data-provider-chrome="grok"] [data-chat-send] {
+  box-shadow: none;
+}
+
+/* Cursor: dense editor column, 8px radii, heavy glass, orange action. */
 [data-provider-chrome="cursor"] {
   --provider-chrome-accent: #f54e00;
   --provider-chrome-radius: 0.5rem;
+  --provider-chrome-user-max: 76%;
   --glass-blur: 20px;
-  background-color: color-mix(in srgb, #f54e00 5%, var(--background));
+}
+
+[data-provider-chrome="cursor"] [data-chat-composer-form] {
+  font-size: 13.5px;
 }
 
 [data-provider-chrome="cursor"] .chat-markdown {
@@ -2754,13 +2794,15 @@ html:not([data-interface-animations="true"])
 
 [data-provider-chrome="cursor"] [data-user-bubble] {
   border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
 }
 
-/* OpenCode desktop oc-2: yuzu brand, 14px UI, 8px radii. */
+/* OpenCode desktop oc-2: yuzu, 14px, 8px radii, flat paper. */
 [data-provider-chrome="opencode"] {
   --provider-chrome-accent: #5c5e12;
   --provider-chrome-on-accent: #171717;
   --provider-chrome-radius: 0.5rem;
+  --provider-chrome-column: 44rem;
   --glass-blur: 4px;
   --glass-opacity: 92%;
   background-color: #f8f8f8;
@@ -2798,6 +2840,10 @@ html:not([data-interface-animations="true"])
     color: #eee;
   }
 
+  [data-provider-chrome="claudeAgent"] .chat-composer-glass-shell {
+    --chat-composer-glass-surface: #1f1e1b;
+  }
+
   [data-provider-chrome="claudeAgent"] .chat-composer-glass-shell::before {
     background: #1f1e1b;
     box-shadow: inset 0 0 0 1px #3d3a35;
@@ -2808,9 +2854,19 @@ html:not([data-interface-animations="true"])
     --provider-chrome-on-accent: #171717;
   }
 
+  [data-provider-chrome="grok"] .chat-composer-glass-shell {
+    --chat-composer-glass-surface: #212121;
+    --chat-composer-outline: #2a2a2a;
+  }
+
+  [data-provider-chrome="grok"] .chat-composer-glass-shell::before {
+    background: #212121;
+    box-shadow: inset 0 0 0 1px #2a2a2a;
+  }
+
   [data-provider-chrome="grok"] [data-user-bubble] {
-    background-color: color-mix(in srgb, #f4f4f5 10%, var(--background));
-    color: var(--foreground);
+    background-color: #2a2a2a;
+    color: #f4f4f5;
   }
 
   [data-provider-chrome="opencode"] {

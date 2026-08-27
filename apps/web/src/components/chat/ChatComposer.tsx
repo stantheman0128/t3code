@@ -3176,7 +3176,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onDragLeaveCapture={onComposerMentionDragLeaveCapture}
       onDropCapture={composerMentionDragHandlers.onDrop}
       className={cn(
-        "mx-auto w-full min-w-0 max-w-3xl transition-[padding-top] duration-200 ease-linear motion-reduce:transition-none",
+        "mx-auto w-full min-w-0 max-w-[var(--provider-chrome-column,48rem)] transition-[padding-top] duration-200 ease-linear motion-reduce:transition-none",
         hasShoulderTab && "pt-7",
       )}
       data-chat-composer-form="true"

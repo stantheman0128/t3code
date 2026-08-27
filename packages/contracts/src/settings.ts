@@ -232,6 +232,7 @@ export const ClientSettingsSchema = Schema.Struct({
    * every surface snaps unless the user asks for the animation.
    */
   interfaceAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  showProviderUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Legacy plan mode. The composer's Build/Plan toggle was removed from the
   // default UI; this beta flag restores it (plus the /plan and /default slash
   // commands) for users who still rely on the old workflow.
@@ -937,6 +938,7 @@ export const ClientSettingsPatch = Schema.Struct({
     ),
   ),
   interfaceAnimations: Schema.optionalKey(Schema.Boolean),
+  showProviderUsage: Schema.optionalKey(Schema.Boolean),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(
       ProviderInstanceId,

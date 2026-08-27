@@ -484,6 +484,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.interfaceAnimations !== DEFAULT_UNIFIED_SETTINGS.interfaceAnimations
         ? ["Panel animations"]
         : []),
+      ...(settings.showProviderUsage !== DEFAULT_UNIFIED_SETTINGS.showProviderUsage
+        ? ["Provider usage"]
+        : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
         ? ["Environment identification"]
@@ -574,6 +577,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizeTerminal,
       settings.glassOpacity,
       settings.interfaceAnimations,
+      settings.showProviderUsage,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.sidebarAutoSettleAfterDays,
@@ -660,6 +664,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       interfaceAnimations: DEFAULT_UNIFIED_SETTINGS.interfaceAnimations,
+      showProviderUsage: DEFAULT_UNIFIED_SETTINGS.showProviderUsage,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1146,6 +1151,30 @@ export function AppearanceSettingsPanel() {
                 updateSettings({ interfaceAnimations: Boolean(checked) })
               }
               aria-label="Interface animations"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("show-provider-usage")}
+          description="Show remaining subscription quota on each provider card."
+          resetAction={
+            settings.showProviderUsage !== DEFAULT_UNIFIED_SETTINGS.showProviderUsage ? (
+              <SettingResetButton
+                label="provider usage"
+                onClick={() =>
+                  updateSettings({
+                    showProviderUsage: DEFAULT_UNIFIED_SETTINGS.showProviderUsage,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showProviderUsage}
+              onCheckedChange={(checked) => updateSettings({ showProviderUsage: Boolean(checked) })}
+              aria-label="Provider usage"
             />
           }
         />

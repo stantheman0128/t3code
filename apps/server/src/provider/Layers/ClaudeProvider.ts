@@ -4,6 +4,7 @@ import {
   type ModelSelection,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
+  type ProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -42,6 +43,7 @@ import {
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment, resolveClaudeHomePath } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import { mapClaudeUsageLimits } from "../providerUsageLimits.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -696,6 +698,7 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly usageLimits?: ProviderUsageLimits;
 };
 
 function parseClaudeInitializationCommands(
@@ -819,12 +822,27 @@ const probeClaudeCapabilities = (
             readonly apiProvider?: string;
           }
         | undefined;
+      const usageFn = (
+        q as {
+          usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<unknown>;
+        }
+      ).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+      const usageResponse = usageFn ? await usageFn().catch(() => undefined) : undefined;
+      const usageLimits =
+        usageResponse && typeof usageResponse === "object"
+          ? mapClaudeUsageLimits(
+              usageResponse as Parameters<typeof mapClaudeUsageLimits>[0],
+              new Date().toISOString(),
+              account?.subscriptionType,
+            )
+          : undefined;
       return {
         email: account?.email,
         subscriptionType: account?.subscriptionType,
         tokenSource: account?.tokenSource,
         apiProvider: account?.apiProvider,
         slashCommands: parseClaudeInitializationCommands(init.commands),
+        ...(usageLimits ? { usageLimits } : {}),
       } satisfies ClaudeCapabilitiesProbe;
     });
   }).pipe(
@@ -1028,6 +1046,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models,
     slashCommands: dedupedSlashCommands,
     skills,
+    ...(capabilities.usageLimits ? { usageLimits: capabilities.usageLimits } : {}),
     probe: {
       installed: true,
       version: parsedVersion,

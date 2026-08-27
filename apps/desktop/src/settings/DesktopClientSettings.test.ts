@@ -36,6 +36,7 @@ const clientSettings: ClientSettings = {
   fontSmoothing: true,
   glassOpacity: 80,
   interfaceAnimations: false,
+  showProviderUsage: true,
   planModeEnabled: false,
   showSkillsInSlashMenu: false,
   providerModelPreferences: {},

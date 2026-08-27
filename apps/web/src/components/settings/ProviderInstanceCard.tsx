@@ -25,6 +25,7 @@ import {
 } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
+import { useClientSettings } from "../../hooks/useSettings";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
@@ -407,6 +408,11 @@ export function ProviderInstanceCard({
   const authenticatedDetail = hasAuthenticatedEmail
     ? (liveProvider?.auth.label ?? liveProvider?.auth.type ?? null)
     : null;
+  const showProviderUsage = useClientSettings((settings) => settings.showProviderUsage);
+  const usageLimits =
+    showProviderUsage && liveProvider?.usageLimits?.status === "available"
+      ? liveProvider.usageLimits
+      : null;
   const summary = rawSummary;
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
   const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
@@ -594,6 +600,34 @@ export function ProviderInstanceCard({
     </p>
   );
 
+  const usageLimitsNode =
+    usageLimits && usageLimits.windows.length > 0 ? (
+      <div className="flex min-w-0 flex-col gap-1.5 pt-1">
+        {usageLimits.windows.map((window) => (
+          <div
+            key={window.id}
+            className="flex min-w-0 items-center gap-2 text-[12px]"
+            title={
+              window.resetsAt
+                ? `${window.remainingPercent}% remaining · resets ${new Date(window.resetsAt).toLocaleString()}`
+                : `${window.remainingPercent}% remaining`
+            }
+          >
+            <span className="w-16 shrink-0 truncate text-muted-foreground">{window.label}</span>
+            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${window.remainingPercent}%` }}
+              />
+            </div>
+            <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
+              {window.remainingPercent}%
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : null;
+
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
@@ -704,6 +738,7 @@ export function ProviderInstanceCard({
               {titleTailNode}
             </div>
             {authRowNode}
+            {usageLimitsNode}
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
             <Button

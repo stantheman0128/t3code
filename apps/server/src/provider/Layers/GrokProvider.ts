@@ -42,7 +42,7 @@ import {
   grokWorkflowHomeDirFromEnvironment,
   readGrokWorkflowSlashCommands,
 } from "../acp/GrokWorkflowCommands.ts";
-import { readGrokAuthFromHome } from "../acp/grokAuth.ts";
+import { readGrokAuthSnapshotFromHome } from "../acp/grokAuth.ts";
 import { discoverGrokSkills } from "../Drivers/GrokSkills.ts";
 
 const GROK_PRESENTATION = {
@@ -113,9 +113,10 @@ export function buildInitialGrokProviderSnapshot(
       environment: discovery?.environment ?? process.env,
       projectRoot: discovery?.projectRoot,
     };
-    const loginAuth = yield* readGrokAuthFromHome(
+    const loginSnapshot = yield* readGrokAuthSnapshotFromHome(
       grokWorkflowHomeDirFromEnvironment(resolvedDiscovery.environment),
     ).pipe(Effect.catch(() => Effect.succeed(null)));
+    const loginAuth = loginSnapshot?.auth ?? null;
     if (!grokSettings.enabled) {
       return yield* buildGrokServerProvider(
         {
@@ -141,6 +142,7 @@ export function buildInitialGrokProviderSnapshot(
         enabled: true,
         checkedAt,
         models,
+        ...(loginSnapshot?.usageLimits ? { usageLimits: loginSnapshot.usageLimits } : {}),
         probe: {
           installed: true,
           version: null,
@@ -239,11 +241,20 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = grokModelsFromSettings(grokSettings.customModels);
   const discovery = { environment, projectRoot };
-  const loginAuth = yield* readGrokAuthFromHome(grokWorkflowHomeDirFromEnvironment(environment)).pipe(
-    Effect.catch(() => Effect.succeed(null)),
-  );
+  const loginSnapshot = yield* readGrokAuthSnapshotFromHome(
+    grokWorkflowHomeDirFromEnvironment(environment),
+  ).pipe(Effect.catch(() => Effect.succeed(null)));
+  const loginAuth = loginSnapshot?.auth ?? null;
   const providerDraft = (input: Parameters<typeof buildServerProvider>[0]) =>
-    buildGrokServerProvider(input, discovery);
+    buildGrokServerProvider(
+      {
+        ...(grokSettings.enabled && loginSnapshot?.usageLimits
+          ? { usageLimits: loginSnapshot.usageLimits }
+          : {}),
+        ...input,
+      },
+      discovery,
+    );
 
   if (!grokSettings.enabled) {
     return yield* providerDraft({
@@ -387,6 +398,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     checkedAt,
     models,
     skills,
+    ...(loginSnapshot?.usageLimits ? { usageLimits: loginSnapshot.usageLimits } : {}),
     probe: {
       installed: true,
       version,

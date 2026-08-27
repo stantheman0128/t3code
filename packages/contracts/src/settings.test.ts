@@ -126,6 +126,11 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettingsPatch({ interfaceAnimations: true }).interfaceAnimations).toBe(true);
   });
 
+  it("defaults provider usage on and accepts an explicit hide", () => {
+    expect(decodeClientSettings({}).showProviderUsage).toBe(true);
+    expect(decodeClientSettings({ showProviderUsage: false }).showProviderUsage).toBe(false);
+  });
+
   it("defaults to the current sidebar with automatic merge and inactivity settling", () => {
     const settings = decodeClientSettings({});
     expect(settings.legacySidebarEnabled).toBe(false);

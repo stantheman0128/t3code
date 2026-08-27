@@ -158,6 +158,40 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
+const ProviderUsageRemainingPercent = NonNegativeInt.check(Schema.isLessThanOrEqualTo(100));
+
+export const ProviderUsageLimitWindow = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString,
+  remainingPercent: ProviderUsageRemainingPercent,
+  resetsAt: Schema.NullOr(IsoDateTime),
+  durationMinutes: Schema.optional(NonNegativeInt),
+});
+export type ProviderUsageLimitWindow = typeof ProviderUsageLimitWindow.Type;
+
+export const ProviderUsageLimitsStatus = Schema.Literals([
+  "loading",
+  "available",
+  "stale",
+  "unavailable",
+  "unsupported",
+]);
+export type ProviderUsageLimitsStatus = typeof ProviderUsageLimitsStatus.Type;
+
+/**
+ * Subscription remaining quota for one configured provider instance.
+ * Credentials and limits belong to the instance, not the thread.
+ */
+export const ProviderUsageLimits = Schema.Struct({
+  status: ProviderUsageLimitsStatus,
+  planLabel: Schema.optional(TrimmedNonEmptyString),
+  observedAt: Schema.optional(IsoDateTime),
+  windows: Schema.Array(ProviderUsageLimitWindow).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+});
+export type ProviderUsageLimits = typeof ProviderUsageLimits.Type;
+
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -192,6 +226,7 @@ export const ServerProvider = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  usageLimits: Schema.optionalKey(ProviderUsageLimits),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
 });

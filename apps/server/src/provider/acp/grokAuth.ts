@@ -9,11 +9,13 @@
  *
  * @module grokAuth
  */
-import type { ServerProviderAuth } from "@t3tools/contracts";
+import type { ProviderUsageLimits, ServerProviderAuth } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+
+import { mapGrokBillingDocument, remoteUsageProbesEnabled } from "../providerUsageLimits.ts";
 
 const decodeUnknownJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -29,7 +31,17 @@ export interface GrokAuthRecord {
 }
 
 const GROK_SETTINGS_URL = "https://cli-chat-proxy.grok.com/v1/settings";
+const GROK_BILLING_CREDITS_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+const GROK_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing";
 const GROK_SETTINGS_TIMEOUT_MS = 2_000;
+
+function grokProxyHeaders(token: string): HeadersInit {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    "x-xai-token-auth": "xai-grok-cli",
+  };
+}
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
@@ -111,21 +123,32 @@ function grokPlanLabelFromSettingsDocument(document: unknown): string | undefine
   );
 }
 
-const fetchGrokSubscriptionLabel = (token: string) =>
+const fetchGrokJson = (url: string, token: string) =>
   Effect.tryPromise({
     try: async () => {
       // @effect-diagnostics globalFetch:off
-      const response = await fetch(GROK_SETTINGS_URL, {
-        headers: { Authorization: `Bearer ${token}` },
+      const response = await fetch(url, {
+        headers: grokProxyHeaders(token),
         signal: AbortSignal.timeout(GROK_SETTINGS_TIMEOUT_MS),
       });
       if (!response.ok) {
         return undefined;
       }
-      return grokPlanLabelFromSettingsDocument(await response.json());
+      return (await response.json()) as unknown;
     },
-    catch: () => new Error("grok-settings-fetch-failed"),
-  }).pipe(Effect.orElseSucceed((): string | undefined => undefined));
+    catch: () => new Error("grok-proxy-fetch-failed"),
+  }).pipe(Effect.orElseSucceed((): unknown => undefined));
+
+const fetchGrokSettingsDocument = (token: string) => fetchGrokJson(GROK_SETTINGS_URL, token);
+
+const fetchGrokBillingDocument = (token: string) =>
+  Effect.gen(function* () {
+    const credits = yield* fetchGrokJson(GROK_BILLING_CREDITS_URL, token);
+    if (credits !== undefined) {
+      return credits;
+    }
+    return yield* fetchGrokJson(GROK_BILLING_URL, token);
+  });
 
 export function parseGrokAuthFile(document: unknown): ServerProviderAuth | null {
   if (!document || typeof document !== "object" || Array.isArray(document)) {
@@ -150,7 +173,12 @@ export function parseGrokAuthFile(document: unknown): ServerProviderAuth | null 
   return null;
 }
 
-export const readGrokAuthFromHome = (homeDir: string | undefined) =>
+export interface GrokAuthSnapshot {
+  readonly auth: ServerProviderAuth;
+  readonly usageLimits?: ProviderUsageLimits;
+}
+
+export const readGrokAuthSnapshotFromHome = (homeDir: string | undefined) =>
   Effect.gen(function* () {
     const resolvedHome = homeDir?.trim();
     if (!resolvedHome) return null;
@@ -171,12 +199,21 @@ export const readGrokAuthFromHome = (homeDir: string | undefined) =>
       return null;
     }
     const token = grokBearerToken(document);
-    if (!token || parsed.label === "XAI_API_KEY") {
-      return parsed;
+    if (!token || parsed.label === "XAI_API_KEY" || !remoteUsageProbesEnabled()) {
+      return { auth: parsed } satisfies GrokAuthSnapshot;
     }
-    const plan = yield* fetchGrokSubscriptionLabel(token);
-    if (!plan) {
-      return parsed;
-    }
-    return { ...parsed, label: plan };
+    const [settings, billing] = yield* Effect.all(
+      [fetchGrokSettingsDocument(token), fetchGrokBillingDocument(token)],
+      { concurrency: "unbounded" },
+    );
+    const plan = grokPlanLabelFromSettingsDocument(settings) ?? parsed.label;
+    const observedAt = new Date().toISOString();
+    const usageLimits = mapGrokBillingDocument(billing, observedAt, plan);
+    return {
+      auth: { ...parsed, label: plan },
+      ...(usageLimits.status === "available" ? { usageLimits } : {}),
+    } satisfies GrokAuthSnapshot;
   });
+
+export const readGrokAuthFromHome = (homeDir: string | undefined) =>
+  readGrokAuthSnapshotFromHome(homeDir).pipe(Effect.map((snapshot) => snapshot?.auth ?? null));

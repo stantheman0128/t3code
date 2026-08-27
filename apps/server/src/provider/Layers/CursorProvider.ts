@@ -3,6 +3,7 @@ import type {
   CursorSettings,
   ModelCapabilities,
   ProviderOptionSelection,
+  ProviderUsageLimits,
   ServerProvider,
   ServerProviderAuth,
   ServerProviderModel,
@@ -41,6 +42,8 @@ import {
   type CommandResult,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { readCursorUsageLimits } from "../cursorUsage.ts";
+import { mapGenericSubscriptionDocument } from "../providerUsageLimits.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
@@ -612,6 +615,7 @@ export interface CursorAboutResult {
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: ServerProviderAuth;
   readonly message?: string;
+  readonly usageLimits?: ProviderUsageLimits;
 }
 
 function joinProviderMessages(...messages: ReadonlyArray<string | undefined>): string | undefined {
@@ -651,6 +655,9 @@ export function buildCursorProviderSnapshot(input: {
       input.cursorSettings.customModels,
       EMPTY_CAPABILITIES,
     ),
+    ...(input.parsed.usageLimits && input.parsed.usageLimits.status === "available"
+      ? { usageLimits: input.parsed.usageLimits }
+      : {}),
     probe: {
       installed: true,
       version: input.parsed.version,
@@ -885,6 +892,11 @@ export function parseCursorAboutOutput(result: CommandResult): CursorAboutResult
       };
     }
 
+    const usageLimits = mapGenericSubscriptionDocument(
+      jsonPayload,
+      new Date().toISOString(),
+      authMetadata?.label,
+    );
     return {
       version,
       status: "ready",
@@ -893,6 +905,7 @@ export function parseCursorAboutOutput(result: CommandResult): CursorAboutResult
         email: userEmail,
         ...authMetadata,
       },
+      ...(usageLimits.status === "available" ? { usageLimits } : {}),
     };
   }
 
@@ -1070,7 +1083,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
     });
   }
 
-  const parsed = parseCursorAboutOutput(aboutProbe.success.value);
+  let parsed = parseCursorAboutOutput(aboutProbe.success.value);
   const cursorCliConfigChannel = yield* readCursorCliConfigChannel();
   const parameterizedModelPickerUnsupportedMessage =
     getCursorParameterizedModelPickerUnsupportedMessage({
@@ -1099,10 +1112,19 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   let discoveredModels = Option.none<ReadonlyArray<ServerProviderModel>>();
   let discoveryWarning: string | undefined;
   if (parsed.auth.status !== "unauthenticated") {
-    const discoveryExit = yield* Effect.exit(
-      discoverCursorModelsViaAcp(cursorSettings, environment).pipe(
-        Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
-      ),
+    const [discoveryExit, usageLimits] = yield* Effect.all(
+      [
+        Effect.exit(
+          discoverCursorModelsViaAcp(cursorSettings, environment).pipe(
+            Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
+          ),
+        ),
+        readCursorUsageLimits({
+          environment: environment ?? process.env,
+          planLabel: parsed.auth.label,
+        }),
+      ],
+      { concurrency: "unbounded" },
     );
     if (Exit.isFailure(discoveryExit)) {
       yield* Effect.logWarning("Cursor ACP model discovery failed", {
@@ -1115,6 +1137,9 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
       discoveryWarning = "Cursor ACP model discovery returned no built-in models.";
     } else {
       discoveredModels = discoveryExit.value;
+    }
+    if (usageLimits) {
+      parsed = { ...parsed, usageLimits };
     }
   }
   return buildCursorProviderSnapshot({

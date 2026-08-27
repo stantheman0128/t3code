@@ -538,6 +538,34 @@ describe("parseCursorAboutOutput", () => {
     });
   });
 
+  it("attaches remaining quota when about JSON includes it", () => {
+    expect(
+      parseCursorAboutOutput({
+        code: 0,
+        stdout: JSON.stringify({
+          cliVersion: "2026.04.09-f2b0fcd",
+          subscriptionTier: "Pro",
+          userEmail: "ada@example.com",
+          remaining_percent: 42,
+        }),
+        stderr: "",
+      }),
+    ).toMatchObject({
+      version: "2026.04.09-f2b0fcd",
+      status: "ready",
+      auth: {
+        status: "authenticated",
+        email: "ada@example.com",
+        label: "Cursor Pro Subscription",
+      },
+      usageLimits: {
+        status: "available",
+        planLabel: "Cursor Pro Subscription",
+        windows: [{ id: "primary", remainingPercent: 42 }],
+      },
+    });
+  });
+
   it("treats json about output with a logged-out email as unauthenticated", () => {
     expect(
       parseCursorAboutOutput({

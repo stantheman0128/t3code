@@ -15,6 +15,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 
 import type {
   CodexSettings,
+  ProviderUsageLimits,
   ServerProvider,
   ServerProviderSlashCommand,
   ServerProviderState,
@@ -35,6 +36,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { mapCodexRateLimits, unsupportedUsageLimits } from "../providerUsageLimits.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
@@ -62,6 +64,7 @@ export interface CodexAppServerProviderSnapshot {
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly skills: ReadonlyArray<ServerProviderSkill>;
+  readonly usageLimits?: ProviderUsageLimits;
 }
 
 const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
@@ -374,15 +377,17 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
       version,
       models: appendCustomCodexModels([], input.customModels ?? []),
       skills: [],
+      usageLimits: unsupportedUsageLimits(),
     } satisfies CodexAppServerProviderSnapshot;
   }
 
-  const [skillsResponse, models] = yield* Effect.all(
+  const [skillsResponse, models, usageLimits] = yield* Effect.all(
     [
       client.request("skills/list", {
         cwds: [input.cwd],
       }),
       requestAllCodexModels(client),
+      readCodexUsageLimits(client, accountResponse.account),
     ],
     { concurrency: "unbounded" },
   );
@@ -394,8 +399,38 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
       appendCustomCodexModels(models, input.customModels ?? []),
     ),
     skills: parseCodexSkillsListResponse(skillsResponse, input.cwd),
+    usageLimits,
   } satisfies CodexAppServerProviderSnapshot;
 });
+
+const USAGE_PROBE_TIMEOUT_MS = 4_000;
+
+const readCodexUsageLimits = (
+  client: CodexClient.CodexAppServerClient["Service"],
+  account: CodexSchema.V2GetAccountResponse["account"],
+) =>
+  Effect.gen(function* () {
+    if (!account || account.type !== "chatgpt") {
+      return unsupportedUsageLimits();
+    }
+    const observedAt = DateTime.formatIso(yield* DateTime.now);
+    const result = yield* client
+      .request("account/rateLimits/read", undefined)
+      .pipe(Effect.timeoutOption(Duration.millis(USAGE_PROBE_TIMEOUT_MS)), Effect.result);
+    if (Result.isFailure(result) || Option.isNone(result.success)) {
+      return {
+        status: "unavailable" as const,
+        planLabel: formatCodexPlanType(account.planType) ?? undefined,
+        observedAt,
+        windows: [],
+      };
+    }
+    return mapCodexRateLimits(
+      result.success.value,
+      observedAt,
+      formatCodexPlanType(account.planType) ?? undefined,
+    );
+  });
 
 const emptyCodexModelsFromSettings = (codexSettings: CodexSettings): ServerProvider["models"] => {
   const models = new Set<string>();
@@ -589,6 +624,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    ...(snapshot.usageLimits ? { usageLimits: snapshot.usageLimits } : {}),
     probe: {
       installed: true,
       version: snapshot.version ?? null,

@@ -62,7 +62,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       <Tooltip>
         <TooltipTrigger render={<span className="flex shrink-0" />}>
           <Toggle
-            className="shrink-0 [-webkit-app-region:no-drag]"
+            className="relative shrink-0 overflow-visible [-webkit-app-region:no-drag]"
             pressed={rightPanelOpen}
             onPressedChange={onToggleRightPanel}
             aria-label={
@@ -78,7 +78,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             {liveAgentCount > 0 ? (
               <span
                 aria-hidden
-                className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+                className="absolute top-0 right-0 flex h-3.5 min-w-3.5 translate-x-1/4 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
               >
                 {liveAgentCount}
               </span>

@@ -445,7 +445,7 @@ describe("MessagesTimeline", () => {
     // Geometry missing (older state shape): fall back to the strict flag.
     expect(resolveTimelineIsAtEnd({ isAtEnd: false })).toBe(false);
 
-    expect(resolveTimelineMinimapHeightStyle(5)).toBe("min(32px, calc(100vh - 18rem))");
+    expect(resolveTimelineMinimapHeightStyle(5)).toBe("min(32px, 100%)");
     expect(resolveTimelineMinimapTopPercent(2, 5)).toBe(50);
     expect(
       resolveTimelineMinimapIndexFromPointer({
@@ -1115,7 +1115,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Running pnpm");
-    expect(markup).toContain("pnpm lint");
+    expect(markup).toContain("Run lint");
     expect(markup).not.toMatch(
       /data-timeline-row-kind="work-live"[\s\S]{0,400}aria-label="[^"]*tool call failed"/,
     );

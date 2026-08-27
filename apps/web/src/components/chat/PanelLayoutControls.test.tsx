@@ -25,4 +25,24 @@ describe("PanelLayoutControls", () => {
       2,
     );
   });
+
+  it("keeps the live-agent badge inside the toggle instead of clipping the titlebar", () => {
+    const markup = renderToStaticMarkup(
+      <PanelLayoutControls
+        showTerminalControl
+        terminalAvailable
+        terminalOpen={false}
+        terminalShortcutLabel={null}
+        rightPanelAvailable
+        rightPanelOpen={false}
+        rightPanelShortcutLabel={null}
+        liveAgentCount={3}
+        onToggleTerminal={() => {}}
+        onToggleRightPanel={() => {}}
+      />,
+    );
+
+    expect(markup).toContain(">3</span>");
+    expect(markup).not.toContain("-top-1");
+  });
 });

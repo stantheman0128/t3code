@@ -626,6 +626,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             hasPersistentGutter={minimapHasPersistentGutter}
             hitStripWidth={minimapHitStripWidth}
             stripMap={minimapStripMap}
+            bottomInset={contentInsetEndAdjustment}
             onSelect={(item) => {
               onManualNavigation();
               void listRef.current?.scrollToIndex({
@@ -724,12 +725,14 @@ function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
 }
 
 function TimelineMinimap({
+  bottomInset,
   hasPersistentGutter,
   hitStripWidth,
   items,
   stripMap,
   onSelect,
 }: {
+  bottomInset: number;
   hasPersistentGutter: boolean;
   hitStripWidth: number;
   items: ReadonlyArray<TimelineMinimapItem>;
@@ -792,13 +795,14 @@ function TimelineMinimap({
   return (
     <div
       className={cn(
-        "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
+        "group/minimap pointer-events-none absolute top-8 left-0 z-40 hidden w-18 overflow-hidden [@media(pointer:fine)]:block",
         hasPersistentGutter
           ? "opacity-100"
           : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
+      style={{ bottom: `max(2rem, ${bottomInset}px)` }}
     >
       <div className="relative h-full w-full select-none">
         <button
@@ -1581,29 +1585,41 @@ function WorkGroupToggleTimelineRow({
 }) {
   const ctx = use(TimelineRowCtx);
   if (row.onlyToolEntries && row.summary) {
+    const processLabels = row.expanded ? [] : (row.processLabels ?? []);
     return (
-      <button
-        type="button"
-        className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
-        aria-expanded={row.expanded}
-        onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
-      >
-        <span
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center",
-            row.hasFailure ? "text-destructive" : "text-icon-muted",
-          )}
-          role={row.hasFailure ? "img" : undefined}
-          aria-label={row.hasFailure ? "Tool call failed" : undefined}
+      <div className="flex flex-col gap-0.5">
+        <button
+          type="button"
+          className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
+          aria-expanded={row.expanded}
+          onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
         >
-          <WorkEntryIconSvg
-            name={row.hasFailure ? "x" : toolGroupSummaryIconName(row.summaryKind)}
-            className="size-4 shrink-0 stroke-[1.8] opacity-70"
-          />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
-      </button>
+          <span
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center",
+              row.hasFailure ? "text-destructive" : "text-icon-muted",
+            )}
+            role={row.hasFailure ? "img" : undefined}
+            aria-label={row.hasFailure ? "Tool call failed" : undefined}
+          >
+            <WorkEntryIconSvg
+              name={row.hasFailure ? "x" : toolGroupSummaryIconName(row.summaryKind)}
+              className="size-4 shrink-0 stroke-[1.8] opacity-70"
+            />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
+        </button>
+        {processLabels.length > 0 ? (
+          <ol className="ml-7 list-none space-y-px pb-0.5 text-[12px] leading-5 text-muted-foreground">
+            {processLabels.map((label, index) => (
+              <li key={`${index}-${label}`} className="min-w-0 truncate">
+                {label}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </div>
     );
   }
   const labelNoun = row.onlyToolEntries

@@ -487,6 +487,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.showProviderUsage !== DEFAULT_UNIFIED_SETTINGS.showProviderUsage
         ? ["Provider usage"]
         : []),
+      ...(settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome
+        ? ["Provider chrome"]
+        : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
         ? ["Environment identification"]
@@ -578,6 +581,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.glassOpacity,
       settings.layoutMotion,
       settings.showProviderUsage,
+      settings.providerChrome,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.sidebarAutoSettleAfterDays,
@@ -665,6 +669,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       layoutMotion: DEFAULT_UNIFIED_SETTINGS.layoutMotion,
       showProviderUsage: DEFAULT_UNIFIED_SETTINGS.showProviderUsage,
+      providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1189,6 +1194,30 @@ export function AppearanceSettingsPanel() {
               checked={settings.showProviderUsage}
               onCheckedChange={(checked) => updateSettings({ showProviderUsage: Boolean(checked) })}
               aria-label="Provider usage"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("provider-chrome")}
+          description="Tint the chat workspace, composer, and type to match the active provider. Off keeps the default T3 look."
+          resetAction={
+            settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome ? (
+              <SettingResetButton
+                label="provider chrome"
+                onClick={() =>
+                  updateSettings({
+                    providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.providerChrome}
+              onCheckedChange={(checked) => updateSettings({ providerChrome: Boolean(checked) })}
+              aria-label="Provider chrome"
             />
           }
         />

@@ -71,7 +71,9 @@ export function workEntryLooksLikeOutputDump(value: string | undefined): boolean
 }
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
-export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
+/** Cap to the timeline viewport, not the window. `100vh` overflowed into
+ *  the chat header and the terminal drawer when that drawer was tall. */
+export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "100%";
 export const TIMELINE_CONTENT_MAX_WIDTH = 768;
 export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
@@ -263,6 +265,7 @@ export type MessagesTimelineRow =
       summary: string | null;
       summaryKind: ToolGroupSummaryKind | null;
       hasFailure: boolean;
+      processLabels?: readonly string[];
     }
   | {
       kind: "turn-fold";
@@ -358,9 +361,6 @@ export function workEntryProcessLabel(entry: WorkLogEntry): string {
     }
     return compactProcessLabel(live ? `Reading ${name}` : `Read ${name}`);
   }
-  if (command && !workEntryLooksLikeOutputDump(command)) {
-    return compactProcessLabel(command);
-  }
   const title = entry.toolTitle?.trim();
   if (title && !isGenericToolHeading(title) && !workEntryLooksLikeOutputDump(title)) {
     return compactProcessLabel(title);
@@ -368,6 +368,9 @@ export function workEntryProcessLabel(entry: WorkLogEntry): string {
   const label = entry.label?.trim();
   if (label && !isGenericToolHeading(label) && !workEntryLooksLikeOutputDump(label)) {
     return compactProcessLabel(label);
+  }
+  if (command && !workEntryLooksLikeOutputDump(command)) {
+    return compactProcessLabel(command);
   }
   if (command) {
     const program = command.split(/\s+/).find((token) => token.length > 0);
@@ -388,6 +391,27 @@ export function workEntryProcessLabel(entry: WorkLogEntry): string {
     return "MCP";
   }
   return "Tool";
+}
+
+const WORK_GROUP_PROCESS_LABEL_LIMIT = 8;
+
+/** Deduped process headlines for a collapsed tool group, in run order. */
+export function workGroupProcessLabels(
+  entries: ReadonlyArray<WorkLogEntry>,
+  limit = WORK_GROUP_PROCESS_LABEL_LIMIT,
+): string[] {
+  const labels: string[] = [];
+  for (const entry of entries) {
+    const label = workEntryProcessLabel(entry);
+    if (labels.at(-1) === label) {
+      continue;
+    }
+    labels.push(label);
+    if (labels.length >= limit) {
+      break;
+    }
+  }
+  return labels;
 }
 
 type ToolGroupAction = "read" | "edit" | "command" | "code-search" | "search" | "other";
@@ -923,6 +947,7 @@ export function deriveMessagesTimelineRows(input: {
           summary: summarizeToolGroup(summarizedEarlier),
           summaryKind: toolGroupSummaryKind(summarizedEarlier),
           hasFailure: false,
+          processLabels: workGroupProcessLabels(summarizedEarlier),
         });
       }
       for (const workEntry of failedEarlier) {
@@ -1055,6 +1080,7 @@ export function deriveMessagesTimelineRows(input: {
             summary: summarizeToolGroup(visibleGroupedEntries),
             summaryKind,
             hasFailure: workEntryDisplayIndicatesToolFailure(visibleGroupedEntries.at(-1)!),
+            processLabels: workGroupProcessLabels(visibleGroupedEntries),
           });
           if (expanded) {
             for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
@@ -1127,6 +1153,7 @@ export function deriveMessagesTimelineRows(input: {
                 latestToolEntry !== undefined &&
                 workEntryDisplayIndicatesToolFailure(latestToolEntry) &&
                 hiddenEntries.some(workEntryDisplayIndicatesToolFailure),
+              processLabels: workGroupProcessLabels(hiddenEntries),
             });
           }
         }
@@ -1273,7 +1300,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.onlyToolEntries === bw.onlyToolEntries &&
         a.summary === bw.summary &&
         a.summaryKind === bw.summaryKind &&
-        a.hasFailure === bw.hasFailure
+        a.hasFailure === bw.hasFailure &&
+        Equal.equals(a.processLabels ?? [], bw.processLabels ?? [])
       );
     }
 

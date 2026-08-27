@@ -2625,3 +2625,54 @@ html:not([data-interface-animations="true"])
     transition: none;
   }
 }
+
+/* Opt-in provider chrome. Scoped to the chat workspace so the thread
+   sidebar and settings keep T3's default look. */
+[data-provider-chrome="claudeAgent"] {
+  --chat-composer-outline: color-mix(in srgb, #d97757 28%, var(--border));
+  font-feature-settings: "ss01";
+}
+
+[data-provider-chrome="claudeAgent"] .chat-markdown {
+  line-height: 1.7;
+}
+
+[data-provider-chrome="claudeAgent"] .chat-composer-glass-shell {
+  border-radius: 1.75rem;
+}
+
+[data-provider-chrome="codex"] {
+  --chat-composer-outline: color-mix(in srgb, #10a37f 32%, var(--border));
+}
+
+[data-provider-chrome="codex"] .chat-markdown {
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+}
+
+[data-provider-chrome="codex"] [data-assistant-thinking] {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+[data-provider-chrome="grok"] {
+  --chat-composer-outline: color-mix(in srgb, var(--contrast-foreground) 22%, var(--border));
+}
+
+[data-provider-chrome="grok"] .chat-markdown {
+  letter-spacing: -0.018em;
+}
+
+[data-provider-chrome="cursor"] {
+  --chat-composer-outline: color-mix(in srgb, #f54e00 34%, var(--border));
+}
+
+[data-provider-chrome="opencode"] {
+  --chat-composer-outline: color-mix(in srgb, #5eead4 28%, var(--border));
+}
+
+[data-provider-chrome="opencode"] .chat-markdown {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.65;
+}

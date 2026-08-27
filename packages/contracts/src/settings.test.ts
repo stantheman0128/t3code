@@ -129,6 +129,11 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings({ showProviderUsage: false }).showProviderUsage).toBe(false);
   });
 
+  it("defaults provider chrome off", () => {
+    expect(decodeClientSettings({}).providerChrome).toBe(false);
+    expect(decodeClientSettings({ providerChrome: true }).providerChrome).toBe(true);
+  });
+
   it("defaults to the current sidebar with automatic merge and inactivity settling", () => {
     const settings = decodeClientSettings({});
     expect(settings.legacySidebarEnabled).toBe(false);

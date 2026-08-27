@@ -220,12 +220,12 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
         <p className="whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">{preview}</p>
       ) : null}
       {live && agent.lastToolName ? (
-        <p className="text-[.65rem] text-foreground/80">
-          Now: <span className="font-mono">{agent.lastToolName}</span>
+        <p className="text-[.7rem] text-foreground/80">
+          Now: <span className="font-medium">{agent.lastToolName}</span>
         </p>
       ) : null}
       {steps.length > 0 ? (
-        <ol className="list-decimal space-y-0.5 pl-4 text-[.65rem] text-muted-foreground">
+        <ol className="list-decimal space-y-0.5 pl-4 text-[.7rem] leading-5 text-foreground/80">
           {steps.slice(-16).map((step, index) => (
             <li key={`${index}-${step}`}>{step}</li>
           ))}
@@ -253,8 +253,11 @@ function AgentRow({
   stopping?: boolean;
 }) {
   const live = isActiveSubagentStatus(agent.status);
-  const [open, setOpen] = useState(live);
-  const didAutoOpen = useRef(live);
+  const hasProcedure =
+    agent.lastToolName !== null ||
+    agent.recentActivity.some((entry) => isUsefulAgentStep(entry.summary));
+  const [open, setOpen] = useState(live || hasProcedure);
+  const didAutoOpen = useRef(live || hasProcedure);
   useEffect(() => {
     if (live && !didAutoOpen.current) {
       didAutoOpen.current = true;

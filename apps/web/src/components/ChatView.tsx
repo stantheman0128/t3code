@@ -2118,6 +2118,7 @@ function ChatViewContent(props: ChatViewProps) {
     ? `${activeProject.environmentId}:${activeProject.workspaceRoot}`
     : null;
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const providerChromeEnabled = useClientSettings((settings) => settings.providerChrome);
   const clientSettingsHydrated = useClientSettingsHydrated();
   const [pendingFileSurfaceIdsByProject, setPendingFileSurfaceIdsByProject] = useState<
     ReadonlyMap<string, ReadonlySet<string>>
@@ -7399,7 +7400,7 @@ function ChatViewContent(props: ChatViewProps) {
         // One inset in both states: the controls move between containers when
         // the right panel opens, and a different right offset made them jump
         // sideways on every toggle.
-        "absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        "absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 overflow-visible [-webkit-app-region:no-drag]",
       )}
       data-workspace-titlebar-controls
     >
@@ -7537,7 +7538,12 @@ function ChatViewContent(props: ChatViewProps) {
     composerBannerItems.length > 0 || Boolean(threadSyncPhase && !activeEnvironmentUnavailable);
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background">
+    <div
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"
+      {...(providerChromeEnabled && activeProviderStatus?.driver
+        ? { "data-provider-chrome": activeProviderStatus.driver }
+        : {})}
+    >
       {showRowPanelLayoutControls ? panelLayoutControls : null}
       <div
         className={cn(

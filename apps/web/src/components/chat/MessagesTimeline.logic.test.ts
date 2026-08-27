@@ -8,6 +8,7 @@ import {
   shouldPreserveAssistantLineBreaks,
   workEntryLooksLikeOutputDump,
   workEntryProcessLabel,
+  workGroupProcessLabels,
 } from "./MessagesTimeline.logic";
 
 describe("shouldPreserveAssistantLineBreaks", () => {
@@ -1613,6 +1614,47 @@ describe("workEntryProcessLabel", () => {
         toolLifecycleStatus: "inProgress",
       }),
     ).toBe("Reading ComposerPromptEditor.tsx");
+  });
+
+  it("prefers a human tool title over a raw command line", () => {
+    expect(
+      workEntryProcessLabel({
+        id: "work-title",
+        createdAt: "2026-01-01T00:00:00Z",
+        label: "Ran command",
+        command: "read_file --path apps/web/src/index.css",
+        toolTitle: "Read file",
+        tone: "tool",
+      }),
+    ).toBe("Read file");
+  });
+
+  it("lists distinct process labels for a collapsed tool group", () => {
+    expect(
+      workGroupProcessLabels([
+        {
+          id: "a",
+          createdAt: "2026-01-01T00:00:00Z",
+          label: "Ran command",
+          toolTitle: "Read file",
+          tone: "tool",
+        },
+        {
+          id: "b",
+          createdAt: "2026-01-01T00:00:01Z",
+          label: "Ran command",
+          toolTitle: "Read file",
+          tone: "tool",
+        },
+        {
+          id: "c",
+          createdAt: "2026-01-01T00:00:02Z",
+          label: "Ran command",
+          toolTitle: "Grep",
+          tone: "tool",
+        },
+      ]),
+    ).toEqual(["Read file", "Grep"]);
   });
 });
 

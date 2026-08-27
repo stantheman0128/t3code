@@ -161,6 +161,39 @@ describe("AgentsPanel", () => {
     expect(html).not.toContain("No output yet");
   });
 
+  it("keeps a settled agent's procedure open so the steps stay visible", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-done",
+          status: "completed",
+          title: "Investigate T3 UI bugs",
+          error: null,
+          result: "Found the overlap.",
+          lastToolName: "Read file",
+          usage: { totalTokens: 900, toolUses: 3 },
+          recentActivity: [
+            { at: "2026-01-01T00:00:00.000Z", summary: "▸ Read file" },
+            { at: "2026-01-01T00:00:02.000Z", summary: "▸ Grep" },
+          ],
+        }),
+      ],
+      runningCount: 0,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 1,
+      totalTokens: 900,
+      hasAgents: true,
+      liveCount: 0,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("Read file");
+    expect(html).toContain("Grep");
+  });
+
   it("opens a live agent on the procedure list instead of hiding it behind a collapsed panel", () => {
     const model: AgentPanelModel = {
       workflows: [],

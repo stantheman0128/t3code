@@ -535,11 +535,27 @@ export function parseXAiMonitorEvent(payload: unknown): GrokMonitorEvent | undef
     return undefined;
   }
   const tag = sessionUpdateTag(update);
-  if (tag !== "monitor_event" && tag !== "MonitorEvent") {
+  if (
+    tag !== "monitor_event" &&
+    tag !== "MonitorEvent" &&
+    tag !== "monitor_output" &&
+    tag !== "MonitorOutput"
+  ) {
     return undefined;
   }
   const taskId = readString(update.task_id) ?? readString(update.taskId);
-  const eventText = readString(update.event_text) ?? readString(update.eventText);
+  const nestedEvent = asRecord(update.event);
+  const eventText =
+    readString(update.event_text) ??
+    readString(update.eventText) ??
+    readString(update.text) ??
+    readString(update.output) ??
+    readString(update.line) ??
+    readString(update.message) ??
+    readString(update.content) ??
+    readString(update.detail) ??
+    readString(nestedEvent?.text) ??
+    readString(nestedEvent?.output);
   if (taskId === undefined || eventText === undefined) {
     return undefined;
   }

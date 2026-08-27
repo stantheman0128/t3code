@@ -334,6 +334,17 @@ describe("GrokAcpSessionExtras", () => {
     ]);
   });
 
+  it("reads monitor output from text when event_text is absent", () => {
+    const parsed = parseXAiMonitorEvent({
+      update: {
+        sessionUpdate: "monitor_event",
+        task_id: "mon-2",
+        text: "PR #1202 opened",
+      },
+    });
+    expect(parsed).toEqual({ taskId: "mon-2", eventText: "PR #1202 opened" });
+  });
+
   it("routes Stop to scheduler/delete for loops and task/kill for monitors", () => {
     expect(grokBackgroundInterruptRequest("sess-1", "loop-1", new Set(["loop-1"]))).toEqual({
       method: "_x.ai/scheduler/delete",

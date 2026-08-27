@@ -187,12 +187,29 @@ function isUsefulAgentStep(summary: string): boolean {
   return value.length > 0 && !WEAK_AGENT_STEPS.has(value.toLocaleLowerCase());
 }
 
+function shortAgentOutputPath(path: string): string {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    decoded = path;
+  }
+  const normalized = decoded.replaceAll("\\", "/");
+  const parts = normalized.split("/").filter((part) => part.length > 0);
+  if (parts.length <= 2) {
+    return decoded;
+  }
+  return parts.slice(-2).join("/");
+}
+
 function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
   const preview = formatAgentResultPreview(agent.result);
-  const tools = agent.recentActivity
+  const events = agent.recentActivity
     .map((entry) => entry.summary.replace(/^▸\s+/, "").trim())
     .filter(isUsefulAgentStep);
-  const steps = tools.length > 0 ? tools : agent.lastToolName !== null ? [agent.lastToolName] : [];
+  const isWatch = agent.kind === "monitor" || agent.kind === "scheduled";
+  const steps =
+    events.length > 0 ? events : agent.lastToolName !== null ? [agent.lastToolName] : [];
   const toolUses = agent.usage?.toolUses ?? 0;
   const live = isActiveSubagentStatus(agent.status);
   const hasDetail =
@@ -200,7 +217,8 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
     preview !== null ||
     agent.outputFile !== null ||
     steps.length > 0 ||
-    toolUses > 0;
+    toolUses > 0 ||
+    (isWatch && live);
   if (!hasDetail) {
     return (
       <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
@@ -226,20 +244,39 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
         </p>
       ) : null}
       {steps.length > 0 ? (
-        <ol className="max-h-56 list-decimal space-y-0.5 overflow-y-auto pl-4 text-[.7rem] leading-5 text-foreground/80">
-          {steps.map((step, index) => (
-            <li key={`${index}-${step}`}>{step}</li>
-          ))}
-        </ol>
+        isWatch ? (
+          <ol className="max-h-56 space-y-1 overflow-y-auto text-[.7rem] leading-5 text-foreground/85">
+            {steps.map((step, index) => (
+              <li key={`${index}-${step}`} className="whitespace-pre-wrap break-words">
+                {step}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ol className="max-h-56 list-decimal space-y-0.5 overflow-y-auto pl-4 text-[.7rem] leading-5 text-foreground/80">
+            {steps.map((step, index) => (
+              <li key={`${index}-${step}`}>{step}</li>
+            ))}
+          </ol>
+        )
       ) : toolUses > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">
           {live
             ? `${toolUses} tools so far. Step names were not recorded for this run.`
             : `${toolUses} tools. Step names were not recorded for this run.`}
         </p>
+      ) : isWatch && live ? (
+        <p className="text-[.7rem] text-muted-foreground">
+          Watching. New events show up here as they fire.
+        </p>
       ) : null}
       {agent.outputFile ? (
-        <p className="truncate font-mono text-[.65rem] text-muted-foreground">{agent.outputFile}</p>
+        <p
+          className="break-all font-mono text-[.65rem] text-muted-foreground"
+          title={agent.outputFile}
+        >
+          Log: {shortAgentOutputPath(agent.outputFile)}
+        </p>
       ) : null}
     </div>
   );

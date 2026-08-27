@@ -624,6 +624,7 @@ export function grokToolDisplayName(toolCall: {
 export function grokLiveSubagentIdForToolProgress(
   state: GrokWorkflowTrackState,
   sessionId: string | undefined,
+  liveMonitorTaskIds?: ReadonlySet<string>,
 ): string | undefined {
   if (sessionId) {
     const mapped = state.subagentByChildSessionId.get(sessionId);
@@ -637,7 +638,13 @@ export function grokLiveSubagentIdForToolProgress(
       live.push(id);
     }
   }
-  return live.length === 1 ? live[0] : undefined;
+  if (live.length === 1) {
+    return live[0];
+  }
+  if (live.length === 0 && liveMonitorTaskIds && liveMonitorTaskIds.size === 1) {
+    return [...liveMonitorTaskIds][0];
+  }
+  return undefined;
 }
 
 export function grokChildToolProgressEvent(
@@ -648,8 +655,9 @@ export function grokChildToolProgressEvent(
     readonly kind?: string;
     readonly command?: string;
   },
+  liveMonitorTaskIds?: ReadonlySet<string>,
 ): GrokTaskEventSpec | undefined {
-  const subagentId = grokLiveSubagentIdForToolProgress(state, sessionId);
+  const subagentId = grokLiveSubagentIdForToolProgress(state, sessionId, liveMonitorTaskIds);
   const lastTool = grokToolDisplayName(toolCall);
   if (!subagentId || !lastTool) {
     return undefined;

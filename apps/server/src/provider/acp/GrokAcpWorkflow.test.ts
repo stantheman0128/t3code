@@ -299,4 +299,18 @@ describe("GrokAcpWorkflow", () => {
       grokChildToolProgressEvent(afterFinish.state, "child-1", { title: "read_file" }),
     ).toBeUndefined();
   });
+
+  it("pins unmapped child tools onto the lone live monitor", () => {
+    const event = grokChildToolProgressEvent(
+      emptyGrokWorkflowTrackState(),
+      "watch-session",
+      { title: "read_file" },
+      new Set(["mon-1"]),
+    );
+    expect(event?.payload).toMatchObject({
+      taskId: "mon-1",
+      lastToolName: "read_file",
+      summary: "read_file",
+    });
+  });
 });

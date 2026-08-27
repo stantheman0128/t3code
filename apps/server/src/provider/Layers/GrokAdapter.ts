@@ -241,6 +241,7 @@ interface GrokSessionContext {
     }>
   >;
   readonly scheduledTaskIds: Set<string>;
+  readonly liveMonitorTaskIds: Set<string>;
   stopped: boolean;
 }
 
@@ -538,6 +539,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           input.ctx.workflowTrack,
           input.sessionId,
           input.toolCall,
+          input.ctx.liveMonitorTaskIds,
         );
         const childTaskId =
           typeof childProgress?.payload.taskId === "string"
@@ -1477,6 +1479,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               if (!background) {
                 return;
               }
+              if (background.taskType === "monitor") {
+                if (background.kind === "started") {
+                  ctx.liveMonitorTaskIds.add(background.taskId);
+                } else {
+                  ctx.liveMonitorTaskIds.delete(background.taskId);
+                }
+              }
               yield* emitGrokExtraSpecs({
                 threadId: input.threadId,
                 turnId,
@@ -1845,6 +1854,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             lastChildToolNameBySubagentId: new Map(),
             pendingChildToolsBySessionId: new Map(),
             scheduledTaskIds: new Set(),
+            liveMonitorTaskIds: new Set(),
             stopped: false,
           };
 

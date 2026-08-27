@@ -227,4 +227,70 @@ describe("AgentsPanel", () => {
     expect(html).toContain("grep");
     expect(html).toContain("Now:");
   });
+
+  it("shows a live monitor's events instead of only a truncated session path", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [
+        agent({
+          id: "mon-live",
+          kind: "monitor",
+          status: "running",
+          title: "Watch only T3-parity PRs",
+          error: null,
+          result: null,
+          usage: null,
+          outputFile:
+            "C:\\Users\\stans\\.grok\\sessions\\C%3A%5CUsers%5Cstans\\Projects\\t3code-grok-parity\\updates.jsonl",
+          recentActivity: [
+            { at: "2026-08-28T05:00:00.000Z", summary: "PR #1202 opened" },
+            { at: "2026-08-28T05:00:08.000Z", summary: "checks: pass" },
+          ],
+        }),
+      ],
+      directAgents: [],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 0,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("PR #1202 opened");
+    expect(html).toContain("checks: pass");
+    expect(html).toContain("Log:");
+    expect(html).toContain("t3code-grok-parity/updates.jsonl");
+  });
+
+  it("tells a live monitor with no events yet that the log is waiting", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [
+        agent({
+          id: "mon-empty",
+          kind: "monitor",
+          status: "running",
+          title: "Watch PRs",
+          error: null,
+          result: null,
+          usage: null,
+          recentActivity: [],
+        }),
+      ],
+      directAgents: [],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 0,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("Watching. New events show up here as they fire.");
+  });
 });

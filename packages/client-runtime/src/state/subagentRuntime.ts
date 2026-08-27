@@ -265,11 +265,19 @@ export function formatAgentDisplayTitle(agent: RuntimeSubagent): string {
 export function formatAgentActivityLine(agent: RuntimeSubagent): string {
   if (isActiveSubagentStatus(agent.status)) {
     if (agent.lastToolName) return agent.lastToolName;
-    const progress = extractAgentHeadline(agent.progress);
-    if (progress) return progress;
+    const latestEvent = agent.recentActivity.at(-1)?.summary;
+    const latestHeadline =
+      extractAgentHeadline(latestEvent) ?? extractAgentHeadline(agent.progress);
+    if (latestHeadline) return latestHeadline;
+    if (typeof latestEvent === "string" && latestEvent.trim().length > 0) {
+      const compact = latestEvent.replace(/^▸\s+/, "").trim();
+      return compact.length <= 56 ? compact : `${compact.slice(0, 55)}…`;
+    }
     if (agent.usage?.toolUses !== undefined && agent.usage.toolUses > 0) {
       return `${agent.usage.toolUses} tools`;
     }
+    if (agent.kind === "monitor") return "Watching";
+    if (agent.kind === "scheduled") return extractAgentHeadline(agent.progress) ?? "Scheduled";
     return "Working";
   }
   if (agent.error) return extractAgentHeadline(agent.error) ?? "Failed";

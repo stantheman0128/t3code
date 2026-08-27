@@ -759,6 +759,24 @@ describe("agent display titles", () => {
     expect(formatAgentActivityLine(agents[0]!)).toBe("48 tools");
   });
 
+  it("shows the latest monitor event instead of Working", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "mon-1",
+        taskType: "monitor",
+        title: "Watch only T3-parity PRs",
+      }),
+      activity("task.progress", {
+        taskId: "mon-1",
+        taskType: "monitor",
+        status: "running",
+        summary: "PR #1202 opened",
+      }),
+    ]);
+    expect(agents[0]!.kind).toBe("monitor");
+    expect(formatAgentActivityLine(agents[0]!)).toBe("PR #1202 opened");
+  });
+
   it("uses a description when Grok sends the session id as title", () => {
     const agents = fold([
       activity("task.started", {

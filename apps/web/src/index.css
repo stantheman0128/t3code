@@ -2716,14 +2716,14 @@ html:not([data-interface-animations="true"])
   font-size: 0.8125rem;
 }
 
-/* Grok Bot asar uses Anysphere glass; grok.com is high-contrast. */
+/* Grok: tight type and black send. Stay on the user's light/dark canvas.
+   Do not paint the thread #0a0a0a in light theme; body text still uses
+   --foreground and goes invisible on a forced night page. */
 [data-provider-chrome="grok"] {
   --provider-chrome-accent: #171717;
   --provider-chrome-on-accent: #fafafa;
   --provider-chrome-radius: 0.75rem;
   --glass-blur: 18px;
-  background-color: #0a0a0a;
-  color: #f4f4f5;
 }
 
 [data-provider-chrome="grok"] .chat-markdown {
@@ -2734,8 +2734,8 @@ html:not([data-interface-animations="true"])
 }
 
 [data-provider-chrome="grok"] [data-user-bubble] {
-  background-color: #18181b;
-  color: #fafafa;
+  background-color: color-mix(in srgb, #171717 8%, var(--background));
+  color: var(--foreground);
   border-radius: 0.75rem;
 }
 
@@ -2806,7 +2806,11 @@ html:not([data-interface-animations="true"])
   [data-provider-chrome="grok"] {
     --provider-chrome-accent: #f4f4f5;
     --provider-chrome-on-accent: #171717;
-    background-color: #050505;
+  }
+
+  [data-provider-chrome="grok"] [data-user-bubble] {
+    background-color: color-mix(in srgb, #f4f4f5 10%, var(--background));
+    color: var(--foreground);
   }
 
   [data-provider-chrome="opencode"] {

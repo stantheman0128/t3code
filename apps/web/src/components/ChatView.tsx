@@ -6118,18 +6118,16 @@ function ChatViewContent(props: ChatViewProps) {
     if (isWorking || sendInFlightRef.current) {
       return;
     }
-    if (promptRef.current.trim().length > 0) {
+    if (promptRef.current.trim().length > 0 || composerImagesRef.current.length > 0) {
       return;
     }
     const queued = usePromptQueueStore.getState().dequeue(routeThreadKey);
     if (!queued) {
       return;
     }
-    promptRef.current = queued.prompt;
-    setComposerDraftPrompt(composerDraftTarget, queued.prompt);
-    composerRef.current?.resetCursorState({ prompt: queued.prompt, cursor: queued.prompt.length });
+    composerRef.current?.applyQueuedItem(queued);
     void onSend();
-  }, [composerDraftTarget, isWorking, routeThreadKey, setComposerDraftPrompt]);
+  }, [composerDraftTarget, isWorking, routeThreadKey]);
 
   const onSendInNewThread = useCallback(async () => {
     if (

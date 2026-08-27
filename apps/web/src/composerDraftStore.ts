@@ -481,6 +481,8 @@ interface ComposerDraftStoreState {
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
+  /** Move images off the draft without revoking preview URLs, for queue transfer. */
+  takeImages: (threadRef: ComposerThreadTarget) => ComposerImageAttachment[];
   insertTerminalContext: (
     threadRef: ComposerThreadTarget,
     prompt: string,
@@ -3013,6 +3015,40 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               },
             };
           });
+        },
+        takeImages: (threadRef) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return [];
+          }
+          const existing = get().draftsByThreadKey[threadKey];
+          if (!existing || existing.images.length === 0) {
+            return [];
+          }
+          const images = existing.images;
+          const takenIds = new Set(images.map((image) => image.id));
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...current,
+              images: [],
+              nonPersistedImageIds: current.nonPersistedImageIds.filter((id) => !takenIds.has(id)),
+              persistedAttachments: current.persistedAttachments.filter(
+                (attachment) => !takenIds.has(attachment.id),
+              ),
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+          return images;
         },
         removeImage: (threadRef, imageId) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";

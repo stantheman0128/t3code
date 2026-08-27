@@ -136,7 +136,11 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
-import { selectPromptQueue, usePromptQueueStore } from "../../promptQueueStore";
+import {
+  selectPromptQueue,
+  usePromptQueueStore,
+  type PromptQueueItem,
+} from "../../promptQueueStore";
 import { ComposerPromptQueue } from "./ComposerPromptQueue";
 import { useDelayedUnmount } from "~/hooks/useDelayedUnmount";
 import { cn, randomUUID } from "~/lib/utils";
@@ -595,6 +599,7 @@ export interface ChatComposerHandle {
     prompt?: string;
     detectTrigger?: boolean;
   }) => void;
+  applyQueuedItem: (item: PromptQueueItem) => void;
   /** Insert a terminal context from the terminal drawer. */
   addTerminalContext: (selection: TerminalContextSelection) => void;
   /** Get the current prompt/effort/model state for use in send. */
@@ -840,6 +845,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
+  const takeComposerDraftImages = useComposerDraftStore((store) => store.takeImages);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
     (store) => store.insertTerminalContext,
   );
@@ -2126,11 +2132,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (choice: "queue" | "steer" | "new-thread") => {
       setBusySendMenuOpen(false);
       if (choice === "queue") {
-        const queued = promptRef.current.trim();
-        if (!queued) {
+        const queuedPrompt = promptRef.current.trim();
+        const queuedImages = takeComposerDraftImages(composerDraftTarget);
+        if (!queuedPrompt && queuedImages.length === 0) {
           return;
         }
-        enqueueQueuedPrompt(promptQueueThreadKey, queued);
+        enqueueQueuedPrompt(promptQueueThreadKey, {
+          prompt: queuedPrompt,
+          images: queuedImages,
+        });
         promptRef.current = "";
         setPrompt("");
         setComposerHighlightedItemId(null);
@@ -2147,12 +2157,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       submitComposer(undefined, "foreground");
     },
     [
+      composerDraftTarget,
       enqueueQueuedPrompt,
       onSendInNewThread,
       promptQueueThreadKey,
       promptRef,
       setPrompt,
       submitComposer,
+      takeComposerDraftImages,
     ],
   );
 
@@ -3017,6 +3029,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             : null,
         );
       },
+      applyQueuedItem: (item: PromptQueueItem) => {
+        promptRef.current = item.prompt;
+        setComposerDraftPrompt(composerDraftTarget, item.prompt);
+        if (item.images.length > 0) {
+          addComposerDraftImages(composerDraftTarget, [
+            ...item.images,
+          ] as ComposerImageAttachment[]);
+        }
+        const cursor = clampCollapsedComposerCursor(item.prompt, item.prompt.length);
+        setComposerHighlightedItemId(null);
+        setPendingSlashCommand(null);
+        setComposerCursor(cursor);
+        setComposerTrigger(null);
+      },
       addTerminalContext: (selection: TerminalContextSelection) => {
         if (!activeThread) return;
         const snapshot = composerEditorRef.current?.readSnapshot() ?? {
@@ -3081,6 +3107,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }),
     [
       activeThread,
+      addComposerDraftImages,
       addComposerImages,
       composerDraftTarget,
       composerCursor,
@@ -3101,6 +3128,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacement,
       isComposerModelPickerOpen,
       readComposerSnapshot,
+      setComposerDraftPrompt,
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
@@ -3559,7 +3587,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {promptQueue.length > 0 ? (
                 <ComposerPromptQueue
                   items={promptQueue}
-                  onRemove={(id) => removeQueuedPrompt(promptQueueThreadKey, id)}
+                  onRemove={(id) => {
+                    const item = promptQueue.find((entry) => entry.id === id);
+                    for (const image of item?.images ?? []) {
+                      if (image.previewUrl.startsWith("blob:")) {
+                        URL.revokeObjectURL(image.previewUrl);
+                      }
+                    }
+                    removeQueuedPrompt(promptQueueThreadKey, id);
+                  }}
                   className="mb-2"
                 />
               ) : null}

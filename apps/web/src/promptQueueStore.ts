@@ -1,13 +1,28 @@
 import { create } from "zustand";
 
+export interface PromptQueueImage {
+  readonly id: string;
+  readonly name: string;
+  readonly previewUrl: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly file: File;
+}
+
 export interface PromptQueueItem {
   readonly id: string;
   readonly prompt: string;
+  readonly images: readonly PromptQueueImage[];
+}
+
+export interface PromptQueueEnqueueInput {
+  readonly prompt: string;
+  readonly images?: readonly PromptQueueImage[];
 }
 
 interface PromptQueueState {
   readonly byThreadKey: Readonly<Record<string, readonly PromptQueueItem[]>>;
-  enqueue: (threadKey: string, prompt: string) => PromptQueueItem;
+  enqueue: (threadKey: string, input: PromptQueueEnqueueInput) => PromptQueueItem;
   remove: (threadKey: string, id: string) => void;
   dequeue: (threadKey: string) => PromptQueueItem | undefined;
 }
@@ -16,10 +31,11 @@ const EMPTY_QUEUE: readonly PromptQueueItem[] = [];
 
 export const usePromptQueueStore = create<PromptQueueState>((set, get) => ({
   byThreadKey: {},
-  enqueue: (threadKey, prompt) => {
+  enqueue: (threadKey, input) => {
     const item: PromptQueueItem = {
       id: `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      prompt,
+      prompt: input.prompt,
+      images: input.images ? [...input.images] : [],
     };
     set((state) => ({
       byThreadKey: {

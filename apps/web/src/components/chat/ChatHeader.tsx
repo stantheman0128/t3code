@@ -74,6 +74,8 @@ interface ChatHeaderProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  /** Visible when Settings > Appearance > Provider chrome is on. */
+  providerChromeLabel?: string | null;
 }
 
 /**
@@ -140,6 +142,7 @@ export const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  providerChromeLabel = null,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const fileScripts = useT3ProjectFileScripts(
@@ -288,6 +291,18 @@ export const ChatHeader = memo(function ChatHeader({
       className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
       onContextMenu={handleHeaderContextMenu}
     >
+      {providerChromeLabel ? (
+        <span
+          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide"
+          data-provider-chrome-chip=""
+          style={{
+            backgroundColor: "var(--provider-chrome-accent)",
+            color: "var(--provider-chrome-on-accent, #fff)",
+          }}
+        >
+          {providerChromeLabel}
+        </span>
+      ) : null}
       <WorkspaceBreadcrumb ariaLabel="Thread breadcrumb" className="flex-1">
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone

@@ -2626,10 +2626,42 @@ html:not([data-interface-animations="true"])
   }
 }
 
-/* Opt-in provider chrome. Scoped to the chat workspace so the thread
-   sidebar and settings keep T3's default look. */
+/* Opt-in provider chrome. Scoped to the chat workspace. The composer
+   shell resets --chat-composer-outline, so skins paint a top bar, retint
+   the send button, and draw a ring on the glass layer itself. */
+[data-provider-chrome] {
+  --provider-chrome-on-accent: #fff;
+  --primary: var(--provider-chrome-accent);
+  --primary-foreground: var(--provider-chrome-on-accent);
+  --message-action: var(--provider-chrome-accent);
+  --message-action-foreground: var(--provider-chrome-on-accent);
+  --message-action-hover: color-mix(in srgb, var(--provider-chrome-accent) 84%, var(--background));
+  --ring: var(--provider-chrome-accent);
+  background-color: color-mix(in srgb, var(--provider-chrome-accent) 8%, var(--background));
+}
+
+[data-provider-chrome] [data-chat-header] {
+  box-shadow: inset 0 3px 0 0 var(--provider-chrome-accent);
+}
+
+[data-provider-chrome] .chat-composer-glass-shell {
+  --chat-composer-outline: color-mix(in srgb, var(--provider-chrome-accent) 62%, transparent);
+}
+
+[data-provider-chrome] .chat-composer-glass-shell::before {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--provider-chrome-accent) 72%, transparent);
+}
+
+[data-provider-chrome] [data-user-bubble] {
+  background-color: color-mix(
+    in srgb,
+    var(--provider-chrome-accent) 18%,
+    var(--message-surface, var(--card))
+  );
+}
+
 [data-provider-chrome="claudeAgent"] {
-  --chat-composer-outline: color-mix(in srgb, #d97757 28%, var(--border));
+  --provider-chrome-accent: #c96442;
   font-feature-settings: "ss01";
 }
 
@@ -2642,12 +2674,7 @@ html:not([data-interface-animations="true"])
 }
 
 [data-provider-chrome="codex"] {
-  --chat-composer-outline: color-mix(in srgb, #10a37f 32%, var(--border));
-}
-
-[data-provider-chrome="codex"] .chat-markdown {
-  font-family: var(--font-sans);
-  letter-spacing: -0.011em;
+  --provider-chrome-accent: #0f9d76;
 }
 
 [data-provider-chrome="codex"] [data-assistant-thinking] {
@@ -2656,7 +2683,8 @@ html:not([data-interface-animations="true"])
 }
 
 [data-provider-chrome="grok"] {
-  --chat-composer-outline: color-mix(in srgb, var(--contrast-foreground) 22%, var(--border));
+  --provider-chrome-accent: #171717;
+  --provider-chrome-on-accent: #fafafa;
 }
 
 [data-provider-chrome="grok"] .chat-markdown {
@@ -2664,15 +2692,31 @@ html:not([data-interface-animations="true"])
 }
 
 [data-provider-chrome="cursor"] {
-  --chat-composer-outline: color-mix(in srgb, #f54e00 34%, var(--border));
+  --provider-chrome-accent: #f54e00;
 }
 
 [data-provider-chrome="opencode"] {
-  --chat-composer-outline: color-mix(in srgb, #5eead4 28%, var(--border));
+  --provider-chrome-accent: #0f766e;
 }
 
 [data-provider-chrome="opencode"] .chat-markdown {
   font-family: var(--font-mono);
   font-size: 0.875rem;
   line-height: 1.65;
+}
+
+@variant dark {
+  [data-provider-chrome] {
+    background-color: color-mix(in srgb, var(--provider-chrome-accent) 12%, var(--background));
+  }
+
+  [data-provider-chrome="grok"] {
+    --provider-chrome-accent: #f4f4f5;
+    --provider-chrome-on-accent: #171717;
+  }
+
+  [data-provider-chrome="opencode"] {
+    --provider-chrome-accent: #2dd4bf;
+    --provider-chrome-on-accent: #042f2e;
+  }
 }

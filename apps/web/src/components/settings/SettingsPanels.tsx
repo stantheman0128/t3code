@@ -1200,7 +1200,7 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("provider-chrome")}
-          description="Tint the chat workspace, composer, and type to match the active provider. Off keeps the default T3 look."
+          description="Color the send button, composer ring, user bubbles, and a header chip for the active provider. Switch Grok / Claude / Codex to see it change."
           resetAction={
             settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome ? (
               <SettingResetButton

@@ -19,6 +19,7 @@ import {
   type KeybindingCommand,
   OrchestrationThreadActivity,
   ProviderInteractionMode,
+  PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   RuntimeMode,
   RuntimeTaskId,
@@ -7540,8 +7541,10 @@ function ChatViewContent(props: ChatViewProps) {
   return (
     <div
       className="relative flex min-h-0 min-w-0 flex-1 overflow-clip bg-background"
-      {...(providerChromeEnabled && activeProviderStatus?.driver
-        ? { "data-provider-chrome": activeProviderStatus.driver }
+      {...(providerChromeEnabled
+        ? {
+            "data-provider-chrome": activeProviderStatus?.driver ?? selectedProvider,
+          }
         : {})}
     >
       {showRowPanelLayoutControls ? panelLayoutControls : null}
@@ -7588,6 +7591,11 @@ function ChatViewContent(props: ChatViewProps) {
             // out over the panel instead.
             rightPanelOpen={rightPanelOpen}
             gitCwd={gitCwd}
+            providerChromeLabel={
+              providerChromeEnabled
+                ? (PROVIDER_DISPLAY_NAMES[selectedProvider] ?? String(selectedProvider))
+                : null
+            }
             onNewThreadInProject={handleNewThreadInActiveProject}
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}

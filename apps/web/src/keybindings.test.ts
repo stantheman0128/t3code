@@ -129,6 +129,11 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
+    shortcut: modShortcut("f"),
+    command: "find.toggle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
     shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
     command: "themeEditor.toggle",
   },
@@ -375,6 +380,8 @@ describe("shortcutLabelForCommand", () => {
       shortcutLabelForCommand(DEFAULT_BINDINGS, "projectSearch.toggle", "MacIntel"),
       "⇧⌘F",
     );
+    assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "find.toggle", "MacIntel"), "⌘F");
+    assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "find.toggle", "Win32"), "Ctrl+F");
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "modelPicker.toggle", "Linux"),
       "Ctrl+Shift+M",
@@ -608,6 +615,30 @@ describe("chat/editor shortcuts", () => {
         context: { terminalFocus: true },
       }),
       "projectSearch.toggle",
+    );
+  });
+
+  it("matches find.toggle shortcut outside terminal focus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "f", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "find.toggle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "f", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: false },
+      }),
+      "find.toggle",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(event({ key: "f", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "find.toggle",
     );
   });
 

@@ -43,6 +43,7 @@ import {
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  SearchIcon,
   ServerIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -91,6 +92,7 @@ import {
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
 import { onOpenCommandPalette } from "../commandPaletteBus";
+import { openFindBar } from "../findBarBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
@@ -135,6 +137,7 @@ import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sideb
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
+import { FindBar } from "./FindBar";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./Icons";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
@@ -458,6 +461,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         });
         return;
       }
+      if (command === "find.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (state.open) setOpen(false);
+        openFindBar();
+        return;
+      }
       const mode = overlayModeForCommand(command);
       if (mode === null) {
         return;
@@ -468,7 +478,17 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, previewOpen, resolvedTheme, terminalOpen, theme, themeHalves, toggleMode]);
+  }, [
+    keybindings,
+    previewOpen,
+    resolvedTheme,
+    setOpen,
+    state.open,
+    terminalOpen,
+    theme,
+    themeHalves,
+    toggleMode,
+  ]);
 
   useEffect(
     () =>
@@ -506,6 +526,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           clearOpenIntent={clearOpenIntent}
         />
       </CommandDialog>
+      <FindBar />
     </ComposerHandleContext>
   );
 }
@@ -1548,6 +1569,18 @@ function OpenCommandPaletteDialog(props: {
     shortcutCommand: "projectSearch.toggle",
     run: async () => {
       openOverlayMode("content");
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:find-in-page",
+    searchTerms: ["find", "find in page", "search page", "ctrl+f", "control f"],
+    title: "Find in page",
+    icon: <SearchIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "find.toggle",
+    run: async () => {
+      openFindBar();
     },
   });
 

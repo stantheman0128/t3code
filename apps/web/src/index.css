@@ -2882,3 +2882,23 @@ html:not([data-interface-animations="true"])
     box-shadow: none;
   }
 }
+
+::highlight(t3-find-match) {
+  background-color: #ffe08a;
+  color: inherit;
+}
+
+::highlight(t3-find-current) {
+  background-color: #ff9f1a;
+  color: inherit;
+}
+
+.dark ::highlight(t3-find-match) {
+  background-color: #8a6d1f;
+  color: inherit;
+}
+
+.dark ::highlight(t3-find-current) {
+  background-color: #d97706;
+  color: inherit;
+}

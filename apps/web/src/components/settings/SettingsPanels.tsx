@@ -1200,7 +1200,7 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("provider-chrome")}
-          description="Color the send button, composer ring, user bubbles, and a header chip for the active provider. Switch Grok / Claude / Codex to see it change."
+          description="Restyle the chat the way that provider's own app is laid out: Claude cream+serif, Codex pill composer, Cursor dense glass, OpenCode yuzu, Grok high-contrast. Switch the active provider to see it."
           resetAction={
             settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome ? (
               <SettingResetButton

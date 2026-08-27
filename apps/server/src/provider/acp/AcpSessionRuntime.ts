@@ -404,15 +404,24 @@ export const make = (
         if (notification.sessionId !== startState.result.sessionId) {
           const parsed = parseSessionUpdateEvent(notification);
           for (const event of parsed.events) {
-            if (event._tag !== "ToolCallUpdated") {
+            if (event._tag === "ToolCallUpdated") {
+              yield* Queue.offer(eventQueue, {
+                _tag: "ChildSessionToolCallUpdated",
+                sessionId: notification.sessionId,
+                toolCall: event.toolCall,
+                rawPayload: event.rawPayload,
+              });
               continue;
             }
-            yield* Queue.offer(eventQueue, {
-              _tag: "ChildSessionToolCallUpdated",
-              sessionId: notification.sessionId,
-              toolCall: event.toolCall,
-              rawPayload: event.rawPayload,
-            });
+            if (event._tag === "ContentDelta") {
+              yield* Queue.offer(eventQueue, {
+                _tag: "ChildSessionContentDelta",
+                sessionId: notification.sessionId,
+                text: event.text,
+                streamKind: event.streamKind,
+                rawPayload: event.rawPayload,
+              });
+            }
           }
           return;
         }

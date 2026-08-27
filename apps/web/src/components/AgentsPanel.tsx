@@ -238,27 +238,18 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
           {preview}
         </p>
       ) : null}
-      {live && agent.lastToolName ? (
+      {steps.length > 0 ? (
+        <ol className="max-h-56 space-y-1 overflow-y-auto text-[.7rem] leading-5 text-foreground/85">
+          {steps.map((step, index) => (
+            <li key={`${index}-${step}`} className="whitespace-pre-wrap break-words">
+              {step}
+            </li>
+          ))}
+        </ol>
+      ) : live && agent.lastToolName ? (
         <p className="text-[.7rem] text-foreground/80">
           Now: <span className="font-medium">{agent.lastToolName}</span>
         </p>
-      ) : null}
-      {steps.length > 0 ? (
-        isWatch ? (
-          <ol className="max-h-56 space-y-1 overflow-y-auto text-[.7rem] leading-5 text-foreground/85">
-            {steps.map((step, index) => (
-              <li key={`${index}-${step}`} className="whitespace-pre-wrap break-words">
-                {step}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <ol className="max-h-56 list-decimal space-y-0.5 overflow-y-auto pl-4 text-[.7rem] leading-5 text-foreground/80">
-            {steps.map((step, index) => (
-              <li key={`${index}-${step}`}>{step}</li>
-            ))}
-          </ol>
-        )
       ) : toolUses > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">
           {live

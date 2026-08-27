@@ -1,4 +1,5 @@
 import type { RuntimeTaskStatus } from "@t3tools/contracts";
+import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
 
 /**
  * Pure mapping of Grok Build `x.ai/session_notification` updates onto T3's
@@ -557,9 +558,10 @@ export function applyGrokSubagentUpdate(
         usageByTaskId.set(update.subagentId, typedUsage);
       }
       const lastTool = update.toolsUsed?.at(-1);
-      const summary =
-        lastTool ??
-        (update.description ? update.description.split(/\r?\n/, 1)[0]!.trim() : undefined);
+      const descriptionLine = update.description
+        ? update.description.split(/\r?\n/, 1)[0]!.trim()
+        : undefined;
+      const summary = descriptionLine && descriptionLine !== lastTool ? descriptionLine : undefined;
       events.push({
         type: "task.progress",
         payload: {
@@ -613,12 +615,84 @@ export function grokSessionIdFromRaw(payload: unknown): string | undefined {
   return readString(record?.sessionId) ?? readString(record?.session_id);
 }
 
-export function grokToolDisplayName(toolCall: {
+export type GrokToolActivityInput = {
   readonly title?: string;
   readonly kind?: string;
   readonly command?: string;
-}): string | undefined {
+  readonly detail?: string;
+  readonly data?: Record<string, unknown>;
+};
+
+export function grokToolDisplayName(toolCall: GrokToolActivityInput): string | undefined {
   return readString(toolCall.title) ?? readString(toolCall.command) ?? readString(toolCall.kind);
+}
+
+function grokToolPath(toolCall: GrokToolActivityInput): string | undefined {
+  const rawInput = asRecord(toolCall.data?.rawInput);
+  const fromInput =
+    readString(rawInput?.path) ??
+    readString(rawInput?.target_file) ??
+    readString(rawInput?.file_path) ??
+    readString(rawInput?.glob);
+  if (fromInput) {
+    return fromInput;
+  }
+  const locations = toolCall.data?.locations;
+  if (!Array.isArray(locations)) {
+    return undefined;
+  }
+  const first = asRecord(locations[0]);
+  return readString(first?.path);
+}
+
+export function grokToolActivityLine(toolCall: GrokToolActivityInput): string | undefined {
+  const presentation = deriveToolActivityPresentation({
+    title: toolCall.title,
+    detail: toolCall.detail ?? toolCall.command,
+    data: {
+      ...(toolCall.kind ? { kind: toolCall.kind } : {}),
+      ...(toolCall.command ? { command: toolCall.command } : {}),
+      ...(toolCall.data ?? {}),
+    },
+    fallbackSummary: toolCall.title ?? toolCall.kind ?? toolCall.command,
+  });
+  const parts: string[] = [];
+  if (presentation.summary) {
+    parts.push(presentation.summary);
+  }
+  if (presentation.detail && presentation.detail !== presentation.summary) {
+    parts.push(presentation.detail);
+  }
+  const path = grokToolPath(toolCall);
+  if (path && !parts.some((part) => part.includes(path))) {
+    parts.push(path);
+  }
+  if (parts.length === 0) {
+    return grokToolDisplayName(toolCall);
+  }
+  return parts.join(" · ").slice(0, 180);
+}
+
+export function grokChildThoughtProgressEvent(
+  state: GrokWorkflowTrackState,
+  sessionId: string | undefined,
+  text: string,
+  liveMonitorTaskIds?: ReadonlySet<string>,
+): GrokTaskEventSpec | undefined {
+  const subagentId = grokLiveSubagentIdForToolProgress(state, sessionId, liveMonitorTaskIds);
+  const summary = text.replace(/\s+/g, " ").trim().slice(0, 180);
+  if (!subagentId || summary.length === 0) {
+    return undefined;
+  }
+  return {
+    type: "task.progress",
+    payload: {
+      taskId: subagentId,
+      status: "running",
+      summary,
+      timelineBypass: true,
+    },
+  };
 }
 
 export function grokLiveSubagentIdForToolProgress(
@@ -650,16 +724,13 @@ export function grokLiveSubagentIdForToolProgress(
 export function grokChildToolProgressEvent(
   state: GrokWorkflowTrackState,
   sessionId: string | undefined,
-  toolCall: {
-    readonly title?: string;
-    readonly kind?: string;
-    readonly command?: string;
-  },
+  toolCall: GrokToolActivityInput,
   liveMonitorTaskIds?: ReadonlySet<string>,
 ): GrokTaskEventSpec | undefined {
   const subagentId = grokLiveSubagentIdForToolProgress(state, sessionId, liveMonitorTaskIds);
-  const lastTool = grokToolDisplayName(toolCall);
-  if (!subagentId || !lastTool) {
+  const activity = grokToolActivityLine(toolCall);
+  const lastTool = grokToolDisplayName(toolCall) ?? activity;
+  if (!subagentId || !activity || !lastTool) {
     return undefined;
   }
   return {
@@ -667,7 +738,7 @@ export function grokChildToolProgressEvent(
     payload: {
       taskId: subagentId,
       status: "running",
-      summary: lastTool,
+      summary: activity,
       lastToolName: lastTool,
       timelineBypass: true,
     },

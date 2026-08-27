@@ -157,7 +157,6 @@ describe("AgentsPanel", () => {
 
     const html = renderToStaticMarkup(<AgentsPanel model={model} />);
     expect(html).toContain("read_file");
-    expect(html).toContain("Now:");
     expect(html).not.toContain("No output yet");
   });
 
@@ -225,7 +224,43 @@ describe("AgentsPanel", () => {
     const html = renderToStaticMarkup(<AgentsPanel model={model} />);
     expect(html).toContain("read_file");
     expect(html).toContain("grep");
-    expect(html).toContain("Now:");
+    expect(html).toContain("whitespace-pre-wrap");
+  });
+
+  it("shows the live grep pattern instead of only the tool name", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-grep",
+          status: "running",
+          title: "Slow live Agents probe",
+          error: null,
+          result: null,
+          lastToolName: "grep",
+          usage: { totalTokens: 20300, toolUses: 20 },
+          recentActivity: [
+            {
+              at: "2026-08-28T06:00:00.000Z",
+              summary: "Searched files · find.toggle · apps/web/src",
+            },
+          ],
+        }),
+      ],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 20300,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("find.toggle");
+    expect(html).toContain("apps/web/src");
+    expect(html).toContain("Slow live Agents probe");
   });
 
   it("shows a live monitor's events instead of only a truncated session path", () => {

@@ -777,6 +777,24 @@ describe("agent display titles", () => {
     expect(formatAgentActivityLine(agents[0]!)).toBe("PR #1202 opened");
   });
 
+  it("does not rename a live explore child to its current tool", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "01a0456b-b478-7911-9534-92ad7ffde414",
+        title: "01a0456b-b478-7911-9534-92ad7ffde414",
+        role: "explore",
+      }),
+      activity("task.progress", {
+        taskId: "01a0456b-b478-7911-9534-92ad7ffde414",
+        status: "running",
+        lastToolName: "grep",
+        summary: "Searched files · find.toggle · apps/web/src",
+      }),
+    ]);
+    expect(formatAgentDisplayTitle(agents[0]!)).toBe("explore");
+    expect(formatAgentActivityLine(agents[0]!)).toBe("Searched files · find.toggle · apps/web/src");
+  });
+
   it("uses a description when Grok sends the session id as title", () => {
     const agents = fold([
       activity("task.started", {

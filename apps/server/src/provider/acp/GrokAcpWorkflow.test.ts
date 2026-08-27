@@ -4,6 +4,7 @@ import {
   applyGrokSubagentUpdate,
   applyGrokWorkflowUpdate,
   emptyGrokWorkflowTrackState,
+  grokChildThoughtProgressEvent,
   grokChildToolProgressEvent,
   grokSessionIdFromRaw,
   grokWorkflowMemberTaskId,
@@ -161,8 +162,8 @@ describe("GrokAcpWorkflow", () => {
     const applied = applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), progress!);
     expect(applied.events.at(-1)?.payload).toMatchObject({
       lastToolName: "read_file",
-      summary: "read_file",
     });
+    expect(applied.events.at(-1)?.payload.summary).toBeUndefined();
   });
 
   it("carries duration and tool-use counts on subagent progress and finish", () => {
@@ -259,7 +260,7 @@ describe("GrokAcpWorkflow", () => {
       payload: {
         taskId: "sa_1",
         lastToolName: "read_file",
-        summary: "read_file",
+        summary: "Read file",
         timelineBypass: true,
       },
     });
@@ -272,6 +273,32 @@ describe("GrokAcpWorkflow", () => {
     expect(fromParentWhileOneChildLive?.payload).toMatchObject({
       taskId: "sa_1",
       lastToolName: "rg lastToolName",
+      summary: "rg lastToolName",
+    });
+  });
+
+  it("puts grep pattern and path on the child tool activity line", () => {
+    const spawned = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_spawned",
+        subagent_id: "sa_grep",
+        child_session_id: "child-grep",
+      },
+    });
+    const afterSpawn = applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), spawned!);
+    expect(
+      grokChildToolProgressEvent(afterSpawn.state, "child-grep", {
+        title: "grep",
+        kind: "search",
+        detail: "find.toggle",
+        data: {
+          rawInput: { pattern: "find.toggle", path: "apps/web/src" },
+        },
+      })?.payload,
+    ).toMatchObject({
+      taskId: "sa_grep",
+      lastToolName: "grep",
+      summary: "Searched files · find.toggle · apps/web/src",
     });
   });
 
@@ -298,6 +325,30 @@ describe("GrokAcpWorkflow", () => {
     expect(
       grokChildToolProgressEvent(afterFinish.state, "child-1", { title: "read_file" }),
     ).toBeUndefined();
+  });
+
+  it("maps child thinking onto the live subagent log", () => {
+    const spawned = parseXAiSubagentUpdate({
+      update: {
+        sessionUpdate: "subagent_spawned",
+        subagent_id: "sa_think",
+        child_session_id: "child-think",
+      },
+    });
+    const afterSpawn = applyGrokSubagentUpdate(emptyGrokWorkflowTrackState(), spawned!);
+    expect(
+      grokChildThoughtProgressEvent(
+        afterSpawn.state,
+        "child-think",
+        "Need to inspect FindBar next.",
+      ),
+    ).toMatchObject({
+      type: "task.progress",
+      payload: {
+        taskId: "sa_think",
+        summary: "Need to inspect FindBar next.",
+      },
+    });
   });
 
   it("pins unmapped child tools onto the lone live monitor", () => {

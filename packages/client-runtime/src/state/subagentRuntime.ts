@@ -244,19 +244,30 @@ function pickAgentTitle(payload: Record<string, unknown>, id: string): string {
   return candidates[0] ?? id;
 }
 
+const TOOLISH_HEADLINE =
+  /^(▸\s+)?(grep|read(_file)?|read file|searched files|ran command|glob|bash|shell|terminal|write|edit|search|tool)$/i;
+
+function isToolishHeadline(value: string): boolean {
+  const normalized = value.replace(/^▸\s+/, "").trim();
+  if (normalized.length === 0 || normalized.length > 48) return false;
+  return TOOLISH_HEADLINE.test(normalized);
+}
+
 export function formatAgentDisplayTitle(agent: RuntimeSubagent): string {
   if (!isWeakAgentTitle(agent.title, agent.id)) {
     return extractAgentHeadline(agent.title, 56) ?? humanizeAgentLabel(agent.title);
   }
   const fromResult = extractAgentHeadline(agent.result);
-  if (fromResult) return fromResult;
+  if (fromResult && !isToolishHeadline(fromResult)) return fromResult;
+  if (agent.role && !isWeakAgentTitle(agent.role, agent.id)) {
+    return humanizeAgentLabel(agent.role);
+  }
   const fromProgress = extractAgentHeadline(agent.progress);
-  if (fromProgress) return fromProgress;
+  if (fromProgress && !isToolishHeadline(fromProgress)) return fromProgress;
   for (const entry of agent.recentActivity) {
     const fromActivity = extractAgentHeadline(entry.summary);
-    if (fromActivity) return fromActivity;
+    if (fromActivity && !isToolishHeadline(fromActivity)) return fromActivity;
   }
-  if (agent.role) return humanizeAgentLabel(agent.role);
   if (agent.kind === "scheduled") return "Scheduled";
   if (agent.kind === "monitor") return "Monitor";
   return "Subagent";
@@ -264,15 +275,16 @@ export function formatAgentDisplayTitle(agent: RuntimeSubagent): string {
 
 export function formatAgentActivityLine(agent: RuntimeSubagent): string {
   if (isActiveSubagentStatus(agent.status)) {
-    if (agent.lastToolName) return agent.lastToolName;
     const latestEvent = agent.recentActivity.at(-1)?.summary;
-    const latestHeadline =
-      extractAgentHeadline(latestEvent) ?? extractAgentHeadline(agent.progress);
-    if (latestHeadline) return latestHeadline;
     if (typeof latestEvent === "string" && latestEvent.trim().length > 0) {
       const compact = latestEvent.replace(/^▸\s+/, "").trim();
-      return compact.length <= 56 ? compact : `${compact.slice(0, 55)}…`;
+      if (compact.length > 0) {
+        return compact.length <= 72 ? compact : `${compact.slice(0, 71)}…`;
+      }
     }
+    if (agent.lastToolName) return agent.lastToolName;
+    const latestHeadline = extractAgentHeadline(agent.progress);
+    if (latestHeadline) return latestHeadline;
     if (agent.usage?.toolUses !== undefined && agent.usage.toolUses > 0) {
       return `${agent.usage.toolUses} tools`;
     }
@@ -700,7 +712,11 @@ export function foldSubagentActivities(
         const lastToolName = asString(payload.lastToolName);
         if (lastToolName) {
           agent.lastToolName = lastToolName;
-          if (!summary) {
+          const latest = agent.recentActivity.at(-1)?.summary ?? "";
+          const alreadyLogged = latest
+            .toLocaleLowerCase()
+            .includes(lastToolName.toLocaleLowerCase());
+          if (!summary && !alreadyLogged) {
             agent.recentActivity = appendActivity(agent.recentActivity, at, `▸ ${lastToolName}`);
           }
         }

@@ -832,6 +832,8 @@ export function makeCursorAdapter(
                     return;
                   case "ChildSessionToolCallUpdated":
                     return;
+                  case "ChildSessionContentDelta":
+                    return;
                   case "ToolCallUpdated":
                     yield* logNative(
                       ctx.threadId,

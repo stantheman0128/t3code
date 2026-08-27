@@ -110,6 +110,13 @@ export type AcpParsedSessionEvent =
       readonly rawPayload: unknown;
     }
   | {
+      readonly _tag: "ChildSessionContentDelta";
+      readonly sessionId: string;
+      readonly text: string;
+      readonly streamKind: "assistant_text" | "reasoning_text";
+      readonly rawPayload: unknown;
+    }
+  | {
       readonly _tag: "ContentDelta";
       readonly itemId?: string;
       readonly text: string;

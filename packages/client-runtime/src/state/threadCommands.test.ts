@@ -3,10 +3,12 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   applyCodexGoalStreamEvent,
+  derivePromptGoalFromUserTexts,
   formatCodexGoalDescription,
   formatCodexGoalError,
   formatCodexGoalStatus,
   formatCodexGoalUsage,
+  formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
 } from "./threadCommands.ts";
@@ -47,6 +49,28 @@ describe("parseCodexGoalCommand", () => {
     for (const [command, expected] of cases) {
       expect(parseCodexGoalCommand(command)).toEqual(expected);
     }
+  });
+});
+
+describe("derivePromptGoalFromUserTexts", () => {
+  it("keeps the latest set objective until clear", () => {
+    expect(
+      derivePromptGoalFromUserTexts([
+        "/goal Prove the claim",
+        "keep going on the proof",
+        "/goal pause",
+      ]),
+    ).toEqual({ objective: "Prove the claim", status: "paused" });
+    expect(derivePromptGoalFromUserTexts(["/goal Prove the claim", "/goal clear"])).toBeNull();
+  });
+
+  it("labels a live turn as running", () => {
+    expect(formatPromptGoalTitle({ objective: "Ship it", status: "active" }, true)).toBe(
+      "Goal running",
+    );
+    expect(formatPromptGoalTitle({ objective: "Ship it", status: "paused" }, true)).toBe(
+      "Goal paused",
+    );
   });
 });
 

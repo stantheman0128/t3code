@@ -281,9 +281,11 @@ import {
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment, useCodexGoal, useEnvironmentThread } from "../state/threads";
 import {
+  derivePromptGoalFromUserTexts,
   formatCodexGoalDescription,
   formatCodexGoalError,
   formatCodexGoalStatus,
+  formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
 } from "@t3tools/client-runtime/state/threads";
@@ -5343,24 +5345,50 @@ function ChatViewContent(props: ChatViewProps) {
     resumeCompactionPermanentlyDismissed,
     selectedProvider,
   ]);
-  const codexGoalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
-    if (codexGoal === null) return null;
-    const goalDescription = formatCodexGoalDescription(codexGoal);
+  const promptGoal = useMemo(
+    () =>
+      derivePromptGoalFromUserTexts(
+        timelineMessages
+          .filter((message) => message.role === "user")
+          .map((message) => message.text),
+      ),
+    [timelineMessages],
+  );
+  const goalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (codexGoal !== null) {
+      const goalDescription = formatCodexGoalDescription(codexGoal);
+      return {
+        id: `codex-goal:${activeThread?.id ?? "unknown"}`,
+        variant: "info",
+        icon: <TargetIcon />,
+        title: `Goal ${formatCodexGoalStatus(codexGoal.status)}`,
+        description: (
+          <Tooltip>
+            <TooltipTrigger render={<span className="line-clamp-2">{goalDescription}</span>} />
+            <TooltipPopup side="top" className="max-w-96">
+              {goalDescription}
+            </TooltipPopup>
+          </Tooltip>
+        ),
+      };
+    }
+    if (promptGoal === null) return null;
+    const running = phase === "running" && promptGoal.status === "active";
     return {
-      id: `codex-goal:${activeThread?.id ?? "unknown"}`,
+      id: `thread-goal:${activeThread?.id ?? "unknown"}`,
       variant: "info",
       icon: <TargetIcon />,
-      title: `Goal ${formatCodexGoalStatus(codexGoal.status)}`,
+      title: formatPromptGoalTitle(promptGoal, running),
       description: (
         <Tooltip>
-          <TooltipTrigger render={<span className="line-clamp-2">{goalDescription}</span>} />
+          <TooltipTrigger render={<span className="line-clamp-2">{promptGoal.objective}</span>} />
           <TooltipPopup side="top" className="max-w-96">
-            {goalDescription}
+            {promptGoal.objective}
           </TooltipPopup>
         </Tooltip>
       ),
     };
-  }, [activeThread?.id, codexGoal]);
+  }, [activeThread?.id, codexGoal, phase, promptGoal]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
@@ -5379,20 +5407,21 @@ function ChatViewContent(props: ChatViewProps) {
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
-    const codexGoalItems = codexGoalBannerItem === null ? [] : [codexGoalBannerItem];
+    const goalItems = goalBannerItem === null ? [] : [goalBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...urgentSystemItems,
+        ...goalItems,
         ...backgroundLivenessItems,
         ...calmSystemItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
-        ...codexGoalItems,
       ];
     }
     return [
       ...urgentSystemItems,
+      ...goalItems,
       ...backgroundLivenessItems,
       ...calmSystemItems,
       ...resumeCompactionItems,
@@ -5437,12 +5466,11 @@ function ChatViewContent(props: ChatViewProps) {
         },
       },
       ...parkedThreadItems,
-      ...codexGoalItems,
     ];
   }, [
     activeBranchMismatchKey,
     backgroundLivenessBannerItem,
-    codexGoalBannerItem,
+    goalBannerItem,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,

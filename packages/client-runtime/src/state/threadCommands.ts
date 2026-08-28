@@ -96,6 +96,51 @@ export function formatCodexGoalError(error: unknown): string {
   return reason.length === 0 ? error.message : `${error.message}: ${reason}`;
 }
 
+export type PromptGoal = {
+  readonly objective: string;
+  readonly status: Extract<CodexGoalStatus, "active" | "paused">;
+};
+
+export function applyPromptGoalCommand(
+  current: PromptGoal | null,
+  command: CodexGoalCommand,
+): PromptGoal | null {
+  if (command.action === "clear") {
+    return null;
+  }
+  if (command.action === "status" || command.action === "invalid") {
+    return current;
+  }
+  const objective = command.objective ?? current?.objective;
+  if (!objective) {
+    return current;
+  }
+  return {
+    objective,
+    status: command.status ?? current?.status ?? "active",
+  };
+}
+
+/** Replay `/goal` user messages oldest-to-newest into the live prompt goal. */
+export function derivePromptGoalFromUserTexts(texts: ReadonlyArray<string>): PromptGoal | null {
+  let goal: PromptGoal | null = null;
+  for (const text of texts) {
+    const command = parseCodexGoalCommand(text.trim());
+    if (command === null) {
+      continue;
+    }
+    goal = applyPromptGoalCommand(goal, command);
+  }
+  return goal;
+}
+
+export function formatPromptGoalTitle(goal: PromptGoal, running: boolean): string {
+  if (running && goal.status === "active") {
+    return "Goal running";
+  }
+  return `Goal ${formatCodexGoalStatus(goal.status)}`;
+}
+
 export function parseCodexGoalCommand(value: string): CodexGoalCommand | null {
   const match = /^\/goal(?:\s+([\s\S]*))?$/i.exec(value.trim());
   if (match === null) return null;

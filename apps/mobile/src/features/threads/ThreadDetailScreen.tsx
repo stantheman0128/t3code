@@ -1,9 +1,11 @@
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
+  derivePromptGoalFromUserTexts,
   formatCodexGoalDescription,
   formatCodexGoalError,
   formatCodexGoalStatus,
   formatCodexGoalUsage,
+  formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
   type EnvironmentThreadStatus,
@@ -482,6 +484,16 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       ? (props.selectedThread.session?.providerInstanceId ?? selectedInstanceId)
       : null,
   );
+  const promptGoal = useMemo(
+    () =>
+      derivePromptGoalFromUserTexts(
+        selectedThreadFeed.flatMap((entry) =>
+          entry.type === "message" && entry.message.role === "user" ? [entry.message.text] : [],
+        ),
+      ),
+    [selectedThreadFeed],
+  );
+  const goalRunning = props.selectedThread.session?.status === "running";
   useStreamingHaptics(props.selectedThread.id, props.selectedThreadFeed);
   const selectedProviderSkills = useMemo(
     () =>
@@ -868,6 +880,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>
                     {formatCodexGoalUsage(codexGoal)}
+                  </Text>
+                </View>
+              ) : promptGoal !== null ? (
+                <View className="mx-3 mb-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+                  <Text className="text-xs font-t3-bold text-foreground">
+                    {formatPromptGoalTitle(promptGoal, goalRunning)}
+                  </Text>
+                  <Text className="text-xs text-foreground-muted" numberOfLines={2}>
+                    {promptGoal.objective}
                   </Text>
                 </View>
               ) : null}

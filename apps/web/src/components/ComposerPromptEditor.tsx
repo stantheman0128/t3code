@@ -1786,7 +1786,7 @@ function ComposerPromptEditorInner({
           <span
             ref={prefixRef}
             className={cn(
-              "pointer-events-none absolute left-0 top-0 z-1",
+              "pointer-events-none absolute left-0 top-0 z-1 bg-[var(--chat-composer-glass-surface,var(--card))]",
               COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME,
             )}
             data-testid="composer-inline-chip-line"

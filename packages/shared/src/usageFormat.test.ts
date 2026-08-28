@@ -114,6 +114,9 @@ describe("formatCodexPlanType", () => {
     expect(formatCodexPlanType("pro")).toBe("ChatGPT Pro 20x");
     expect(formatCodexPlanType("prolite")).toBe("ChatGPT Pro 5x");
     expect(formatCodexPlanType("go")).toBe("ChatGPT Go");
+    expect(formatCodexPlanType("self_serve_business_prolite")).toBe("ChatGPT Business");
+    expect(formatCodexPlanType("ent26")).toBe("ChatGPT Enterprise");
+    expect(formatCodexPlanType("edu_plus")).toBe("ChatGPT Edu");
     expect(formatCodexPlanType(null)).toBeNull();
   });
 });

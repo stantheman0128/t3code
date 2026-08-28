@@ -102,13 +102,18 @@ export function formatCodexPlanType(planType: string | null | undefined): string
       return "ChatGPT Pro 5x";
     case "team":
       return "ChatGPT Team";
+    case "self_serve_business_prolite":
     case "self_serve_business_usage_based":
     case "business":
       return "ChatGPT Business";
+    case "ent26":
+    case "enterprise_cbp_automation":
     case "enterprise_cbp_usage_based":
     case "enterprise":
       return "ChatGPT Enterprise";
     case "edu":
+    case "edu_plus":
+    case "edu_pro":
       return "ChatGPT Edu";
     case "unknown":
       return "ChatGPT";

@@ -39,9 +39,12 @@ export interface SubagentUsage {
   readonly durationMs?: number;
 }
 
+export type SubagentActivityKind = "thought" | "tool" | "event";
+
 export interface SubagentActivityEntry {
   readonly at: string;
   readonly summary: string;
+  readonly kind?: SubagentActivityKind;
 }
 
 export interface SubagentWorkflowPhase {
@@ -129,8 +132,9 @@ export function compareAgentsByLiveThenIndex(a: RuntimeSubagent, b: RuntimeSubag
   );
 }
 
-const RECENT_ACTIVITY_LIMIT = 80;
+const RECENT_ACTIVITY_LIMIT = 160;
 const SUMMARY_CHAR_LIMIT = 180;
+const THOUGHT_CHAR_LIMIT = 800;
 const ROSTER_LIMIT = 100;
 
 /**
@@ -158,8 +162,14 @@ function isHiddenBackgroundTask(payload: Record<string, unknown>): boolean {
   return isBackgroundTaskActivity(payload) && panelBackgroundTaskType(payload) === undefined;
 }
 
-function bounded(value: string): string {
-  return value.length <= SUMMARY_CHAR_LIMIT ? value : `${value.slice(0, SUMMARY_CHAR_LIMIT - 1)}…`;
+function bounded(value: string, limit = SUMMARY_CHAR_LIMIT): string {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
+}
+
+function trimActivityRing(
+  entries: ReadonlyArray<SubagentActivityEntry>,
+): ReadonlyArray<SubagentActivityEntry> {
+  return entries.length > RECENT_ACTIVITY_LIMIT ? entries.slice(-RECENT_ACTIVITY_LIMIT) : entries;
 }
 
 /** Appends to the ring buffer, deduping consecutive identical summaries. */
@@ -167,13 +177,32 @@ function appendActivity(
   entries: ReadonlyArray<SubagentActivityEntry>,
   at: string,
   summary: string,
+  kind?: SubagentActivityKind,
 ): ReadonlyArray<SubagentActivityEntry> {
-  const boundedSummary = bounded(summary);
-  if (entries.length > 0 && entries[entries.length - 1]?.summary === boundedSummary) {
+  const boundedSummary = bounded(
+    summary,
+    kind === "thought" ? THOUGHT_CHAR_LIMIT : SUMMARY_CHAR_LIMIT,
+  );
+  const last = entries[entries.length - 1];
+  if (last?.summary === boundedSummary && last.kind === kind) {
     return entries;
   }
-  const next = [...entries, { at, summary: boundedSummary }];
-  return next.length > RECENT_ACTIVITY_LIMIT ? next.slice(-RECENT_ACTIVITY_LIMIT) : next;
+  return trimActivityRing([...entries, { at, summary: boundedSummary, ...(kind ? { kind } : {}) }]);
+}
+
+/** Grows the current thought line in place, like the parent session thinking block. */
+function upsertThought(
+  entries: ReadonlyArray<SubagentActivityEntry>,
+  at: string,
+  summary: string,
+): ReadonlyArray<SubagentActivityEntry> {
+  const boundedSummary = bounded(summary, THOUGHT_CHAR_LIMIT);
+  const last = entries[entries.length - 1];
+  if (last?.kind === "thought") {
+    if (last.summary === boundedSummary) return entries;
+    return [...entries.slice(0, -1), { at, summary: boundedSummary, kind: "thought" }];
+  }
+  return trimActivityRing([...entries, { at, summary: boundedSummary, kind: "thought" }]);
 }
 
 function asString(value: unknown): string | undefined {
@@ -705,11 +734,21 @@ export function foldSubagentActivities(
           applyStatus(agent, "running", at);
         }
         const summary = asString(payload.summary);
-        if (summary) {
-          agent.progress = bounded(summary);
-          agent.recentActivity = appendActivity(agent.recentActivity, at, summary);
-        }
         const lastToolName = asString(payload.lastToolName);
+        const activityKind = asString(payload.activityKind);
+        if (summary) {
+          agent.progress = bounded(
+            summary,
+            activityKind === "thought" ? THOUGHT_CHAR_LIMIT : SUMMARY_CHAR_LIMIT,
+          );
+          if (activityKind === "thought") {
+            agent.recentActivity = upsertThought(agent.recentActivity, at, summary);
+          } else if (lastToolName || activityKind === "tool") {
+            agent.recentActivity = appendActivity(agent.recentActivity, at, summary, "tool");
+          } else {
+            agent.recentActivity = appendActivity(agent.recentActivity, at, summary, "event");
+          }
+        }
         if (lastToolName) {
           agent.lastToolName = lastToolName;
           const latest = agent.recentActivity.at(-1)?.summary ?? "";
@@ -717,7 +756,12 @@ export function foldSubagentActivities(
             .toLocaleLowerCase()
             .includes(lastToolName.toLocaleLowerCase());
           if (!summary && !alreadyLogged) {
-            agent.recentActivity = appendActivity(agent.recentActivity, at, `▸ ${lastToolName}`);
+            agent.recentActivity = appendActivity(
+              agent.recentActivity,
+              at,
+              `▸ ${lastToolName}`,
+              "tool",
+            );
           }
         }
         const error = asString(payload.error);

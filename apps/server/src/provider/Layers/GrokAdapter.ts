@@ -106,6 +106,7 @@ import {
   applyGrokSubagentUpdate,
   applyGrokWorkflowUpdate,
   emptyGrokWorkflowTrackState,
+  grokChildThoughtProgressEvent,
   grokChildToolProgressEvent,
   grokLiveSubagentIdForToolProgress,
   grokSessionIdFromRaw,
@@ -232,6 +233,7 @@ interface GrokSessionContext {
   readonly toolUpdateGates: Map<string, GrokToolUpdateGate>;
   readonly lastChildToolNameBySubagentId: Map<string, string>;
   readonly childThoughtBySubagentId: Map<string, string>;
+  readonly lastChildThoughtEmitBySubagentId: Map<string, number>;
   readonly pendingChildToolsBySessionId: Map<
     string,
     Array<{
@@ -534,6 +536,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           return;
         }
         input.ctx.childThoughtBySubagentId.delete(input.subagentId);
+        input.ctx.lastChildThoughtEmitBySubagentId.delete(input.subagentId);
         yield* emitGrokTaskSpecs({
           threadId: input.ctx.threadId,
           turnId: input.turnId,
@@ -545,7 +548,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               payload: {
                 taskId: input.subagentId,
                 status: "running",
-                summary: buffered.slice(0, 180),
+                summary: buffered.slice(0, 800),
+                activityKind: "thought",
                 timelineBypass: true,
               },
             },
@@ -566,20 +570,33 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           input.sessionId,
           input.ctx.liveMonitorTaskIds,
         );
-        const chunk = input.text.trim();
-        if (!subagentId || chunk.length === 0) {
+        if (!subagentId || input.text.length === 0) {
           return;
         }
         const next = `${input.ctx.childThoughtBySubagentId.get(subagentId) ?? ""}${input.text}`;
         input.ctx.childThoughtBySubagentId.set(subagentId, next);
-        if (!/\n/.test(next) && next.trim().length < 80) {
+        const nowMs = yield* Clock.currentTimeMillis;
+        const lastEmit = input.ctx.lastChildThoughtEmitBySubagentId.get(subagentId) ?? 0;
+        const shouldEmit = nowMs - lastEmit >= 50 || /\n/.test(input.text) || next.length >= 80;
+        if (!shouldEmit) {
           return;
         }
-        yield* flushGrokChildThought({
-          ctx: input.ctx,
+        input.ctx.lastChildThoughtEmitBySubagentId.set(subagentId, nowMs);
+        const thought = grokChildThoughtProgressEvent(
+          input.ctx.workflowTrack,
+          input.sessionId,
+          next,
+          input.ctx.liveMonitorTaskIds,
+        );
+        if (!thought) {
+          return;
+        }
+        yield* emitGrokTaskSpecs({
+          threadId: input.ctx.threadId,
           turnId: input.turnId,
-          subagentId,
-          rawPayload: input.rawPayload,
+          method: "session/update",
+          payload: input.rawPayload,
+          specs: [thought],
         });
       });
 
@@ -1918,6 +1935,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             toolUpdateGates: new Map(),
             lastChildToolNameBySubagentId: new Map(),
             childThoughtBySubagentId: new Map(),
+            lastChildThoughtEmitBySubagentId: new Map(),
             pendingChildToolsBySessionId: new Map(),
             scheduledTaskIds: new Set(),
             liveMonitorTaskIds: new Set(),
@@ -2870,6 +2888,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           trimmedCtx.toolUpdateGates.clear();
           trimmedCtx.lastChildToolNameBySubagentId.clear();
           trimmedCtx.childThoughtBySubagentId.clear();
+          trimmedCtx.lastChildThoughtEmitBySubagentId.clear();
           return { threadId, turns: trimmedCtx.turns };
         }),
       );

@@ -7,8 +7,8 @@
  * - Live agents sort above idle, then settled. First-seen order is the
  *   tiebreaker inside a liveness band so in-flight rows do not jump.
  * - Collapsed agent rows reserve three fixed lines for identity, activity,
- *   and metrics. Expansion is user-driven and reveals result, error, activity,
- *   and output path.
+ *   and metrics. Expansion is user-driven and reveals the live thought/tool
+ *   log first, then result, error, and output path.
  * - Workflow expansion is presentation state. A live run stays expanded when
  *   it settles; older collapsed runs can still be opened at run granularity.
  * - Static status dots, DOM-write elapsed timers, plain token counters.
@@ -202,21 +202,82 @@ function shortAgentOutputPath(path: string): string {
   return parts.slice(-2).join("/");
 }
 
+function activityEntryKind(
+  entry: RuntimeSubagent["recentActivity"][number],
+  agent: RuntimeSubagent,
+): "thought" | "tool" | "event" {
+  if (entry.kind) return entry.kind;
+  if (entry.summary.startsWith("▸ ")) return "tool";
+  if (agent.kind === "monitor" || agent.kind === "scheduled") return "event";
+  return "event";
+}
+
+function AgentActivityLog({
+  agent,
+  steps,
+  live,
+}: {
+  agent: RuntimeSubagent;
+  steps: ReadonlyArray<{ readonly summary: string; readonly kind: "thought" | "tool" | "event" }>;
+  live: boolean;
+}) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const stepKey = steps.map((step) => step.summary).join("\n");
+  useEffect(() => {
+    if (!live || !listRef.current) return;
+    listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [live, stepKey]);
+
+  if (steps.length === 0) {
+    if (live && agent.lastToolName) {
+      return (
+        <p className="text-[.7rem] text-foreground/80">
+          Now: <span className="font-medium">{agent.lastToolName}</span>
+        </p>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <ol ref={listRef} className="max-h-64 space-y-1 overflow-y-auto text-[.7rem] leading-5">
+      {steps.map((step, index) => (
+        <li
+          key={`${index}-${step.kind}-${step.summary.slice(0, 48)}`}
+          className={cn(
+            "whitespace-pre-wrap break-words",
+            step.kind === "thought" ? "text-muted-foreground italic" : "text-foreground/85",
+          )}
+        >
+          {step.summary}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
   const preview = formatAgentResultPreview(agent.result);
-  const events = agent.recentActivity
-    .map((entry) => entry.summary.replace(/^▸\s+/, "").trim())
-    .filter(isUsefulAgentStep);
+  const steps = agent.recentActivity
+    .map((entry) => ({
+      summary: entry.summary.replace(/^▸\s+/, "").trim(),
+      kind: activityEntryKind(entry, agent),
+    }))
+    .filter((entry) => isUsefulAgentStep(entry.summary));
+  const fallbackSteps =
+    steps.length > 0
+      ? steps
+      : agent.lastToolName !== null
+        ? [{ summary: agent.lastToolName, kind: "tool" as const }]
+        : [];
   const isWatch = agent.kind === "monitor" || agent.kind === "scheduled";
-  const steps =
-    events.length > 0 ? events : agent.lastToolName !== null ? [agent.lastToolName] : [];
   const toolUses = agent.usage?.toolUses ?? 0;
   const live = isActiveSubagentStatus(agent.status);
   const hasDetail =
     agent.error !== null ||
     preview !== null ||
     agent.outputFile !== null ||
-    steps.length > 0 ||
+    fallbackSteps.length > 0 ||
     toolUses > 0 ||
     (isWatch && live);
   if (!hasDetail) {
@@ -233,23 +294,8 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
           {agent.error}
         </p>
       ) : null}
-      {preview ? (
-        <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-[.7rem] text-foreground/90">
-          {preview}
-        </p>
-      ) : null}
-      {steps.length > 0 ? (
-        <ol className="max-h-56 space-y-1 overflow-y-auto text-[.7rem] leading-5 text-foreground/85">
-          {steps.map((step, index) => (
-            <li key={`${index}-${step}`} className="whitespace-pre-wrap break-words">
-              {step}
-            </li>
-          ))}
-        </ol>
-      ) : live && agent.lastToolName ? (
-        <p className="text-[.7rem] text-foreground/80">
-          Now: <span className="font-medium">{agent.lastToolName}</span>
-        </p>
+      {fallbackSteps.length > 0 ? (
+        <AgentActivityLog agent={agent} steps={fallbackSteps} live={live} />
       ) : toolUses > 0 ? (
         <p className="text-[.65rem] text-muted-foreground">
           {live
@@ -259,6 +305,11 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
       ) : isWatch && live ? (
         <p className="text-[.7rem] text-muted-foreground">
           Watching. New events show up here as they fire.
+        </p>
+      ) : null}
+      {!live && preview ? (
+        <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words border-t border-border/40 pt-1.5 text-[.7rem] text-foreground/90">
+          {preview}
         </p>
       ) : null}
       {agent.outputFile ? (

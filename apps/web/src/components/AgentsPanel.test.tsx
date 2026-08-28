@@ -191,6 +191,50 @@ describe("AgentsPanel", () => {
     const html = renderToStaticMarkup(<AgentsPanel model={model} />);
     expect(html).toContain("Read file");
     expect(html).toContain("Grep");
+    expect(html.indexOf("Read file")).toBeLessThan(html.indexOf("Found the overlap."));
+  });
+
+  it("streams thought then tools before any final recap", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-live-log",
+          status: "running",
+          title: "Slow live Agents probe",
+          error: null,
+          result: "Should not show while live.",
+          lastToolName: "grep",
+          usage: { totalTokens: 800, toolUses: 2 },
+          recentActivity: [
+            {
+              at: "2026-08-28T07:00:00.000Z",
+              kind: "thought",
+              summary: "Need to inspect FindBar next.",
+            },
+            {
+              at: "2026-08-28T07:00:04.000Z",
+              kind: "tool",
+              summary: "Searched files · find.toggle · apps/web/src",
+            },
+          ],
+        }),
+      ],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 800,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("Need to inspect FindBar next.");
+    expect(html).toContain("Searched files · find.toggle");
+    expect(html).toContain("italic");
+    expect(html).not.toContain("Should not show while live.");
   });
 
   it("opens a live agent on the procedure list instead of hiding it behind a collapsed panel", () => {

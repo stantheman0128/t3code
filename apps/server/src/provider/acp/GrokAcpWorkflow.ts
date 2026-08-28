@@ -680,7 +680,7 @@ export function grokChildThoughtProgressEvent(
   liveMonitorTaskIds?: ReadonlySet<string>,
 ): GrokTaskEventSpec | undefined {
   const subagentId = grokLiveSubagentIdForToolProgress(state, sessionId, liveMonitorTaskIds);
-  const summary = text.replace(/\s+/g, " ").trim().slice(0, 180);
+  const summary = text.trim().slice(0, 800);
   if (!subagentId || summary.length === 0) {
     return undefined;
   }
@@ -690,6 +690,7 @@ export function grokChildThoughtProgressEvent(
       taskId: subagentId,
       status: "running",
       summary,
+      activityKind: "thought",
       timelineBypass: true,
     },
   };
@@ -740,6 +741,7 @@ export function grokChildToolProgressEvent(
       status: "running",
       summary: activity,
       lastToolName: lastTool,
+      activityKind: "tool",
       timelineBypass: true,
     },
   };

@@ -347,6 +347,7 @@ describe("GrokAcpWorkflow", () => {
       payload: {
         taskId: "sa_think",
         summary: "Need to inspect FindBar next.",
+        activityKind: "thought",
       },
     });
   });

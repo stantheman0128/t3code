@@ -777,6 +777,52 @@ describe("agent display titles", () => {
     expect(formatAgentActivityLine(agents[0]!)).toBe("PR #1202 opened");
   });
 
+  it("grows a live thought line in place, then appends each tool", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "sa-stream",
+        title: "Slow live Agents probe",
+        role: "explore",
+      }),
+      activity("task.progress", {
+        taskId: "sa-stream",
+        status: "running",
+        activityKind: "thought",
+        summary: "Need to look at",
+      }),
+      activity("task.progress", {
+        taskId: "sa-stream",
+        status: "running",
+        activityKind: "thought",
+        summary: "Need to look at FindBar next.",
+      }),
+      activity("task.progress", {
+        taskId: "sa-stream",
+        status: "running",
+        lastToolName: "grep",
+        activityKind: "tool",
+        summary: "Searched files · find.toggle",
+      }),
+      activity("task.progress", {
+        taskId: "sa-stream",
+        status: "running",
+        activityKind: "thought",
+        summary: "Then pack the installer.",
+      }),
+    ]);
+    expect(agents[0]!.recentActivity.map((entry) => entry.summary)).toEqual([
+      "Need to look at FindBar next.",
+      "Searched files · find.toggle",
+      "Then pack the installer.",
+    ]);
+    expect(agents[0]!.recentActivity.map((entry) => entry.kind)).toEqual([
+      "thought",
+      "tool",
+      "thought",
+    ]);
+    expect(formatAgentActivityLine(agents[0]!)).toBe("Then pack the installer.");
+  });
+
   it("does not rename a live explore child to its current tool", () => {
     const agents = fold([
       activity("task.started", {

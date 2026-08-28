@@ -32,12 +32,29 @@ export function getProviderSkillsForSlashMenu(
   return showSkillsInSlashMenu ? skills.filter((skill) => skill.enabled) : [];
 }
 
+function slashCommandName(command: ServerProviderSlashCommand): string {
+  return command.name.trim().toLowerCase();
+}
+
+function slashCommandHasFamily(name: string, commandNames: ReadonlyArray<string>): boolean {
+  return commandNames.some((other) => other.startsWith(`${name} `));
+}
+
 export function getProviderSlashCommandsForSlashMenu(
   slashCommands: ReadonlyArray<ServerProviderSlashCommand>,
   visibleSkills: ReadonlyArray<ServerProviderSkill>,
 ): ServerProviderSlashCommand[] {
   const skillNames = new Set(visibleSkills.map((skill) => skill.name.trim().toLowerCase()));
-  return slashCommands.filter((command) => !skillNames.has(command.name.trim().toLowerCase()));
+  const commandNames = slashCommands.map(slashCommandName);
+  return slashCommands.filter((command) => {
+    const name = slashCommandName(command);
+    if (!skillNames.has(name)) {
+      return true;
+    }
+    // A personal skill named "Goal" must not hide native `/goal` when that
+    // command takes an objective or has status/pause/resume siblings.
+    return Boolean(command.input?.hint?.trim()) || slashCommandHasFamily(name, commandNames);
+  });
 }
 
 export function resolveProviderSkillSourceKind(

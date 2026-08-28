@@ -65,6 +65,31 @@ describe("getProviderSlashCommandsForSlashMenu", () => {
       getProviderSlashCommandsForSlashMenu(commands, visibleSkills).map((command) => command.name),
     ).toEqual(["ask-matt", "compact"]);
   });
+
+  it("keeps native /goal when a personal Goal skill is also in the menu", () => {
+    expect(
+      getProviderSlashCommandsForSlashMenu(
+        [
+          {
+            name: "goal",
+            description: "Set an autonomous goal Grok keeps working until evidence confirms it",
+            input: { hint: "objective" },
+          },
+          { name: "goal status", description: "Show the current Grok goal" },
+          { name: "goal pause", description: "Pause the current Grok goal" },
+          { name: "compact", description: "Compact the conversation." },
+        ],
+        [
+          {
+            name: "Goal",
+            path: "C:\\Users\\ada\\.agents\\skills\\goal\\SKILL.md",
+            enabled: true,
+            shortDescription: "Run or manage a Codex-style persistent goal loop",
+          },
+        ],
+      ).map((command) => command.name),
+    ).toEqual(["goal", "goal status", "goal pause", "compact"]);
+  });
 });
 
 describe("resolveProviderSkillSourceKind", () => {

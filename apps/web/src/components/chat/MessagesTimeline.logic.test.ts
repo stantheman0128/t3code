@@ -1,3 +1,5 @@
+import { ClientSettingsSchema } from "@t3tools/contracts/settings";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import {
   computeStableMessagesTimelineRows,
@@ -13,6 +15,8 @@ import {
   workLogVisibleEntryCap,
 } from "./MessagesTimeline.logic";
 import type { WorkLogEntry } from "../../session-logic";
+
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 
 describe("shouldPreserveAssistantLineBreaks", () => {
   it("preserves Claude insight formatting without changing regular markdown", () => {
@@ -1899,18 +1903,26 @@ describe("tool-call density", () => {
       revertTurnCountByUserMessageId: new Map(),
     };
 
+    const compact = decodeClientSettings({ toolCallDensity: "compact" }).toolCallDensity;
+    const standard = decodeClientSettings({ toolCallDensity: "standard" }).toolCallDensity;
+    const detailed = decodeClientSettings({ toolCallDensity: "detailed" }).toolCallDensity;
     const compactRows = deriveMessagesTimelineRows({
       ...baseInput,
-      toolCallDensity: "compact",
+      toolCallDensity: compact,
     });
     const standardRows = deriveMessagesTimelineRows({
       ...baseInput,
-      toolCallDensity: "standard",
+      toolCallDensity: standard,
     });
     const detailedRows = deriveMessagesTimelineRows({
       ...baseInput,
-      toolCallDensity: "detailed",
+      toolCallDensity: detailed,
     });
+    expect(presentWorkLogToolCall(DENSITY_TOOL_ENTRY, compact).detail).toBeNull();
+    expect(presentWorkLogToolCall(DENSITY_TOOL_ENTRY, standard).detail).toBe("PASS 12 tests");
+    expect(presentWorkLogToolCall(DENSITY_TOOL_ENTRY, detailed).detail).toBe(
+      "pnpm test apps/web\n\nPASS  12 tests",
+    );
 
     expect(compactRows.map((row) => row.kind)).toEqual(["work-toggle"]);
     expect(compactRows[0]).toMatchObject({

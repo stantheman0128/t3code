@@ -284,8 +284,6 @@ import {
   formatCodexGoalDescription,
   formatCodexGoalError,
   formatCodexGoalStatus,
-  formatPromptGoalElapsedLabel,
-  formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
 } from "@t3tools/client-runtime/state/threads";
@@ -338,7 +336,7 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import { createGoalBannerItem } from "./chat/goalStrip";
+import { resolveComposerGoalBanner } from "./chat/goalStrip";
 import {
   hasAvailableClaudeCompactionProvider,
   hasDismissedResumeCompaction,
@@ -5360,32 +5358,18 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [timelineMessages],
   );
-  const goalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
-    const onToggle = () => setGoalStripExpanded((open) => !open);
-    if (codexGoal !== null) {
-      const running = phase === "running" && codexGoal.status === "active";
-      return createGoalBannerItem({
-        id: `codex-goal:${activeThread?.id ?? "unknown"}`,
-        title: `Goal ${formatCodexGoalStatus(codexGoal.status)}`,
-        objective: formatCodexGoalDescription(codexGoal),
-        durationLabel: formatPromptGoalElapsedLabel({ timeUsedSeconds: codexGoal.timeUsedSeconds }),
-        running,
+  const goalBannerItem = useMemo<ComposerBannerStackItem | null>(
+    () =>
+      resolveComposerGoalBanner({
+        threadId: activeThread?.id,
+        phase,
         expanded: goalStripExpanded,
-        onToggle,
-      });
-    }
-    if (promptGoal === null) return null;
-    const running = phase === "running" && promptGoal.status === "active";
-    return createGoalBannerItem({
-      id: `thread-goal:${activeThread?.id ?? "unknown"}`,
-      title: formatPromptGoalTitle(promptGoal, running),
-      objective: promptGoal.objective,
-      durationLabel: formatPromptGoalElapsedLabel({ startedAt: promptGoal.startedAt }),
-      running,
-      expanded: goalStripExpanded,
-      onToggle,
-    });
-  }, [activeThread?.id, codexGoal, goalStripExpanded, phase, promptGoal]);
+        onToggle: () => setGoalStripExpanded((open) => !open),
+        codexGoal,
+        promptGoal,
+      }),
+    [activeThread?.id, codexGoal, goalStripExpanded, phase, promptGoal],
+  );
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);

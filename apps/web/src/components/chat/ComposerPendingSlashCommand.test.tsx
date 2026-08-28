@@ -43,5 +43,9 @@ describe("COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME", () => {
     expect(COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME).toContain("h-[1lh]");
     expect(COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME).toContain("leading-relaxed");
     expect(COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME).toContain("items-center");
+    expect(COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME).not.toContain(
+      "bg-[var(--chat-composer-glass-surface,var(--card))]",
+    );
+    expect(COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME).not.toContain("h-[1.41em]");
   });
 });

@@ -597,4 +597,39 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       update: null,
     });
   });
+
+  it("runs the native updater against the OpenAI Codex desktop installer path", () => {
+    const desktopCodex = "C:\\Users\\ada\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe";
+    const codexUpdate = makePackageManagedProviderMaintenanceResolver({
+      provider: driver("codex"),
+      npmPackageName: "@openai/codex",
+      homebrewFormula: "codex",
+      nativeUpdate: {
+        executable: "codex",
+        args: ["update"],
+        lockKey: "codex-native",
+        isCommandPath: (commandPath) =>
+          normalizeCommandPath(commandPath).includes("/programs/openai/codex/"),
+      },
+    });
+
+    expect(
+      codexUpdate.resolve({
+        binaryPath: desktopCodex,
+        env: {
+          PATH: "",
+          PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        },
+      }),
+    ).toEqual({
+      provider: driver("codex"),
+      packageName: "@openai/codex",
+      update: {
+        command: `${desktopCodex} update`,
+        executable: desktopCodex,
+        args: ["update"],
+        lockKey: "codex-native",
+      },
+    });
+  });
 });

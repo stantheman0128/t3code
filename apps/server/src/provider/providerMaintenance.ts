@@ -209,6 +209,7 @@ function makeHomebrewProviderMaintenanceCapabilities(
 
 function makeNativeProviderMaintenanceCapabilities(
   definition: PackageManagedProviderMaintenanceDefinition,
+  resolvedExecutable?: string,
 ): ProviderMaintenanceCapabilities | null {
   if (!definition.nativeUpdate) {
     return null;
@@ -217,7 +218,7 @@ function makeNativeProviderMaintenanceCapabilities(
   return makeProviderMaintenanceCapabilities({
     provider: definition.provider,
     packageName: definition.npmPackageName,
-    updateExecutable: definition.nativeUpdate.executable,
+    updateExecutable: resolvedExecutable ?? definition.nativeUpdate.executable,
     updateArgs: definition.nativeUpdate.args,
     updateLockKey: definition.nativeUpdate.lockKey,
   });
@@ -292,13 +293,15 @@ export function resolvePackageManagedProviderMaintenance(
     ];
 
     const nativeUpdate = definition.nativeUpdate;
-    if (
-      nativeUpdate &&
-      commandPaths.some((commandPath) => nativeUpdate.isCommandPath(commandPath))
-    ) {
+    const nativeCommandPath = commandPaths.find((commandPath) =>
+      nativeUpdate?.isCommandPath(commandPath),
+    );
+    if (nativeUpdate && nativeCommandPath) {
       return (
-        makeNativeProviderMaintenanceCapabilities(definition) ??
-        makeNpmGlobalProviderMaintenanceCapabilities(definition)
+        makeNativeProviderMaintenanceCapabilities(
+          definition,
+          hasPathSeparator(binaryPath ?? "") ? nativeCommandPath : undefined,
+        ) ?? makeNpmGlobalProviderMaintenanceCapabilities(definition)
       );
     }
     if (commandPaths.some(isVitePlusGlobalCommandPath)) {

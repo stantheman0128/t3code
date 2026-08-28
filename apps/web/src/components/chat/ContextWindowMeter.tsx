@@ -1,7 +1,9 @@
+import type { ProviderUsageLimits } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
+import { ProviderUsageLimitBars } from "../usage/ProviderUsageLimitBars";
 import { Minimize2Icon } from "lucide-react";
 
 function formatPercentage(value: number | null): string | null {
@@ -15,40 +17,50 @@ function formatPercentage(value: number | null): string | null {
 }
 
 export function ContextWindowMeter(props: {
-  usage: ContextWindowSnapshot;
+  usage?: ContextWindowSnapshot | null;
+  planUsageLimits?: ProviderUsageLimits | null;
   modelDisplayName?: string | null;
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
 }) {
-  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
-  const usedPercentage = formatPercentage(usage.usedPercentage);
-  const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
+  const {
+    usage,
+    planUsageLimits,
+    modelDisplayName,
+    onCompact,
+    compactDisabled,
+    compactDisabledReason,
+  } = props;
+  const usedPercentage = formatPercentage(usage?.usedPercentage ?? null);
+  const normalizedPercentage = Math.max(0, Math.min(100, usage?.usedPercentage ?? 0));
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - normalizedPercentage / 100);
-  const totalProcessedTokens = usage.totalProcessedTokens ?? null;
+  const totalProcessedTokens = usage?.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
   const usageColor = isOverloaded
     ? "var(--color-error)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
 
+  const planWindows = planUsageLimits?.status === "available" ? planUsageLimits.windows : [];
+  const hasPlanLimits = planWindows.length > 0;
+
   return (
     <Popover>
       <PopoverTrigger
-        openOnHover
-        delay={150}
-        closeDelay={onCompact ? 150 : 0}
         render={
           <Button
             size="icon-sm"
             variant="ghost-muted"
             className="size-7 rounded-full hover:text-muted-foreground data-pressed:text-muted-foreground"
             aria-label={
-              usage.maxTokens !== null && usedPercentage
+              usage && usage.maxTokens !== null && usedPercentage
                 ? `Context window ${usedPercentage} used`
-                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
+                : usage
+                  ? `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
+                  : "Plan usage limits"
             }
           >
             <span className="relative flex size-5 items-center justify-center">
@@ -83,31 +95,33 @@ export function ContextWindowMeter(props: {
         }
       />
       <PopoverPopup
-        tooltipStyle
+        tooltipStyle={!hasPlanLimits}
         side="top"
         align="end"
         viewportClassName="p-0"
         className="w-64 max-w-none text-left whitespace-normal"
       >
         <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-medium text-muted-foreground text-xs">Context Window</div>
-            {usage.maxTokens !== null && usedPercentage ? (
-              <div className="text-secondary-label text-[11px] tabular-nums">
-                <span>{usedPercentage}</span>
-                <span className="mx-1">·</span>
-                <span>
-                  {formatContextWindowTokens(usage.usedTokens)}/
-                  {formatContextWindowTokens(usage.maxTokens ?? null)}
-                </span>
-              </div>
-            ) : (
-              <div className="text-secondary-label text-[11px] tabular-nums">
-                {formatContextWindowTokens(usage.usedTokens)}
-              </div>
-            )}
-          </div>
-          {usage.maxTokens !== null ? (
+          {usage ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-medium text-muted-foreground text-xs">Context Window</div>
+              {usage.maxTokens !== null && usedPercentage ? (
+                <div className="text-secondary-label text-[11px] tabular-nums">
+                  <span>{usedPercentage}</span>
+                  <span className="mx-1">·</span>
+                  <span>
+                    {formatContextWindowTokens(usage.usedTokens)}/
+                    {formatContextWindowTokens(usage.maxTokens ?? null)}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-secondary-label text-[11px] tabular-nums">
+                  {formatContextWindowTokens(usage.usedTokens)}
+                </div>
+              )}
+            </div>
+          ) : null}
+          {usage && usage.maxTokens !== null ? (
             <div
               className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
               role="progressbar"
@@ -130,9 +144,17 @@ export function ContextWindowMeter(props: {
               </span>
             </div>
           ) : null}
-          {usage.compactsAutomatically ? (
+          {usage?.compactsAutomatically ? (
             <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
               {formatContextWindowCompactionMessage(modelDisplayName, usage.autoCompactThreshold)}
+            </div>
+          ) : null}
+          {hasPlanLimits ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="font-medium text-muted-foreground text-xs">
+                {planUsageLimits?.planLabel ? `${planUsageLimits.planLabel} limits` : "Plan limits"}
+              </div>
+              <ProviderUsageLimitBars windows={planWindows} />
             </div>
           ) : null}
           {onCompact ? (

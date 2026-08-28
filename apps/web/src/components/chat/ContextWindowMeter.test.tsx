@@ -9,9 +9,7 @@ import { ContextWindowMeter } from "./ContextWindowMeter";
 vi.mock("../ui/popover", () => ({
   Popover: ({ children }: { children: ReactNode }) => children,
   PopoverPopup: ({ children }: { children: ReactNode }) => children,
-  PopoverTrigger: ({ closeDelay, render }: { closeDelay: number; render: ReactNode }) => (
-    <div data-close-delay={closeDelay}>{render}</div>
-  ),
+  PopoverTrigger: ({ render }: { render: ReactNode }) => <div>{render}</div>,
 }));
 
 const usage = deriveLatestContextWindowSnapshot([
@@ -31,18 +29,35 @@ if (!usage) {
 }
 
 describe("ContextWindowMeter", () => {
-  it("keeps the hover popover open while the pointer moves to the compact button", () => {
+  it("opens on click and keeps the compact action in the popover", () => {
     const markup = renderToStaticMarkup(<ContextWindowMeter usage={usage} onCompact={() => {}} />);
 
-    expect(markup).toContain('data-close-delay="150"');
     expect(markup).toContain("Compact context");
+    expect(markup).not.toContain("openOnHover");
   });
 
-  it("closes an informational hover popover without delay", () => {
-    const markup = renderToStaticMarkup(<ContextWindowMeter usage={usage} />);
+  it("shows plan usage limits next to the context window", () => {
+    const markup = renderToStaticMarkup(
+      <ContextWindowMeter
+        usage={usage}
+        planUsageLimits={{
+          status: "available",
+          planLabel: "ChatGPT Plus",
+          windows: [
+            {
+              id: "primary",
+              label: "5h",
+              remainingPercent: 58,
+              resetsAt: "2026-08-28T15:00:00.000Z",
+            },
+          ],
+        }}
+      />,
+    );
 
-    expect(markup).toContain('data-close-delay="0"');
-    expect(markup).not.toContain("Compact context");
+    expect(markup).toContain("ChatGPT Plus limits");
+    expect(markup).toContain("5h");
+    expect(markup).toContain("58%");
   });
 
   it("explains why the compact action is disabled", () => {

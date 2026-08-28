@@ -4,6 +4,7 @@
  * @module providerUsageLimits
  */
 import type { ProviderUsageLimitWindow, ProviderUsageLimits } from "@t3tools/contracts";
+import { formatCodexWindowLabel } from "@t3tools/shared/usageFormat";
 
 export function clampUsagePercent(value: number): number {
   if (!Number.isFinite(value)) {
@@ -136,59 +137,113 @@ export function mapCodexRateLimits(
     response.rateLimits?.primary || response.rateLimits?.secondary
       ? response.rateLimits
       : (fallbackBucket ?? response.rateLimits);
+  const primaryMinutes = rateLimits?.primary?.windowDurationMins ?? undefined;
+  const secondaryMinutes = rateLimits?.secondary?.windowDurationMins ?? undefined;
   return availableUsageLimits({
     planLabel: planLabel ?? rateLimits?.planType ?? response.planType ?? undefined,
     observedAt,
     windows: [
       usageWindow(
         "primary",
-        "Primary",
+        formatCodexWindowLabel(primaryMinutes ?? null) ?? "5h",
         remainingFromUsed(rateLimits?.primary?.usedPercent),
         rateLimits?.primary?.resetsAt,
-        rateLimits?.primary?.windowDurationMins ?? undefined,
+        primaryMinutes,
       ),
       usageWindow(
         "secondary",
-        "Secondary",
+        formatCodexWindowLabel(secondaryMinutes ?? null) ?? "weekly",
         remainingFromUsed(rateLimits?.secondary?.usedPercent),
         rateLimits?.secondary?.resetsAt,
-        rateLimits?.secondary?.windowDurationMins ?? undefined,
+        secondaryMinutes,
       ),
     ],
   });
 }
 
+type ClaudeRateWindow = {
+  readonly utilization?: number;
+  readonly resets_at?: unknown;
+  readonly resetsAt?: unknown;
+  readonly display_name?: string;
+  readonly displayName?: string;
+};
+
+function claudeWindow(
+  limits: Record<string, unknown>,
+  snake: string,
+  camel: string,
+): ClaudeRateWindow | undefined {
+  return asRecord(limits[snake] ?? limits[camel]) as ClaudeRateWindow | undefined;
+}
+
+function claudeUtilization(window: ClaudeRateWindow | undefined): number | undefined {
+  const record = window as Record<string, unknown> | undefined;
+  return numberField(
+    window?.utilization ??
+      record?.used_percentage ??
+      record?.usedPercentage ??
+      record?.used_percent ??
+      record?.usedPercent,
+  );
+}
+
+function claudeResetsAt(window: ClaudeRateWindow | undefined): unknown {
+  return window?.resets_at ?? window?.resetsAt;
+}
+
+function claudeHasTopLevelWindows(record: Record<string, unknown>): boolean {
+  return Boolean(
+    record.five_hour ??
+    record.fiveHour ??
+    record.seven_day ??
+    record.sevenDay ??
+    record.seven_day_oauth_apps ??
+    record.sevenDayOauthApps ??
+    record.seven_day_opus ??
+    record.sevenDayOpus ??
+    record.seven_day_sonnet ??
+    record.sevenDaySonnet ??
+    record.extra_usage ??
+    record.extraUsage,
+  );
+}
+
+function claudeExtraRemaining(limits: Record<string, unknown>): number | undefined {
+  const extra = asRecord(limits.extra_usage ?? limits.extraUsage);
+  if (!extra || extra.is_enabled === false || extra.isEnabled === false) {
+    return undefined;
+  }
+  const fromUtilization = remainingFromUtilization(claudeUtilization(extra as ClaudeRateWindow));
+  if (fromUtilization !== undefined) {
+    return fromUtilization;
+  }
+  const used = unwrapNumeric(recordField(extra, "used_credits", "usedCredits"));
+  const limit = unwrapNumeric(recordField(extra, "monthly_limit", "monthlyLimit", "limit"));
+  if (used === undefined || limit === undefined || limit <= 0) {
+    return undefined;
+  }
+  return remainingFromUsed((used / limit) * 100);
+}
+
 export function mapClaudeUsageLimits(
-  response: {
-    readonly subscription_type?: string;
-    readonly rate_limits_available?: boolean;
-    readonly rate_limits?: {
-      readonly five_hour?: { readonly utilization?: number; readonly resets_at?: unknown };
-      readonly seven_day?: { readonly utilization?: number; readonly resets_at?: unknown };
-      readonly seven_day_oauth_apps?: {
-        readonly utilization?: number;
-        readonly resets_at?: unknown;
-      };
-      readonly seven_day_opus?: { readonly utilization?: number; readonly resets_at?: unknown };
-      readonly seven_day_sonnet?: { readonly utilization?: number; readonly resets_at?: unknown };
-      readonly model_scoped?: ReadonlyArray<{
-        readonly display_name?: string;
-        readonly utilization?: number;
-        readonly resets_at?: unknown;
-      }>;
-    } | null;
-  },
+  response: unknown,
   observedAt: string,
   planLabel?: string,
 ): ProviderUsageLimits {
-  if (!response.rate_limits_available || !response.rate_limits) {
+  const record = asRecord(response) ?? {};
+  const nested = asRecord(record.data) ?? asRecord(record.usage) ?? record;
+  const available = nested.rate_limits_available ?? nested.rateLimitsAvailable;
+  const wrapped = asRecord(nested.rate_limits ?? nested.rateLimits);
+  const limits = wrapped ?? (claudeHasTopLevelWindows(nested) ? nested : undefined);
+  if (!limits) {
     return {
-      status: "unsupported",
+      status: available === false ? "unsupported" : "unavailable",
       ...(planLabel ? { planLabel } : {}),
       windows: [],
     };
   }
-  const limits = response.rate_limits;
+  const modelScoped = limits.model_scoped ?? limits.modelScoped;
   return availableUsageLimits({
     planLabel,
     observedAt,
@@ -196,41 +251,58 @@ export function mapClaudeUsageLimits(
       usageWindow(
         "five_hour",
         "5h",
-        remainingFromUtilization(limits.five_hour?.utilization),
-        limits.five_hour?.resets_at,
+        remainingFromUtilization(claudeUtilization(claudeWindow(limits, "five_hour", "fiveHour"))),
+        claudeResetsAt(claudeWindow(limits, "five_hour", "fiveHour")),
       ),
       usageWindow(
         "seven_day",
         "Week",
-        remainingFromUtilization(limits.seven_day?.utilization),
-        limits.seven_day?.resets_at,
+        remainingFromUtilization(claudeUtilization(claudeWindow(limits, "seven_day", "sevenDay"))),
+        claudeResetsAt(claudeWindow(limits, "seven_day", "sevenDay")),
       ),
       usageWindow(
         "seven_day_oauth_apps",
         "OAuth apps",
-        remainingFromUtilization(limits.seven_day_oauth_apps?.utilization),
-        limits.seven_day_oauth_apps?.resets_at,
+        remainingFromUtilization(
+          claudeUtilization(claudeWindow(limits, "seven_day_oauth_apps", "sevenDayOauthApps")),
+        ),
+        claudeResetsAt(claudeWindow(limits, "seven_day_oauth_apps", "sevenDayOauthApps")),
       ),
       usageWindow(
         "seven_day_opus",
         "Opus",
-        remainingFromUtilization(limits.seven_day_opus?.utilization),
-        limits.seven_day_opus?.resets_at,
+        remainingFromUtilization(
+          claudeUtilization(claudeWindow(limits, "seven_day_opus", "sevenDayOpus")),
+        ),
+        claudeResetsAt(claudeWindow(limits, "seven_day_opus", "sevenDayOpus")),
       ),
       usageWindow(
         "seven_day_sonnet",
         "Sonnet",
-        remainingFromUtilization(limits.seven_day_sonnet?.utilization),
-        limits.seven_day_sonnet?.resets_at,
+        remainingFromUtilization(
+          claudeUtilization(claudeWindow(limits, "seven_day_sonnet", "sevenDaySonnet")),
+        ),
+        claudeResetsAt(claudeWindow(limits, "seven_day_sonnet", "sevenDaySonnet")),
       ),
-      ...(limits.model_scoped ?? []).map((window, index) =>
-        usageWindow(
-          `model_${index}`,
-          window.display_name ?? `Model ${index + 1}`,
-          remainingFromUtilization(window.utilization),
-          window.resets_at,
+      usageWindow(
+        "extra_usage",
+        "Extra",
+        claudeExtraRemaining(limits),
+        recordField(
+          asRecord(limits.extra_usage ?? limits.extraUsage) ?? {},
+          "resets_at",
+          "resetsAt",
         ),
       ),
+      ...(Array.isArray(modelScoped) ? modelScoped : []).map((window, index) => {
+        const scoped = asRecord(window) as ClaudeRateWindow | undefined;
+        return usageWindow(
+          `model_${index}`,
+          scoped?.display_name ?? scoped?.displayName ?? `Model ${index + 1}`,
+          remainingFromUtilization(claudeUtilization(scoped)),
+          claudeResetsAt(scoped),
+        );
+      }),
     ],
   });
 }

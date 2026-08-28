@@ -38,6 +38,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { ProviderUsageLimitBars } from "../usage/ProviderUsageLimitBars";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { DriverOption } from "./providerDriverMeta";
 import { ProviderSettingsForm } from "./ProviderSettingsForm";
@@ -602,29 +603,8 @@ export function ProviderInstanceCard({
 
   const usageLimitsNode =
     usageLimits && usageLimits.windows.length > 0 ? (
-      <div className="flex min-w-0 flex-col gap-1.5 pt-1">
-        {usageLimits.windows.map((window) => (
-          <div
-            key={window.id}
-            className="flex min-w-0 items-center gap-2 text-[12px]"
-            title={
-              window.resetsAt
-                ? `${window.remainingPercent}% remaining · resets ${new Date(window.resetsAt).toLocaleString()}`
-                : `${window.remainingPercent}% remaining`
-            }
-          >
-            <span className="w-16 shrink-0 truncate text-muted-foreground">{window.label}</span>
-            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${window.remainingPercent}%` }}
-              />
-            </div>
-            <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
-              {window.remainingPercent}%
-            </span>
-          </div>
-        ))}
+      <div className="pt-1">
+        <ProviderUsageLimitBars windows={usageLimits.windows} />
       </div>
     ) : null;
 

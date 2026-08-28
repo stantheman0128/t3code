@@ -64,6 +64,27 @@ export function formatCodexWindowLabel(minutes: number | null): string | null {
   return `${minutes}m`;
 }
 
+/** Compact remaining-time label so quota reset is readable without a tooltip. */
+export function formatUsageResetLabel(
+  resetsAt: string | null | undefined,
+  now = new Date(),
+): string | null {
+  if (!resetsAt) return null;
+  const resetMs = Date.parse(resetsAt);
+  if (Number.isNaN(resetMs)) return null;
+  const deltaMs = resetMs - now.getTime();
+  if (deltaMs <= 0) return "resets soon";
+  const minutes = Math.max(1, Math.round(deltaMs / 60_000));
+  if (minutes < 60) return `resets in ${minutes}m`;
+  const hours = minutes / 60;
+  if (hours < 36) {
+    const rounded = hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
+    const label = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    return `resets in ${label}h`;
+  }
+  return `resets ${formatDateTimeShort(resetsAt)}`;
+}
+
 export function formatCodexPlanType(planType: string | null | undefined): string | null {
   if (!planType) {
     return null;

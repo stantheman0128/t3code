@@ -8,6 +8,7 @@ import {
   formatCodexPlanType,
   formatCodexWindowLabel,
   formatDateTimeShort,
+  formatUsageResetLabel,
   formatHourShort,
   formatOptionalUsd,
   formatRelativeHourShort,
@@ -95,6 +96,15 @@ describe("formatCodexWindowLabel", () => {
     expect(formatCodexWindowLabel(60)).toBe("1h");
     expect(formatCodexWindowLabel(45)).toBe("45m");
     expect(formatCodexWindowLabel(null)).toBeNull();
+  });
+});
+
+describe("formatUsageResetLabel", () => {
+  it("uses a relative label for nearby resets", () => {
+    const now = new Date("2026-08-28T12:00:00.000Z");
+    expect(formatUsageResetLabel("2026-08-28T15:00:00.000Z", now)).toBe("resets in 3h");
+    expect(formatUsageResetLabel("2026-08-28T12:20:00.000Z", now)).toBe("resets in 20m");
+    expect(formatUsageResetLabel("2026-08-28T11:00:00.000Z", now)).toBe("resets soon");
   });
 });
 

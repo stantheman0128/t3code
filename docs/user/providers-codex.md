@@ -28,6 +28,10 @@ Log in with Codex normally:
 codex login
 ```
 
+If Settings shows an update for a Codex instance that uses the Codex desktop app, T3 Code runs
+that app's own `codex update` command. npm and Homebrew installs keep using their package
+manager instead.
+
 ## Send feedback to OpenAI
 
 In an existing Codex thread, send `/feedback` or `/feedback` followed by a description of the

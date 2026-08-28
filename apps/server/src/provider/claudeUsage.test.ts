@@ -1,0 +1,46 @@
+import { describe, expect, it } from "vite-plus/test";
+
+import { claudeAccessTokenFromDocument, claudeCredentialsFileCandidates } from "./claudeUsage.ts";
+
+describe("claudeAccessTokenFromDocument", () => {
+  it("reads the Claude Code oauth access token when it is still valid", () => {
+    expect(
+      claudeAccessTokenFromDocument(
+        {
+          claudeAiOauth: {
+            accessToken: "sk-ant-oat01-test",
+            expiresAt: 2_000_000_000_000,
+          },
+        },
+        1_700_000_000_000,
+      ),
+    ).toBe("sk-ant-oat01-test");
+  });
+
+  it("ignores expired tokens instead of refreshing them", () => {
+    expect(
+      claudeAccessTokenFromDocument(
+        {
+          claudeAiOauth: {
+            accessToken: "sk-ant-oat01-expired",
+            expiresAt: 1_000,
+          },
+        },
+        1_700_000_000_000,
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("claudeCredentialsFileCandidates", () => {
+  it("includes CLAUDE_CONFIG_DIR and the default .claude credentials file", () => {
+    const files = claudeCredentialsFileCandidates("C:\\Users\\ada", {
+      CLAUDE_CONFIG_DIR: "C:\\Users\\ada\\.claude_work",
+      USERPROFILE: "C:\\Users\\ada",
+    });
+    expect(files.some((file) => file.endsWith(".claude_work\\.credentials.json"))).toBe(true);
+    expect(
+      files.some((file) => file.includes(".claude") && file.endsWith(".credentials.json")),
+    ).toBe(true);
+  });
+});

@@ -43,6 +43,7 @@ import {
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment, resolveClaudeHomePath } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import { readClaudeUsageLimits } from "../claudeUsage.ts";
 import { mapClaudeUsageLimits } from "../providerUsageLimits.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
@@ -1039,6 +1040,19 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       subscriptionType,
       authMethod: capabilities.tokenSource,
     }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+  const sdkUsageLimits =
+    capabilities.usageLimits?.status === "available" && capabilities.usageLimits.windows.length > 0
+      ? capabilities.usageLimits
+      : undefined;
+  const usageLimits =
+    sdkUsageLimits ??
+    (normalizeClaudeAuthMethod(capabilities.tokenSource) === "apiKey"
+      ? undefined
+      : yield* readClaudeUsageLimits({
+          homeDir: claudeHome,
+          environment: resolvedEnvironment,
+          planLabel: authMetadata?.label ?? subscriptionType,
+        }));
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -1046,7 +1060,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models,
     slashCommands: dedupedSlashCommands,
     skills,
-    ...(capabilities.usageLimits ? { usageLimits: capabilities.usageLimits } : {}),
+    ...(usageLimits ? { usageLimits } : {}),
     probe: {
       installed: true,
       version: parsedVersion,

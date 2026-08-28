@@ -532,12 +532,14 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
+  planUsageLimits?: ServerProvider["usageLimits"] | null;
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
+      {props.activeContextWindow || props.planUsageLimits?.status === "available" ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}
+          planUsageLimits={props.planUsageLimits}
           modelDisplayName={props.activeThreadModelDisplayName}
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
@@ -3777,6 +3779,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     activeContextWindow={activeContextWindow}
+                    planUsageLimits={
+                      settings.showProviderUsage &&
+                      selectedProviderStatus?.usageLimits?.status === "available"
+                        ? selectedProviderStatus.usageLimits
+                        : null
+                    }
                     activeThreadModelDisplayName={activeThreadModelDisplayName}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}

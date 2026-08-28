@@ -29,8 +29,8 @@ describe("mapCodexRateLimits", () => {
       status: "available",
       planLabel: "Plus Subscription",
       windows: [
-        { id: "primary", remainingPercent: 58, durationMinutes: 300 },
-        { id: "secondary", remainingPercent: 90, durationMinutes: 10080 },
+        { id: "primary", label: "5h", remainingPercent: 58, durationMinutes: 300 },
+        { id: "secondary", label: "weekly", remainingPercent: 90, durationMinutes: 10080 },
       ],
     });
   });
@@ -66,6 +66,52 @@ describe("mapClaudeUsageLimits", () => {
       status: "unsupported",
       planLabel: "Pro",
       windows: [],
+    });
+  });
+
+  it("maps camelCase Claude usage payloads even if the available flag is missing", () => {
+    expect(
+      mapClaudeUsageLimits(
+        {
+          rateLimits: {
+            fiveHour: { utilization: 0.1, resetsAt: "2026-08-28T17:00:00.000Z" },
+            sevenDay: { utilization: 0.2 },
+          },
+        },
+        observedAt,
+        "Pro",
+      ),
+    ).toMatchObject({
+      status: "available",
+      planLabel: "Pro",
+      windows: [
+        { id: "five_hour", label: "5h", remainingPercent: 90 },
+        { id: "seven_day", label: "Week", remainingPercent: 80 },
+      ],
+    });
+  });
+
+  it("maps the oauth/usage document Claude Code itself fetches", () => {
+    expect(
+      mapClaudeUsageLimits(
+        {
+          five_hour: { utilization: 35, resets_at: "2026-08-28T17:00:00.000Z" },
+          seven_day: { utilization: 14, resets_at: "2026-09-03T20:00:00.000Z" },
+          seven_day_sonnet: { used_percentage: 39 },
+          extra_usage: { is_enabled: true, monthly_limit: 100, used_credits: 25 },
+        },
+        observedAt,
+        "Pro",
+      ),
+    ).toMatchObject({
+      status: "available",
+      planLabel: "Pro",
+      windows: [
+        { id: "five_hour", label: "5h", remainingPercent: 65 },
+        { id: "seven_day", label: "Week", remainingPercent: 86 },
+        { id: "seven_day_sonnet", label: "Sonnet", remainingPercent: 61 },
+        { id: "extra_usage", label: "Extra", remainingPercent: 75 },
+      ],
     });
   });
 });

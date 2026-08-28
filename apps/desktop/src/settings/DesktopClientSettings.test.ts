@@ -38,6 +38,7 @@ const clientSettings: ClientSettings = {
   interfaceAnimations: false,
   layoutMotion: true,
   showProviderUsage: true,
+  toolCallDensity: "standard",
   providerChrome: false,
   planModeEnabled: false,
   showSkillsInSlashMenu: false,

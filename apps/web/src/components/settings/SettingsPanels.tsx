@@ -9,6 +9,7 @@ import {
   ProviderDriverKind,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
+  type ToolCallDensity,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -158,6 +159,12 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
+
+const TOOL_CALL_DENSITY_LABELS: Record<ToolCallDensity, string> = {
+  compact: "Compact",
+  standard: "Standard",
+  detailed: "Detailed",
+};
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
   balanced: "Balanced",
@@ -490,6 +497,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome
         ? ["Provider chrome"]
         : []),
+      ...(settings.toolCallDensity !== DEFAULT_UNIFIED_SETTINGS.toolCallDensity
+        ? ["Tool call density"]
+        : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
         ? ["Environment identification"]
@@ -582,6 +592,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.layoutMotion,
       settings.showProviderUsage,
       settings.providerChrome,
+      settings.toolCallDensity,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.sidebarAutoSettleAfterDays,
@@ -670,6 +681,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       layoutMotion: DEFAULT_UNIFIED_SETTINGS.layoutMotion,
       showProviderUsage: DEFAULT_UNIFIED_SETTINGS.showProviderUsage,
       providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
+      toolCallDensity: DEFAULT_UNIFIED_SETTINGS.toolCallDensity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1219,6 +1231,48 @@ export function AppearanceSettingsPanel() {
               onCheckedChange={(checked) => updateSettings({ providerChrome: Boolean(checked) })}
               aria-label="Provider chrome"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("tool-call-density")}
+          description="Compact shows tool titles only. Standard adds a short line. Detailed keeps the full command and output in the timeline."
+          resetAction={
+            settings.toolCallDensity !== DEFAULT_UNIFIED_SETTINGS.toolCallDensity ? (
+              <SettingResetButton
+                label="tool call density"
+                onClick={() =>
+                  updateSettings({
+                    toolCallDensity: DEFAULT_UNIFIED_SETTINGS.toolCallDensity,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.toolCallDensity}
+              onValueChange={(value) => {
+                if (value === "compact" || value === "standard" || value === "detailed") {
+                  updateSettings({ toolCallDensity: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Tool call density">
+                <SelectValue>{TOOL_CALL_DENSITY_LABELS[settings.toolCallDensity]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="compact">
+                  {TOOL_CALL_DENSITY_LABELS.compact}
+                </SelectItem>
+                <SelectItem hideIndicator value="standard">
+                  {TOOL_CALL_DENSITY_LABELS.standard}
+                </SelectItem>
+                <SelectItem hideIndicator value="detailed">
+                  {TOOL_CALL_DENSITY_LABELS.detailed}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

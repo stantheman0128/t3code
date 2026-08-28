@@ -674,7 +674,7 @@ export function ProviderInstanceCard({
           readOnly && "opacity-50 select-none",
         )}
       >
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {titleHeadNode}
             {versionCodeNode}
@@ -781,16 +781,18 @@ export function ProviderInstanceCard({
               {summary.detail ? <span>· {summary.detail}</span> : null}
             </p>
           ) : null}
-          {hasAuthenticatedEmail ? (
-            <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-[13px] leading-[1.45] text-muted-foreground/80">
-              <span>Authenticated as</span>
-              <ProviderAuthEmail email={authEmail} />
-              {authenticatedDetail ? <span>· {authenticatedDetail}</span> : null}
-            </p>
-          ) : null}
-          {usageLimits && usageLimits.windows.length > 0 ? (
-            <div className="pt-1">
-              <ProviderUsageLimitBars windows={usageLimits.windows} />
+          {hasAuthenticatedEmail || (usageLimits && usageLimits.windows.length > 0) ? (
+            <div className="flex min-w-0 flex-col gap-3" data-provider-editor-quota="true">
+              {hasAuthenticatedEmail ? (
+                <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-[13px] leading-[1.45] text-muted-foreground/80">
+                  <span>Authenticated as</span>
+                  <ProviderAuthEmail email={authEmail} />
+                  {authenticatedDetail ? <span>· {authenticatedDetail}</span> : null}
+                </p>
+              ) : null}
+              {usageLimits && usageLimits.windows.length > 0 ? (
+                <ProviderUsageLimitBars windows={usageLimits.windows} />
+              ) : null}
             </div>
           ) : null}
         </div>

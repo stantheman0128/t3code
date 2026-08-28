@@ -129,6 +129,12 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings({ showProviderUsage: false }).showProviderUsage).toBe(false);
   });
 
+  it("defaults tool-call density to standard", () => {
+    expect(decodeClientSettings({}).toolCallDensity).toBe("standard");
+    expect(decodeClientSettings({ toolCallDensity: "compact" }).toolCallDensity).toBe("compact");
+    expect(decodeClientSettings({ toolCallDensity: "detailed" }).toolCallDensity).toBe("detailed");
+  });
+
   it("defaults provider chrome off", () => {
     expect(decodeClientSettings({}).providerChrome).toBe(false);
     expect(decodeClientSettings({ providerChrome: true }).providerChrome).toBe(true);

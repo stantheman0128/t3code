@@ -3,11 +3,13 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   applyCodexGoalStreamEvent,
+  buildGoalStripContent,
   derivePromptGoalFromUserTexts,
   formatCodexGoalDescription,
   formatCodexGoalError,
   formatCodexGoalStatus,
   formatCodexGoalUsage,
+  formatPromptGoalElapsedLabel,
   formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
@@ -60,17 +62,64 @@ describe("derivePromptGoalFromUserTexts", () => {
         "keep going on the proof",
         "/goal pause",
       ]),
-    ).toEqual({ objective: "Prove the claim", status: "paused" });
+    ).toEqual({ objective: "Prove the claim", status: "paused", startedAt: null });
     expect(derivePromptGoalFromUserTexts(["/goal Prove the claim", "/goal clear"])).toBeNull();
   });
 
+  it("keeps the set-message timestamp for elapsed time", () => {
+    expect(
+      derivePromptGoalFromUserTexts([
+        { text: "/goal Prove the claim", createdAt: "2026-08-28T12:00:00.000Z" },
+        { text: "/goal pause", createdAt: "2026-08-28T12:10:00.000Z" },
+      ]),
+    ).toEqual({
+      objective: "Prove the claim",
+      status: "paused",
+      startedAt: "2026-08-28T12:00:00.000Z",
+    });
+  });
+
   it("labels a live turn as running", () => {
-    expect(formatPromptGoalTitle({ objective: "Ship it", status: "active" }, true)).toBe(
-      "Goal running",
-    );
-    expect(formatPromptGoalTitle({ objective: "Ship it", status: "paused" }, true)).toBe(
-      "Goal paused",
-    );
+    expect(
+      formatPromptGoalTitle({ objective: "Ship it", status: "active", startedAt: null }, true),
+    ).toBe("Goal running");
+    expect(
+      formatPromptGoalTitle({ objective: "Ship it", status: "paused", startedAt: null }, true),
+    ).toBe("Goal paused");
+  });
+
+  it("formats elapsed time from Codex seconds or a start stamp", () => {
+    expect(formatPromptGoalElapsedLabel({ timeUsedSeconds: 90 })).toBe("2m");
+    expect(
+      formatPromptGoalElapsedLabel({
+        startedAt: "2026-08-28T12:00:00.000Z",
+        now: new Date("2026-08-28T12:04:00.000Z"),
+      }),
+    ).toBe("4m");
+    expect(formatPromptGoalElapsedLabel({})).toBeNull();
+  });
+
+  it("expands the Grok goal strip to the full objective and running state", () => {
+    const collapsed = buildGoalStripContent({
+      title: "Goal active",
+      objective: "Prove Klaus Pinn's D-sequence claims",
+      durationLabel: "4m",
+      running: true,
+      expanded: false,
+    });
+    const expanded = buildGoalStripContent({
+      title: "Goal active",
+      objective: "Prove Klaus Pinn's D-sequence claims",
+      durationLabel: "4m",
+      running: true,
+      expanded: true,
+    });
+    expect(collapsed.activateLabel).toBe("Show full goal");
+    expect(collapsed.body).toBe("Prove Klaus Pinn's D-sequence claims");
+    expect(expanded.activateLabel).toBe("Hide full goal");
+    expect(expanded.body).toContain("Prove Klaus Pinn's D-sequence claims");
+    expect(expanded.body).toContain("running");
+    expect(expanded.body).toContain("4m");
   });
 });
 

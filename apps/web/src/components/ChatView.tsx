@@ -193,7 +193,6 @@ import {
   GitBranchIcon,
   Minimize2Icon,
   PaperclipIcon,
-  TargetIcon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -285,6 +284,7 @@ import {
   formatCodexGoalDescription,
   formatCodexGoalError,
   formatCodexGoalStatus,
+  formatPromptGoalElapsedLabel,
   formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
@@ -338,6 +338,7 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { createGoalBannerItem } from "./chat/goalStrip";
 import {
   hasAvailableClaudeCompactionProvider,
   hasDismissedResumeCompaction,
@@ -1506,6 +1507,7 @@ function ChatViewContent(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
+  const toolCallDensity = settings.toolCallDensity;
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   // Granular store selectors — avoid subscribing to prompt changes.
@@ -5345,50 +5347,45 @@ function ChatViewContent(props: ChatViewProps) {
     resumeCompactionPermanentlyDismissed,
     selectedProvider,
   ]);
+  const [goalStripExpanded, setGoalStripExpanded] = useState(false);
+  useEffect(() => {
+    setGoalStripExpanded(false);
+  }, [activeThread?.id]);
   const promptGoal = useMemo(
     () =>
       derivePromptGoalFromUserTexts(
         timelineMessages
           .filter((message) => message.role === "user")
-          .map((message) => message.text),
+          .map((message) => ({ text: message.text, createdAt: message.createdAt })),
       ),
     [timelineMessages],
   );
   const goalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    const onToggle = () => setGoalStripExpanded((open) => !open);
     if (codexGoal !== null) {
-      const goalDescription = formatCodexGoalDescription(codexGoal);
-      return {
+      const running = phase === "running" && codexGoal.status === "active";
+      return createGoalBannerItem({
         id: `codex-goal:${activeThread?.id ?? "unknown"}`,
-        variant: "info",
-        icon: <TargetIcon />,
         title: `Goal ${formatCodexGoalStatus(codexGoal.status)}`,
-        description: (
-          <Tooltip>
-            <TooltipTrigger render={<span className="line-clamp-2">{goalDescription}</span>} />
-            <TooltipPopup side="top" className="max-w-96">
-              {goalDescription}
-            </TooltipPopup>
-          </Tooltip>
-        ),
-      };
+        objective: formatCodexGoalDescription(codexGoal),
+        durationLabel: formatPromptGoalElapsedLabel({ timeUsedSeconds: codexGoal.timeUsedSeconds }),
+        running,
+        expanded: goalStripExpanded,
+        onToggle,
+      });
     }
     if (promptGoal === null) return null;
     const running = phase === "running" && promptGoal.status === "active";
-    return {
+    return createGoalBannerItem({
       id: `thread-goal:${activeThread?.id ?? "unknown"}`,
-      variant: "info",
-      icon: <TargetIcon />,
       title: formatPromptGoalTitle(promptGoal, running),
-      description: (
-        <Tooltip>
-          <TooltipTrigger render={<span className="line-clamp-2">{promptGoal.objective}</span>} />
-          <TooltipPopup side="top" className="max-w-96">
-            {promptGoal.objective}
-          </TooltipPopup>
-        </Tooltip>
-      ),
-    };
-  }, [activeThread?.id, codexGoal, phase, promptGoal]);
+      objective: promptGoal.objective,
+      durationLabel: formatPromptGoalElapsedLabel({ startedAt: promptGoal.startedAt }),
+      running,
+      expanded: goalStripExpanded,
+      onToggle,
+    });
+  }, [activeThread?.id, codexGoal, goalStripExpanded, phase, promptGoal]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
@@ -7829,6 +7826,7 @@ function ChatViewContent(props: ChatViewProps) {
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
+                toolCallDensity={toolCallDensity}
                 workspaceRoot={activeWorkspaceRoot}
                 skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
                 anchorMessageId={timelineAnchorMessageId}

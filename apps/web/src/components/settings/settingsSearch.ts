@@ -90,6 +90,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "tool-call-density",
+    title: "Tool call density",
+    to: "/settings/appearance",
+  },
+  {
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",

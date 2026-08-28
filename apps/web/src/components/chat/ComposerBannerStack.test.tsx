@@ -105,4 +105,28 @@ describe("ComposerBannerStack", () => {
     expect(markup).toContain('disabled=""');
     expect(markup).toContain('aria-label="Keep full history"');
   });
+
+  it("exposes a keyboard control that reveals the full Grok goal", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerBannerStack
+        items={[
+          {
+            id: "thread-goal:1",
+            variant: "info",
+            icon: <span aria-hidden="true">◎</span>,
+            title: "Goal active",
+            description: <span>Prove Klaus Pinn's D-sequence claims</span>,
+            onActivate: () => {},
+            activateLabel: "Show full goal",
+            expanded: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Goal active");
+    expect(markup).toContain('aria-label="Show full goal"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain("D-sequence claims");
+  });
 });

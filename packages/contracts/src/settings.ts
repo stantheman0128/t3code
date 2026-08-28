@@ -30,6 +30,10 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
+export const ToolCallDensity = Schema.Literals(["compact", "standard", "detailed"]);
+export type ToolCallDensity = typeof ToolCallDensity.Type;
+export const DEFAULT_TOOL_CALL_DENSITY: ToolCallDensity = "standard";
+
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
@@ -238,6 +242,9 @@ export const ClientSettingsSchema = Schema.Struct({
    */
   layoutMotion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   showProviderUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  toolCallDensity: ToolCallDensity.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TOOL_CALL_DENSITY)),
+  ),
   /**
    * When on, the chat workspace picks up the active provider's type, accent,
    * and density. Off keeps T3's default chrome.
@@ -950,6 +957,7 @@ export const ClientSettingsPatch = Schema.Struct({
   interfaceAnimations: Schema.optionalKey(Schema.Boolean),
   layoutMotion: Schema.optionalKey(Schema.Boolean),
   showProviderUsage: Schema.optionalKey(Schema.Boolean),
+  toolCallDensity: Schema.optionalKey(ToolCallDensity),
   providerChrome: Schema.optionalKey(Schema.Boolean),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(

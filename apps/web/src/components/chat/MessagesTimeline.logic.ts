@@ -9,7 +9,12 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type ToolCallDensity,
+  type TurnId,
+} from "@t3tools/contracts";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 /** While a turn is running, keep a short procedure visible instead of one stdout line. */
@@ -52,8 +57,40 @@ function fileBasename(path: string): string {
   return separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : trimmed;
 }
 
-export function workLogVisibleEntryCap(isWorking: boolean): number {
+export function workLogVisibleEntryCap(
+  isWorking: boolean,
+  density: ToolCallDensity = "standard",
+): number {
+  if (density === "detailed") {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (density === "compact") {
+    return 0;
+  }
   return isWorking ? MAX_VISIBLE_LIVE_PROCESS_ENTRIES : MAX_VISIBLE_WORK_LOG_ENTRIES;
+}
+
+export function presentWorkLogToolCall(
+  entry: WorkLogEntry,
+  density: ToolCallDensity = "standard",
+): { readonly title: string; readonly detail: string | null } {
+  const title = workEntryProcessLabel(entry);
+  if (density === "compact") {
+    return { title, detail: null };
+  }
+  const command = (entry.rawCommand ?? entry.command)?.trim() ?? "";
+  const detail = entry.detail?.trim() ?? "";
+  if (density === "detailed") {
+    const blocks = [command, detail].filter((block) => block.length > 0);
+    return { title, detail: blocks.length > 0 ? blocks.join("\n\n") : null };
+  }
+  if (detail && !workEntryLooksLikeOutputDump(detail)) {
+    return { title, detail: compactProcessLabel(detail) };
+  }
+  if (command && !workEntryLooksLikeOutputDump(command) && command !== title) {
+    return { title, detail: compactProcessLabel(command) };
+  }
+  return { title, detail: null };
 }
 
 export function workEntryLooksLikeOutputDump(value: string | undefined): boolean {
@@ -810,7 +847,9 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt: string | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
   revertTurnCountByUserMessageId: ReadonlyMap<MessageId, number>;
+  toolCallDensity?: ToolCallDensity;
 }): MessagesTimelineRow[] {
+  const toolCallDensity = input.toolCallDensity ?? "standard";
   const nextRows: MessagesTimelineRow[] = [];
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
@@ -1040,6 +1079,7 @@ export function deriveMessagesTimelineRows(input: {
             entry.tone !== "error",
         );
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
+        const visibleCap = workLogVisibleEntryCap(input.isWorking, toolCallDensity);
         if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
@@ -1065,7 +1105,11 @@ export function deriveMessagesTimelineRows(input: {
               });
             }
           }
-        } else if (onlyToolEntries && (!input.isWorking || visibleGroupedEntries.length > 1)) {
+        } else if (
+          onlyToolEntries &&
+          toolCallDensity !== "detailed" &&
+          (!input.isWorking || visibleGroupedEntries.length > 1)
+        ) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
@@ -1080,7 +1124,8 @@ export function deriveMessagesTimelineRows(input: {
             summary: summarizeToolGroup(visibleGroupedEntries),
             summaryKind,
             hasFailure: workEntryDisplayIndicatesToolFailure(visibleGroupedEntries.at(-1)!),
-            processLabels: workGroupProcessLabels(visibleGroupedEntries),
+            processLabels:
+              toolCallDensity === "compact" ? [] : workGroupProcessLabels(visibleGroupedEntries),
           });
           if (expanded) {
             for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
@@ -1094,7 +1139,7 @@ export function deriveMessagesTimelineRows(input: {
               });
             }
           }
-        } else if (visibleGroupedEntries.length <= workLogVisibleEntryCap(input.isWorking)) {
+        } else if (visibleGroupedEntries.length <= visibleCap) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
@@ -1115,10 +1160,10 @@ export function deriveMessagesTimelineRows(input: {
           const overflowCandidates = visibleGroupedEntries.filter(
             (entry) => entry.agentSpawn === undefined,
           );
-          const hiddenEntries = overflowCandidates.slice(
-            0,
-            -workLogVisibleEntryCap(input.isWorking),
-          );
+          // `slice(0, -0)` is empty, so compact (cap 0) must hide the whole
+          // overflow set rather than keep every row visible.
+          const hiddenEntries =
+            visibleCap <= 0 ? overflowCandidates : overflowCandidates.slice(0, -visibleCap);
           const hiddenIds = new Set(hiddenEntries.map((entry) => entry.id));
           const visibleEntries = visibleGroupedEntries.filter(
             (entry) => entry.agentSpawn !== undefined || !hiddenIds.has(entry.id),
@@ -1153,7 +1198,8 @@ export function deriveMessagesTimelineRows(input: {
                 latestToolEntry !== undefined &&
                 workEntryDisplayIndicatesToolFailure(latestToolEntry) &&
                 hiddenEntries.some(workEntryDisplayIndicatesToolFailure),
-              processLabels: workGroupProcessLabels(hiddenEntries),
+              processLabels:
+                toolCallDensity === "compact" ? [] : workGroupProcessLabels(hiddenEntries),
             });
           }
         }

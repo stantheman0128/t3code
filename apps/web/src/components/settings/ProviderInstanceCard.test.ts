@@ -80,4 +80,82 @@ describe("deriveProviderModelsForDisplay", () => {
     expect(markup).toContain("blur-[2px]");
     expect(markup).not.toContain("developer@example.com");
   });
+
+  it("spaces the editor auth line away from usage bars and keeps the list pane", () => {
+    const instanceId = ProviderInstanceId.make("codex");
+    const driver = ProviderDriverKind.make("codex");
+    const liveProvider: ServerProvider = {
+      instanceId,
+      driver,
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: {
+        status: "authenticated",
+        email: "developer@example.com",
+        label: "ChatGPT Plus Subscription",
+      },
+      checkedAt: "2026-08-27T12:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+      usageLimits: {
+        status: "available",
+        observedAt: "2026-08-27T12:00:00.000Z",
+        windows: [
+          {
+            id: "primary",
+            label: "5h",
+            remainingPercent: 99,
+            resetsAt: "2026-08-27T17:00:00.000Z",
+            durationMinutes: 300,
+          },
+        ],
+      },
+    };
+
+    const editor = renderToStaticMarkup(
+      createElement(ProviderInstanceCard, {
+        instanceId,
+        instance: { driver },
+        driverOption: undefined,
+        liveProvider,
+        mode: "editor",
+        onUpdate: () => undefined,
+        hiddenModels: [],
+        favoriteModels: [],
+        modelOrder: [],
+        onHiddenModelsChange: () => undefined,
+        onFavoriteModelsChange: () => undefined,
+        onModelOrderChange: () => undefined,
+      }),
+    );
+    const list = renderToStaticMarkup(
+      createElement(ProviderInstanceCard, {
+        instanceId,
+        instance: { driver },
+        driverOption: undefined,
+        liveProvider,
+        mode: "list",
+        selected: true,
+        onSelect: () => undefined,
+        onUpdate: () => undefined,
+        hiddenModels: [],
+        favoriteModels: [],
+        modelOrder: [],
+        onHiddenModelsChange: () => undefined,
+        onFavoriteModelsChange: () => undefined,
+        onModelOrderChange: () => undefined,
+      }),
+    );
+
+    expect(editor).toContain("Authenticated as");
+    expect(editor).toContain('data-provider-editor-quota="true"');
+    expect(editor).toContain("flex min-w-0 flex-col gap-3");
+    expect(editor).not.toContain("pt-1");
+    expect(editor).toContain("Configuration");
+    expect(list).toContain('aria-pressed="true"');
+    expect(list).toContain("Enable");
+  });
 });

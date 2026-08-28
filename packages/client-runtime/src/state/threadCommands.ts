@@ -99,11 +99,15 @@ export function formatCodexGoalError(error: unknown): string {
 export type PromptGoal = {
   readonly objective: string;
   readonly status: Extract<CodexGoalStatus, "active" | "paused">;
+  readonly startedAt: string | null;
 };
+
+export type PromptGoalSource = string | { readonly text: string; readonly createdAt?: string };
 
 export function applyPromptGoalCommand(
   current: PromptGoal | null,
   command: CodexGoalCommand,
+  createdAt?: string,
 ): PromptGoal | null {
   if (command.action === "clear") {
     return null;
@@ -118,18 +122,31 @@ export function applyPromptGoalCommand(
   return {
     objective,
     status: command.status ?? current?.status ?? "active",
+    startedAt: command.objective
+      ? (createdAt ?? current?.startedAt ?? null)
+      : (current?.startedAt ?? createdAt ?? null),
   };
 }
 
+function promptGoalSource(item: PromptGoalSource): {
+  readonly text: string;
+  readonly createdAt?: string;
+} {
+  return typeof item === "string" ? { text: item } : item;
+}
+
 /** Replay `/goal` user messages oldest-to-newest into the live prompt goal. */
-export function derivePromptGoalFromUserTexts(texts: ReadonlyArray<string>): PromptGoal | null {
+export function derivePromptGoalFromUserTexts(
+  texts: ReadonlyArray<PromptGoalSource>,
+): PromptGoal | null {
   let goal: PromptGoal | null = null;
-  for (const text of texts) {
-    const command = parseCodexGoalCommand(text.trim());
+  for (const item of texts) {
+    const source = promptGoalSource(item);
+    const command = parseCodexGoalCommand(source.text.trim());
     if (command === null) {
       continue;
     }
-    goal = applyPromptGoalCommand(goal, command);
+    goal = applyPromptGoalCommand(goal, command, source.createdAt);
   }
   return goal;
 }
@@ -139,6 +156,61 @@ export function formatPromptGoalTitle(goal: PromptGoal, running: boolean): strin
     return "Goal running";
   }
   return `Goal ${formatCodexGoalStatus(goal.status)}`;
+}
+
+export function formatPromptGoalElapsed(ms: number): string | null {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return null;
+  }
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 1) {
+    return "1s";
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = minutes / 60;
+  const rounded = hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
+  const label = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `${label}h`;
+}
+
+export function formatPromptGoalElapsedLabel(input: {
+  readonly timeUsedSeconds?: number | null;
+  readonly startedAt?: string | null;
+  readonly now?: Date;
+}): string | null {
+  if (typeof input.timeUsedSeconds === "number" && Number.isFinite(input.timeUsedSeconds)) {
+    return formatPromptGoalElapsed(input.timeUsedSeconds * 1_000);
+  }
+  if (!input.startedAt) {
+    return null;
+  }
+  const started = Date.parse(input.startedAt);
+  if (Number.isNaN(started)) {
+    return null;
+  }
+  return formatPromptGoalElapsed((input.now ?? new Date()).getTime() - started);
+}
+
+export function buildGoalStripContent(input: {
+  readonly title: string;
+  readonly objective: string;
+  readonly durationLabel: string | null;
+  readonly running: boolean;
+  readonly expanded: boolean;
+}): {
+  readonly title: string;
+  readonly body: string;
+  readonly activateLabel: string;
+} {
+  const statusBit = input.running ? "running" : "not running";
+  const durationBit = input.durationLabel ? ` · ${input.durationLabel}` : "";
+  return {
+    title: input.title,
+    body: input.expanded ? `${input.objective}\n${statusBit}${durationBit}` : input.objective,
+    activateLabel: input.expanded ? "Hide full goal" : "Show full goal",
+  };
 }
 
 export function parseCodexGoalCommand(value: string): CodexGoalCommand | null {

@@ -71,10 +71,12 @@ built-in or add a script to launch by name.
 ## Goals
 
 Grok's `/goal` keeps an objective across turns until an evidence check says it is done. Use it from
-the composer slash menu on a Grok thread. After you send it, T3 shows the current goal and whether
-it is running just above the message box. Goal mode must be enabled in the Grok CLI for the command
-to do anything. This is not available on other providers' native TUIs unless that CLI has `/goal`
-too; T3 lists Codex and Cursor `/goal` the same way when you are on those providers.
+the composer slash menu on a Grok thread. After you send it, T3 shows the current goal just above
+the message box. Click the strip for the full objective, running vs idle, and elapsed time. Elapsed
+time comes from when you sent `/goal`; Codex also supplies seconds when it has them. Goal mode
+must be enabled in the Grok CLI for the command to do anything. This is not available on other
+providers' native TUIs unless that CLI has `/goal` too; T3 lists Codex and Cursor `/goal` the same
+way when you are on those providers.
 
 ## Usage
 

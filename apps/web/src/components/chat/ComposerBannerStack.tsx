@@ -47,6 +47,9 @@ export interface ComposerBannerStackItem {
   readonly actionClassName?: string;
   readonly dismissLabel?: string;
   readonly onDismiss?: () => void;
+  readonly onActivate?: () => void;
+  readonly activateLabel?: string;
+  readonly expanded?: boolean;
 }
 
 interface ComposerBannerStackProps {
@@ -206,8 +209,28 @@ function ComposerBannerStackAlert({
       data-variant={item.variant}
     >
       {item.icon}
-      <AlertTitle>{item.title}</AlertTitle>
-      {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
+      {item.onActivate ? (
+        <button
+          type="button"
+          data-slot="alert-title"
+          className="min-w-0 rounded-sm text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-expanded={item.expanded ?? false}
+          aria-label={item.activateLabel ?? "Show full goal"}
+          onClick={item.onActivate}
+        >
+          <span className="block">{item.title}</span>
+          {item.description ? (
+            <span className="mt-0.5 block font-normal text-muted-foreground">
+              {item.description}
+            </span>
+          ) : null}
+        </button>
+      ) : (
+        <>
+          <AlertTitle>{item.title}</AlertTitle>
+          {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
+        </>
+      )}
       {item.actions || item.onDismiss ? (
         <AlertAction
           className={cn(

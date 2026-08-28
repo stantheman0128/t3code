@@ -83,6 +83,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   looksLikeBareFilePath,
+  presentWorkLogToolCall,
   resolveAssistantMessageCopyState,
   workEntryLooksLikeOutputDump,
   workEntryProcessLabel,
@@ -117,7 +118,7 @@ import {
 } from "~/lib/previewAnnotation";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat, type ToolCallDensity } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
 import {
@@ -143,6 +144,7 @@ import {
 
 interface TimelineRowSharedState {
   timestampFormat: TimestampFormat;
+  toolCallDensity: ToolCallDensity;
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
   markdownCwd: string | undefined;
@@ -238,6 +240,7 @@ interface MessagesTimelineProps {
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
+  toolCallDensity?: ToolCallDensity;
   workspaceRoot: string | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   anchorMessageId: MessageId | null;
@@ -285,6 +288,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   markdownCwd,
   resolvedTheme,
   timestampFormat,
+  toolCallDensity = "standard",
   workspaceRoot,
   skills = EMPTY_TIMELINE_SKILLS,
   anchorMessageId,
@@ -432,6 +436,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
+        toolCallDensity,
       }),
     [
       timelineEntries,
@@ -443,6 +448,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
+      toolCallDensity,
     ],
   );
   const rows = useStableRows(rawRows);
@@ -530,6 +536,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
       timestampFormat,
+      toolCallDensity,
       routeThreadKey,
       threadRef: parseScopedThreadKey(routeThreadKey),
       markdownCwd,
@@ -549,6 +556,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }),
     [
       timestampFormat,
+      toolCallDensity,
       routeThreadKey,
       markdownCwd,
       resolvedTheme,
@@ -2748,13 +2756,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   isExpandedToolGroupEntry: boolean;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
+  const { toolCallDensity } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
-  const displayText = workEntryProcessLabel(workEntry);
+  const presented = presentWorkLogToolCall(workEntry, toolCallDensity);
+  const displayText = presented.title;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null;
   const showDestructiveRowStyle =
@@ -2826,6 +2836,16 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span className={cn("min-w-0 flex-1 truncate", headingClass)}>{displayText}</span>
             </p>
+            {presented.detail ? (
+              <p
+                className={cn(
+                  "min-w-0 text-xs text-muted-foreground",
+                  toolCallDensity === "detailed" ? "whitespace-pre-wrap break-all" : "truncate",
+                )}
+              >
+                {presented.detail}
+              </p>
+            ) : null}
           </div>
           <span
             className={cn(

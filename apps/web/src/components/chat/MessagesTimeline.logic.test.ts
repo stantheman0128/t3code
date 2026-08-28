@@ -4,12 +4,15 @@ import {
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  presentWorkLogToolCall,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
   workEntryLooksLikeOutputDump,
   workEntryProcessLabel,
   workGroupProcessLabels,
+  workLogVisibleEntryCap,
 } from "./MessagesTimeline.logic";
+import type { WorkLogEntry } from "../../session-logic";
 
 describe("shouldPreserveAssistantLineBreaks", () => {
   it("preserves Claude insight formatting without changing regular markdown", () => {
@@ -1814,5 +1817,122 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(reordered).not.toBe(initial);
     expect(reordered.result).toEqual([initial.result[1], initial.result[0]]);
+  });
+});
+
+const DENSITY_TOOL_ENTRY: WorkLogEntry = {
+  id: "work-density",
+  createdAt: "2026-01-01T00:00:01Z",
+  label: "Ran command",
+  toolTitle: "Terminal",
+  command: "pnpm test apps/web",
+  rawCommand: "pnpm test apps/web",
+  detail: "PASS  12 tests",
+  tone: "tool",
+  itemType: "command_execution",
+};
+
+describe("tool-call density", () => {
+  it("caps compact to none, standard to the live/history limits, and detailed to everything", () => {
+    expect(workLogVisibleEntryCap(false, "compact")).toBe(0);
+    expect(workLogVisibleEntryCap(true, "compact")).toBe(0);
+    expect(workLogVisibleEntryCap(false, "standard")).toBe(1);
+    expect(workLogVisibleEntryCap(true, "standard")).toBe(8);
+    expect(workLogVisibleEntryCap(false, "detailed")).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it("presents one tool as titles only, title plus a short line, or full command and output", () => {
+    expect(presentWorkLogToolCall(DENSITY_TOOL_ENTRY, "compact")).toEqual({
+      title: "pnpm test apps/web",
+      detail: null,
+    });
+    expect(presentWorkLogToolCall(DENSITY_TOOL_ENTRY, "standard")).toEqual({
+      title: "pnpm test apps/web",
+      detail: "PASS 12 tests",
+    });
+    expect(presentWorkLogToolCall(DENSITY_TOOL_ENTRY, "detailed")).toEqual({
+      title: "pnpm test apps/web",
+      detail: "pnpm test apps/web\n\nPASS  12 tests",
+    });
+  });
+
+  it("groups the same tool list as a compact toggle, a labeled toggle, or expanded work rows", () => {
+    const timelineEntries = [
+      {
+        id: "work-entry-1",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        entry: { ...DENSITY_TOOL_ENTRY, id: "work-1" },
+      },
+      {
+        id: "work-entry-2",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:02Z",
+        entry: {
+          ...DENSITY_TOOL_ENTRY,
+          id: "work-2",
+          createdAt: "2026-01-01T00:00:02Z",
+          command: "pnpm lint",
+          rawCommand: "pnpm lint",
+          detail: "ok",
+        },
+      },
+      {
+        id: "work-entry-3",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          ...DENSITY_TOOL_ENTRY,
+          id: "work-3",
+          createdAt: "2026-01-01T00:00:03Z",
+          command: "pnpm typecheck",
+          rawCommand: "pnpm typecheck",
+          detail: "ok",
+        },
+      },
+    ];
+    const baseInput = {
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    };
+
+    const compactRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      toolCallDensity: "compact",
+    });
+    const standardRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      toolCallDensity: "standard",
+    });
+    const detailedRows = deriveMessagesTimelineRows({
+      ...baseInput,
+      toolCallDensity: "detailed",
+    });
+
+    expect(compactRows.map((row) => row.kind)).toEqual(["work-toggle"]);
+    expect(compactRows[0]).toMatchObject({
+      kind: "work-toggle",
+      processLabels: [],
+      hiddenCount: 3,
+    });
+    expect(standardRows.map((row) => row.kind)).toEqual(["work-toggle"]);
+    expect(standardRows[0]).toMatchObject({
+      kind: "work-toggle",
+      hiddenCount: 3,
+    });
+    expect(standardRows[0]?.kind === "work-toggle" ? standardRows[0].processLabels : []).toEqual([
+      "pnpm test apps/web",
+      "pnpm lint",
+      "pnpm typecheck",
+    ]);
+    expect(detailedRows.map((row) => row.kind)).toEqual(["work"]);
+    expect(
+      detailedRows[0]?.kind === "work"
+        ? detailedRows[0].groupedEntries.map((entry) => entry.id)
+        : [],
+    ).toEqual(["work-1", "work-2", "work-3"]);
   });
 });

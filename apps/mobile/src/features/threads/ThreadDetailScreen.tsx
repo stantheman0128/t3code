@@ -5,6 +5,7 @@ import {
   formatCodexGoalError,
   formatCodexGoalStatus,
   formatCodexGoalUsage,
+  formatPromptGoalElapsedLabel,
   formatPromptGoalTitle,
   parseCodexGoalCommand,
   toCodexGoalSetInput,
@@ -47,6 +48,7 @@ import {
   Alert,
   Keyboard,
   Platform,
+  Pressable,
   useWindowDimensions,
   View,
   type GestureResponderEvent,
@@ -488,12 +490,18 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     () =>
       derivePromptGoalFromUserTexts(
         selectedThreadFeed.flatMap((entry) =>
-          entry.type === "message" && entry.message.role === "user" ? [entry.message.text] : [],
+          entry.type === "message" && entry.message.role === "user"
+            ? [{ text: entry.message.text, createdAt: entry.message.createdAt }]
+            : [],
         ),
       ),
     [selectedThreadFeed],
   );
   const goalRunning = props.selectedThread.session?.status === "running";
+  const [goalStripExpanded, setGoalStripExpanded] = useState(false);
+  useEffect(() => {
+    setGoalStripExpanded(false);
+  }, [props.selectedThread.id]);
   useStreamingHaptics(props.selectedThread.id, props.selectedThreadFeed);
   const selectedProviderSkills = useMemo(
     () =>
@@ -871,26 +879,59 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 composer slot, so composer drafts and editor state survive. */}
             <View style={activeUserInputRequestId !== null ? { display: "none" } : undefined}>
               {codexGoal !== null ? (
-                <View className="mx-3 mb-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={goalStripExpanded ? "Hide full goal" : "Show full goal"}
+                  onPress={() => setGoalStripExpanded((open) => !open)}
+                  className="mx-3 mb-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2"
+                >
                   <Text className="text-xs font-t3-bold text-foreground">
                     Goal {formatCodexGoalStatus(codexGoal.status)}
                   </Text>
-                  <Text className="text-xs text-foreground-muted" numberOfLines={2}>
+                  <Text
+                    className="text-xs text-foreground-muted"
+                    numberOfLines={goalStripExpanded ? undefined : 2}
+                  >
                     {codexGoal.objective}
                   </Text>
-                  <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-                    {formatCodexGoalUsage(codexGoal)}
-                  </Text>
-                </View>
+                  {goalStripExpanded ? (
+                    <Text className="text-xs text-foreground-muted">
+                      {goalRunning && codexGoal.status === "active" ? "running" : "not running"}
+                      {formatPromptGoalElapsedLabel({ timeUsedSeconds: codexGoal.timeUsedSeconds })
+                        ? ` · ${formatPromptGoalElapsedLabel({ timeUsedSeconds: codexGoal.timeUsedSeconds })}`
+                        : ""}
+                    </Text>
+                  ) : (
+                    <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+                      {formatCodexGoalUsage(codexGoal)}
+                    </Text>
+                  )}
+                </Pressable>
               ) : promptGoal !== null ? (
-                <View className="mx-3 mb-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={goalStripExpanded ? "Hide full goal" : "Show full goal"}
+                  onPress={() => setGoalStripExpanded((open) => !open)}
+                  className="mx-3 mb-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2"
+                >
                   <Text className="text-xs font-t3-bold text-foreground">
                     {formatPromptGoalTitle(promptGoal, goalRunning)}
                   </Text>
-                  <Text className="text-xs text-foreground-muted" numberOfLines={2}>
+                  <Text
+                    className="text-xs text-foreground-muted"
+                    numberOfLines={goalStripExpanded ? undefined : 2}
+                  >
                     {promptGoal.objective}
                   </Text>
-                </View>
+                  {goalStripExpanded ? (
+                    <Text className="text-xs text-foreground-muted">
+                      {goalRunning && promptGoal.status === "active" ? "running" : "not running"}
+                      {formatPromptGoalElapsedLabel({ startedAt: promptGoal.startedAt })
+                        ? ` · ${formatPromptGoalElapsedLabel({ startedAt: promptGoal.startedAt })}`
+                        : ""}
+                    </Text>
+                  ) : null}
+                </Pressable>
               ) : null}
               <ThreadComposer
                 editorRef={composerEditorRef}

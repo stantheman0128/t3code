@@ -124,6 +124,9 @@ describe("KeybindingsSettings.logic", () => {
     expect(commandLabel("commandPalette.toggle")).toBe("Command Palette: Toggle");
     expect(commandLabel("find.toggle")).toBe("Find: Toggle");
     expect(commandLabel("themeEditor.toggle")).toBe("Theme Editor: Toggle");
+    expect(commandLabel("developer.togglePerformanceBar")).toBe(
+      "Developer: Toggle Performance Bar",
+    );
     expect(commandLabel("script.setup-db.run")).toBe("Run Script: Setup Db");
   });
 

@@ -35,6 +35,7 @@ import {
 import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
+  ActivityIcon,
   ArrowLeftIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
@@ -66,7 +67,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { useClientSettings } from "../hooks/useSettings";
+import { toggleShowPerformanceBar, useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -459,6 +460,12 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           themeHalves,
           initialAppearance: resolvedTheme,
         });
+        return;
+      }
+      if (command === "developer.togglePerformanceBar") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleShowPerformanceBar();
         return;
       }
       if (command === "find.toggle") {
@@ -1642,6 +1649,29 @@ function OpenCommandPaletteDialog(props: {
         themeHalves,
         initialAppearance: resolvedTheme,
       });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:performance-bar",
+    searchTerms: [
+      "performance",
+      "fps",
+      "metrics",
+      "debug",
+      "profiling",
+      "memory",
+      "jank",
+      "bar",
+      "developer",
+    ],
+    title: "Toggle performance bar",
+    description: "FPS, frame delay, jank, and JS heap",
+    icon: <ActivityIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "developer.togglePerformanceBar",
+    run: async () => {
+      toggleShowPerformanceBar();
     },
   });
 

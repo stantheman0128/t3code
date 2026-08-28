@@ -135,6 +135,15 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings({ toolCallDensity: "detailed" }).toolCallDensity).toBe("detailed");
   });
 
+  it("defaults the performance bar off, with bars as the FPS indicator", () => {
+    expect(decodeClientSettings({}).showPerformanceBar).toBe(false);
+    expect(decodeClientSettings({}).performanceBarFpsMode).toBe("bars");
+    expect(decodeClientSettings({ showPerformanceBar: true }).showPerformanceBar).toBe(true);
+    expect(decodeClientSettings({ performanceBarFpsMode: "wave" }).performanceBarFpsMode).toBe(
+      "wave",
+    );
+  });
+
   it("defaults provider chrome off", () => {
     expect(decodeClientSettings({}).providerChrome).toBe(false);
     expect(decodeClientSettings({ providerChrome: true }).providerChrome).toBe(true);

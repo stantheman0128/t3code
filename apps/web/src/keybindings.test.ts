@@ -138,6 +138,10 @@ const DEFAULT_BINDINGS = compile([
     command: "themeEditor.toggle",
   },
   {
+    shortcut: modShortcut("f", { altKey: true, shiftKey: true }),
+    command: "developer.togglePerformanceBar",
+  },
+  {
     shortcut: modShortcut("m", { shiftKey: true }),
     command: "modelPicker.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
@@ -658,6 +662,25 @@ describe("chat/editor shortcuts", () => {
         { platform: "Win32" },
       ),
       "themeEditor.toggle",
+    );
+  });
+
+  it("matches developer.togglePerformanceBar on macOS and Windows", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "f", metaKey: true, altKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel" },
+      ),
+      "developer.togglePerformanceBar",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "f", ctrlKey: true, altKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "Win32" },
+      ),
+      "developer.togglePerformanceBar",
     );
   });
 

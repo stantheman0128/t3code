@@ -358,6 +358,14 @@ export function useUpdateClientSettings() {
   }, []);
 }
 
+export function toggleShowPerformanceBar(): void {
+  const settings = getClientSettingsSnapshot();
+  persistClientSettings({
+    ...settings,
+    showPerformanceBar: !settings.showPerformanceBar,
+  });
+}
+
 export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;

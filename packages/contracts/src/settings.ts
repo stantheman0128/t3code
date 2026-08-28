@@ -34,6 +34,10 @@ export const ToolCallDensity = Schema.Literals(["compact", "standard", "detailed
 export type ToolCallDensity = typeof ToolCallDensity.Type;
 export const DEFAULT_TOOL_CALL_DENSITY: ToolCallDensity = "standard";
 
+export const PerformanceBarFpsMode = Schema.Literals(["bars", "wave"]);
+export type PerformanceBarFpsMode = typeof PerformanceBarFpsMode.Type;
+export const DEFAULT_PERFORMANCE_BAR_FPS_MODE: PerformanceBarFpsMode = "bars";
+
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
@@ -244,6 +248,10 @@ export const ClientSettingsSchema = Schema.Struct({
   showProviderUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   toolCallDensity: ToolCallDensity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TOOL_CALL_DENSITY)),
+  ),
+  showPerformanceBar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  performanceBarFpsMode: PerformanceBarFpsMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PERFORMANCE_BAR_FPS_MODE)),
   ),
   /**
    * When on, the chat workspace picks up the active provider's type, accent,
@@ -958,6 +966,8 @@ export const ClientSettingsPatch = Schema.Struct({
   layoutMotion: Schema.optionalKey(Schema.Boolean),
   showProviderUsage: Schema.optionalKey(Schema.Boolean),
   toolCallDensity: Schema.optionalKey(ToolCallDensity),
+  showPerformanceBar: Schema.optionalKey(Schema.Boolean),
+  performanceBarFpsMode: Schema.optionalKey(PerformanceBarFpsMode),
   providerChrome: Schema.optionalKey(Schema.Boolean),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(

@@ -41,6 +41,8 @@ describe("ComposerPromptQueue", () => {
     expect(markup).toContain("blob:shot.png");
     expect(markup).toContain("line-clamp-3");
     expect(markup).toContain("chat-composer-drawer-attached");
+    expect(markup).toContain("bg-[var(--chat-composer-glass-surface,var(--card))]");
+    expect(markup).not.toContain("chat-composer-drawer-surface");
     expect(markup).toContain("Preview shot.png");
     expect(markup).toContain("max-h-40 flex-col gap-1.5 overflow-y-auto");
   });

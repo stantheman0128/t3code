@@ -249,7 +249,7 @@ export function ComposerPromptQueue({
     <section
       data-composer-prompt-queue="true"
       className={cn(
-        "chat-composer-drawer-slot chat-composer-drawer-surface chat-composer-drawer-attached min-w-0 px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] sm:px-4",
+        "chat-composer-drawer-slot chat-composer-drawer-attached relative z-10 isolate min-w-0 overflow-hidden rounded-t-2xl border border-b-0 border-border/70 bg-[var(--chat-composer-glass-surface,var(--card))] px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] sm:px-4",
         className,
       )}
       aria-label="Queued follow-ups"

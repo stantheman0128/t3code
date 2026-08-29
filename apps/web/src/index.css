@@ -111,6 +111,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
+  /* Docked performance bar height. The toolbar uses this var for its own
+     height; `--dev-performance-bar-offset` subtracts it from the app chrome
+     so composer and sidebar move up instead of being painted over. */
+  --dev-performance-bar-height: 1.75rem;
+  --dev-performance-bar-offset: 0px;
 
   @variant dark {
     --appearance-contrast-target: white;
@@ -119,6 +124,39 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --glass-blur: 16px;
     --glass-saturation: 1.08;
   }
+}
+
+html[data-performance-bar] {
+  --dev-performance-bar-offset: var(--dev-performance-bar-height);
+}
+
+/* The shell sizes itself with viewport units and a fixed sidebar. Shrink those
+   boxes when the performance bar is docked so chat, composer, and sidebar sit
+   above it instead of being covered. */
+html[data-performance-bar] [data-slot="sidebar-wrapper"] {
+  height: calc(100dvh - var(--dev-performance-bar-offset)) !important;
+  min-height: 0 !important;
+}
+
+html[data-performance-bar] [data-slot="sidebar-inset"] {
+  height: calc(100svh - var(--dev-performance-bar-offset)) !important;
+  min-height: 0 !important;
+}
+
+@media (min-width: 768px) {
+  html[data-performance-bar] [data-slot="sidebar-inset"] {
+    height: calc(100dvh - var(--dev-performance-bar-offset)) !important;
+  }
+}
+
+html[data-performance-bar] [data-slot="sidebar-container"] {
+  top: 0;
+  bottom: var(--dev-performance-bar-offset);
+  height: auto !important;
+}
+
+html[data-performance-bar] [data-slot="toast-viewport"][data-position*="bottom"] {
+  bottom: calc(var(--toast-inset, 1rem) + var(--dev-performance-bar-offset));
 }
 
 .wco {

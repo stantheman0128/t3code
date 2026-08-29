@@ -1,6 +1,6 @@
 import type { PerformanceBarFpsMode } from "@t3tools/contracts/settings";
 import { ActivityIcon, ChevronDownIcon, HelpCircleIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { applyPerformanceBarLayout } from "./performanceBarLayout";
 import {
   derivePerformanceBarSnapshot,
   formatPerformanceBarFps,
@@ -50,6 +51,11 @@ export function PerformanceBar() {
   const fpsMode = useClientSettings((settings) => settings.performanceBarFpsMode);
   const updateClientSettings = useUpdateClientSettings();
   const [snapshot, setSnapshot] = useState<PerformanceBarSnapshot | null>(null);
+
+  useLayoutEffect(() => {
+    applyPerformanceBarLayout(document.documentElement, visible);
+    return () => applyPerformanceBarLayout(document.documentElement, false);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -104,7 +110,7 @@ export function PerformanceBarView(props: {
   return (
     <footer
       data-component="t3-dev-performance-toolbar"
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[80] flex h-7 items-center gap-3 border-t border-border/70 bg-background/92 px-3 font-mono text-[11px] leading-none text-muted-foreground backdrop-blur-sm"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[80] flex h-(--dev-performance-bar-height) items-center gap-3 border-t border-border/70 bg-background/92 px-3 font-mono text-[11px] leading-none text-muted-foreground backdrop-blur-sm"
     >
       <span className="flex items-center gap-1.5 text-foreground">
         <ActivityIcon className="size-3.5" aria-hidden />

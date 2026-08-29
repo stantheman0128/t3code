@@ -21,6 +21,8 @@ describe("PerformanceBarView", () => {
     );
 
     expect(markup).toContain('data-component="t3-dev-performance-toolbar"');
+    expect(markup).toContain("fixed inset-x-0 bottom-0");
+    expect(markup).toContain("h-(--dev-performance-bar-height)");
     expect(markup).toContain("Delay");
     expect(markup).toContain("16ms");
     expect(markup).toContain("FPS");

@@ -22,12 +22,15 @@ const alertVariants = cva("relative rounded-xl border px-3.5 py-3 text-card-fore
 });
 
 function alertChildSlot(child: React.ReactElement): string | undefined {
+  const type = child.type as { displayName?: string; name?: string; slot?: string };
+  if (type.slot) {
+    return type.slot;
+  }
   const propsSlot = (child.props as Record<string, string | undefined>)["data-slot"];
   if (propsSlot) {
     return propsSlot;
   }
 
-  const type = child.type as { displayName?: string; name?: string };
   switch (type.displayName ?? type.name) {
     case "AlertAction":
       return "alert-action";
@@ -103,7 +106,7 @@ function Alert({
         {action.length > 0 && (
           <div
             className={cn(
-              "flex shrink-0 items-center",
+              "ml-auto flex shrink-0 items-center",
               controlAlignment === "first-line" ? "h-lh self-start" : "self-center",
             )}
           >
@@ -136,5 +139,8 @@ function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
 AlertTitle.displayName = "AlertTitle";
 AlertDescription.displayName = "AlertDescription";
 AlertAction.displayName = "AlertAction";
+(AlertTitle as { slot?: string }).slot = "alert-title";
+(AlertDescription as { slot?: string }).slot = "alert-description";
+(AlertAction as { slot?: string }).slot = "alert-action";
 
 export { Alert, AlertTitle, AlertDescription, AlertAction };

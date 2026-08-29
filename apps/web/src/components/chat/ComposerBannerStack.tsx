@@ -200,10 +200,10 @@ function ComposerBannerStackAlert({
   return (
     <Alert
       variant={item.variant}
-      controlAlignment={attached ? "first-line" : "center"}
+      controlAlignment="center"
       className={cn(
         attached
-          ? "chat-composer-drawer-surface chat-composer-drawer-attached overflow-hidden px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] text-xs sm:px-4"
+          ? "chat-composer-drawer-attached overflow-hidden rounded-t-2xl border border-b-0 border-border/70 bg-[var(--chat-composer-glass-surface,var(--card))] px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] text-xs shadow-none sm:px-4"
           : "alert-glass rounded-[22px]",
         item.className,
       )}
@@ -228,7 +228,7 @@ function ComposerBannerStackAlert({
         </button>
       ) : (
         <>
-          <AlertTitle>{item.title}</AlertTitle>
+          <AlertTitle className="min-w-0 truncate">{item.title}</AlertTitle>
           {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
         </>
       )}

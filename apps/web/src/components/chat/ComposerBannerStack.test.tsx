@@ -38,7 +38,6 @@ describe("ComposerBannerStack", () => {
     );
     expect(neutralBehind).toContain("chat-composer-banner-stack-cap");
     expect(neutralBehind).toContain("border-[var(--chat-composer-attached-outline)]");
-    expect(neutralBehind).not.toContain("border-border");
     expect(neutralBehind).not.toContain("border-warning/24");
 
     const warningBehind = renderToStaticMarkup(
@@ -51,8 +50,9 @@ describe("ComposerBannerStack", () => {
     const markup = renderToStaticMarkup(<ComposerBannerStack items={[banner("front")]} />);
 
     expect(markup).not.toContain("data-composer-banner-stack-expanded-items");
-    expect(markup).toContain("chat-composer-drawer-surface");
     expect(markup).toContain("chat-composer-drawer-attached");
+    expect(markup).toContain("bg-[var(--chat-composer-glass-surface,var(--card))]");
+    expect(markup).not.toContain("chat-composer-drawer-surface");
     expect(markup).not.toContain("before:mask-none");
     expect(markup).toContain("text-xs");
     expect(markup).toContain('data-composer-banner-drawer="true"');
@@ -98,9 +98,15 @@ describe("ComposerBannerStack", () => {
     expect(markup).toContain("Monitoring");
     expect(markup).toContain("Stop");
     expect(markup.indexOf("Monitoring")).toBeLessThan(markup.indexOf("Stop"));
-    expect(markup).toContain("items-start");
+    expect(markup).toContain("min-w-0 truncate");
+    expect(markup).toContain("ml-auto");
+    expect(markup).toContain("bg-[var(--chat-composer-glass-surface,var(--card))]");
+    expect(markup).not.toContain("chat-composer-drawer-surface");
     expect(markup).toContain("overflow-hidden");
     expect(markup).not.toContain("absolute inset-y-0");
+    expect(markup).toMatch(
+      /data-slot="alert-title"[^>]*>Monitoring[\s\S]*data-slot="alert-action"[\s\S]*Stop/,
+    );
   });
 
   it("renders a disabled compaction action on the shared accessible banner surface", () => {

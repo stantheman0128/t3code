@@ -200,9 +200,10 @@ function ComposerBannerStackAlert({
   return (
     <Alert
       variant={item.variant}
+      controlAlignment={attached ? "first-line" : "center"}
       className={cn(
         attached
-          ? "chat-composer-drawer-surface chat-composer-drawer-attached px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] text-xs sm:px-4"
+          ? "chat-composer-drawer-surface chat-composer-drawer-attached overflow-hidden px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] text-xs sm:px-4"
           : "alert-glass rounded-[22px]",
         item.className,
       )}
@@ -234,6 +235,7 @@ function ComposerBannerStackAlert({
       {item.actions || item.onDismiss ? (
         <AlertAction
           className={cn(
+            "ml-auto shrink-0",
             item.actionClassName,
             dismissOnly
               ? "max-sm:col-start-3 max-sm:row-start-1 max-sm:mt-0 max-sm:self-start"

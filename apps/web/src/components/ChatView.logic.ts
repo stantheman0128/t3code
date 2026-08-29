@@ -22,6 +22,7 @@ import {
 } from "../types";
 import { type RightPanelSurface } from "../rightPanelStore";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { resolvePromptGoalControlText } from "@t3tools/client-runtime/state/threads";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -517,6 +518,15 @@ export function composeProviderSlashMessage(
   prompt: string,
 ): string {
   return composeNamedProviderSlashMessage(command?.name, prompt);
+}
+
+/** Canonical prompt text for send, including `/goal` control aliases like "clear go". */
+export function resolveComposerPromptForSend(
+  command: ComposerPendingSlashCommand | null | undefined,
+  prompt: string,
+): { readonly composed: string; readonly send: string } {
+  const composed = composeProviderSlashMessage(command, prompt);
+  return { composed, send: resolvePromptGoalControlText(composed) ?? composed };
 }
 
 export function deriveComposerSendState(options: {

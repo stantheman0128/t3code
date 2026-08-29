@@ -12,6 +12,7 @@ import {
   formatPromptGoalElapsedLabel,
   formatPromptGoalTitle,
   parseCodexGoalCommand,
+  resolvePromptGoalControlText,
   toCodexGoalSetInput,
 } from "./threadCommands.ts";
 
@@ -64,6 +65,16 @@ describe("derivePromptGoalFromUserTexts", () => {
       ]),
     ).toEqual({ objective: "Prove the claim", status: "paused", startedAt: null });
     expect(derivePromptGoalFromUserTexts(["/goal Prove the claim", "/goal clear"])).toBeNull();
+    expect(derivePromptGoalFromUserTexts(["/goal Prove the claim", "clear go"])).toBeNull();
+    expect(derivePromptGoalFromUserTexts(["/goal Prove the claim", "go clear"])).toBeNull();
+  });
+
+  it("rewrites clear aliases to /goal clear", () => {
+    expect(resolvePromptGoalControlText("clear go")).toBe("/goal clear");
+    expect(resolvePromptGoalControlText("go clear")).toBe("/goal clear");
+    expect(resolvePromptGoalControlText("/goal clear")).toBe("/goal clear");
+    expect(resolvePromptGoalControlText("/goal status")).toBe("/goal status");
+    expect(resolvePromptGoalControlText("keep going")).toBeNull();
   });
 
   it("keeps the set-message timestamp for elapsed time", () => {

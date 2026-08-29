@@ -8,6 +8,7 @@ import {
   formatPromptGoalElapsedLabel,
   formatPromptGoalTitle,
   parseCodexGoalCommand,
+  resolvePromptGoalControlText,
   toCodexGoalSetInput,
   type EnvironmentThreadStatus,
 } from "@t3tools/client-runtime/state/threads";
@@ -581,8 +582,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   ]);
 
   const handleSendMessage = useCallback(async () => {
+    const resolvedDraft = resolvePromptGoalControlText(props.draftMessage) ?? props.draftMessage;
+    if (resolvedDraft !== props.draftMessage) {
+      props.onChangeDraftMessage(resolvedDraft);
+    }
     const draftGoalCommand =
-      props.draftAttachments.length === 0 ? parseCodexGoalCommand(props.draftMessage) : null;
+      props.draftAttachments.length === 0 ? parseCodexGoalCommand(resolvedDraft) : null;
     const goalCommand = selectedProvider?.driver === "codex" ? draftGoalCommand : null;
     if (goalCommand !== null) {
       if (goalCommand.action === "invalid") {

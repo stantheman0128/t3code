@@ -78,7 +78,7 @@ function Alert({
     >
       <div
         className={cn(
-          "flex gap-2",
+          "flex w-full min-w-0 gap-2",
           controlAlignment === "first-line" ? "items-start" : "items-center",
           controlAlignment === "first-line" &&
             action.length > 0 &&

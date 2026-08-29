@@ -889,7 +889,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       --chat-composer-outline,
       color-mix(in srgb, var(--contrast-foreground) 8%, transparent)
     );
-    --chat-composer-attached-tint: transparent;
+    --chat-composer-attached-tint: color-mix(
+      in srgb,
+      var(--chat-composer-attached-surface) 96%,
+      transparent
+    );
     position: relative;
     isolation: isolate;
     border: 0 !important;
@@ -1165,11 +1169,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
 
-  .chat-composer-glass-shell-attached [data-testid="composer-editor"] {
+  .chat-composer-glass-shell-attached [data-composer-prompt-scroll="true"] {
     max-height: 7rem;
   }
 
-  .chat-composer-glass-shell-attached:focus-within [data-testid="composer-editor"] {
+  .chat-composer-glass-shell-attached:focus-within [data-composer-prompt-scroll="true"] {
     max-height: 11rem;
   }
 

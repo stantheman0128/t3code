@@ -9,7 +9,7 @@ const INLINE_CHIP_GEOMETRY_CLASS_NAME =
 // and the placeholder share one line box. File and skill chips get the same
 // alignment from `align-[-0.125em]` in the text run.
 export const COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME =
-  "inline-flex h-[1lh] max-w-full shrink-0 items-center leading-relaxed";
+  "inline-flex h-[1lh] max-w-full shrink-0 items-center bg-[var(--chat-composer-glass-surface,var(--card))] leading-relaxed";
 
 const INLINE_CHIP_CLASS_NAME = `${INLINE_CHIP_GEOMETRY_CLASS_NAME} border border-border/70 bg-accent/40 text-foreground`;
 
@@ -33,7 +33,10 @@ export const COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME = `${INLINE_CHIP_GEOMETRY_CLA
 // Slash commands are an inline token in the first text line: same line-height
 // as the prompt, not a floating overlay or a taller opaque pill.
 export const COMPOSER_INLINE_SLASH_CHIP_CLASS_NAME =
-  "inline-flex max-w-full items-center gap-[0.15em] font-medium leading-relaxed text-sky-700 select-none dark:text-sky-300";
+  "inline-flex max-w-full items-center gap-[0.15em] bg-[var(--chat-composer-glass-surface,var(--card))] font-medium leading-relaxed text-sky-700 select-none dark:text-sky-300";
+
+export const CHAT_INLINE_SLASH_CHIP_CLASS_NAME =
+  "inline font-medium text-sky-700 dark:text-sky-300";
 
 export const SKILL_CHIP_ICON_SVG = `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`;
 

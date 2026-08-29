@@ -289,3 +289,16 @@ describe("ChatMarkdown Windows file links", () => {
     expect(html).not.toContain("chat-markdown-file-link");
   });
 });
+
+describe("ChatMarkdown slash commands", () => {
+  it("keeps slash command formatting in sent user messages", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown text="/goal keep tests green" skills={[]} lineBreaks parseRawHtml={false} />,
+    );
+
+    expect(html).toContain("/goal");
+    expect(html).toContain("text-sky-700");
+    expect(html).toContain('data-slash-command="/goal"');
+    expect(html).toContain("keep tests green");
+  });
+});

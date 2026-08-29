@@ -361,7 +361,7 @@ import {
   buildThreadTurnInterruptInput,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
-  composeProviderSlashMessage,
+  resolveComposerPromptForSend,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
   hasEnvironmentReconnectWarningGraceElapsed,
@@ -5161,10 +5161,12 @@ function ChatViewContent(props: ChatViewProps) {
           ? `${liveCount} ${liveCount === 1 ? "agent" : "agents"} working`
           : "Background work"
         : "Monitoring",
+      actionClassName: "shrink-0",
       actions: (
         <Button
           size="xs"
           variant="ghost"
+          className="shrink-0 whitespace-nowrap"
           disabled={isStoppingBackgroundWork}
           onClick={() => void handleStopBackgroundWork()}
         >
@@ -5392,8 +5394,8 @@ function ChatViewContent(props: ChatViewProps) {
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...urgentSystemItems,
-        ...goalItems,
         ...backgroundLivenessItems,
+        ...goalItems,
         ...calmSystemItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
@@ -5402,8 +5404,8 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [
       ...urgentSystemItems,
-      ...goalItems,
       ...backgroundLivenessItems,
+      ...goalItems,
       ...calmSystemItems,
       ...resumeCompactionItems,
       ...wokeThreadItems,
@@ -5906,7 +5908,10 @@ function ChatViewContent(props: ChatViewProps) {
             },
           ]
         : sendContextPreviewAnnotations;
-    const promptForSend = composeProviderSlashMessage(sendCtx.slashCommand, promptRef.current);
+    const { composed: composedPrompt, send: promptForSend } = resolveComposerPromptForSend(
+      sendCtx.slashCommand,
+      promptRef.current,
+    );
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -6045,7 +6050,7 @@ function ChatViewContent(props: ChatViewProps) {
       const submittedGoalCommandThreadKey = routeThreadKey;
       const stillOnSubmittedThread = () => activeThreadKeyRef.current === submittedThreadKey;
       const clearSubmittedGoalCommandDraft = () => {
-        if (!stillOnSubmittedThread() || promptRef.current !== promptForSend) return;
+        if (!stillOnSubmittedThread() || promptRef.current !== composedPrompt) return;
         promptRef.current = "";
         clearComposerDraftContent(composerDraftTarget);
         composerRef.current?.resetCursorState();

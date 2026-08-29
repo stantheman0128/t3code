@@ -142,7 +142,9 @@ export function derivePromptGoalFromUserTexts(
   let goal: PromptGoal | null = null;
   for (const item of texts) {
     const source = promptGoalSource(item);
-    const command = parseCodexGoalCommand(source.text.trim());
+    const command = parseCodexGoalCommand(
+      resolvePromptGoalControlText(source.text) ?? source.text.trim(),
+    );
     if (command === null) {
       continue;
     }
@@ -211,6 +213,27 @@ export function buildGoalStripContent(input: {
     body: input.expanded ? `${input.objective}\n${statusBit}${durationBit}` : input.objective,
     activateLabel: input.expanded ? "Hide full goal" : "Show full goal",
   };
+}
+
+const PROMPT_GOAL_CLEAR_ALIASES = new Set(["clear go", "go clear", "clear goal", "goal clear"]);
+
+/** Canonical `/goal …` text for control commands, including a few clear aliases. */
+export function resolvePromptGoalControlText(value: string): string | null {
+  const trimmed = value.trim();
+  if (PROMPT_GOAL_CLEAR_ALIASES.has(trimmed.toLowerCase().replace(/\s+/g, " "))) {
+    return "/goal clear";
+  }
+  const command = parseCodexGoalCommand(trimmed);
+  if (command === null || command.action === "invalid" || command.action === "set") {
+    return null;
+  }
+  if (command.action === "clear") {
+    return "/goal clear";
+  }
+  if (command.action === "status") {
+    return "/goal status";
+  }
+  return null;
 }
 
 export function parseCodexGoalCommand(value: string): CodexGoalCommand | null {

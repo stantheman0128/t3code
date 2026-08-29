@@ -76,6 +76,31 @@ describe("ComposerBannerStack", () => {
 
     expect(markup).toContain("branch-surface");
     expect(markup).toContain("branch-actions");
+    expect(markup).toContain("ml-auto");
+    expect(markup).toContain("w-full");
+  });
+
+  it("keeps Monitoring title and Stop on one first-line row", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerBannerStack
+        items={[
+          {
+            id: "background-liveness:1",
+            variant: "default",
+            icon: <span aria-hidden="true">•</span>,
+            title: "Monitoring",
+            actions: <button type="button">Stop</button>,
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Monitoring");
+    expect(markup).toContain("Stop");
+    expect(markup.indexOf("Monitoring")).toBeLessThan(markup.indexOf("Stop"));
+    expect(markup).toContain("items-start");
+    expect(markup).toContain("overflow-hidden");
+    expect(markup).not.toContain("absolute inset-y-0");
   });
 
   it("renders a disabled compaction action on the shared accessible banner surface", () => {

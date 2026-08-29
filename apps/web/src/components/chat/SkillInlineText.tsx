@@ -5,18 +5,21 @@ import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/provider
 import {
   CHAT_INLINE_CHIP_CLASS_NAME,
   CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
+  CHAT_INLINE_SLASH_CHIP_CLASS_NAME,
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   SKILL_CHIP_ICON_SVG,
 } from "../composerInlineChip";
 import { cn } from "~/lib/utils";
 
 const SKILL_TOKEN_REGEX = /(^|\s)\$([a-zA-Z][a-zA-Z0-9:_-]*)(?=\s|$)/g;
+const SLASH_TOKEN_REGEX = /(^|\s)(\/[a-zA-Z][\w:-]*)(?=\s|$)/g;
 
 type InlineSkill = Pick<ServerProviderSkill, "name" | "displayName">;
 
 export function SkillInlineText(props: { text: string; skills: ReadonlyArray<InlineSkill> }) {
   const nodes: ReactNode[] = [];
   let cursor = 0;
+  const marks: Array<{ start: number; end: number; node: ReactNode }> = [];
 
   for (const match of props.text.matchAll(SKILL_TOKEN_REGEX)) {
     const prefix = match[1] ?? "";
@@ -27,12 +30,46 @@ export function SkillInlineText(props: { text: string; skills: ReadonlyArray<Inl
     if (!skill) {
       continue;
     }
+    marks.push({
+      start,
+      end: start + rawText.length,
+      node: <SkillChip key={`skill:${start}:${name}`} skill={skill} rawText={rawText} />,
+    });
+  }
 
-    if (start > cursor) {
-      nodes.push(props.text.slice(cursor, start));
+  for (const match of props.text.matchAll(SLASH_TOKEN_REGEX)) {
+    const prefix = match[1] ?? "";
+    const rawText = match[2] ?? "";
+    const start = (match.index ?? 0) + prefix.length;
+    if (marks.some((mark) => start < mark.end && start + rawText.length > mark.start)) {
+      continue;
     }
-    nodes.push(<SkillChip key={`${start}:${name}`} skill={skill} rawText={rawText} />);
-    cursor = start + rawText.length;
+    marks.push({
+      start,
+      end: start + rawText.length,
+      node: (
+        <span
+          key={`slash:${start}:${rawText}`}
+          className={CHAT_INLINE_SLASH_CHIP_CLASS_NAME}
+          data-markdown-copy={rawText}
+          data-slash-command={rawText}
+        >
+          {rawText}
+        </span>
+      ),
+    });
+  }
+
+  marks.sort((left, right) => left.start - right.start);
+  for (const mark of marks) {
+    if (mark.start < cursor) {
+      continue;
+    }
+    if (mark.start > cursor) {
+      nodes.push(props.text.slice(cursor, mark.start));
+    }
+    nodes.push(mark.node);
+    cursor = mark.end;
   }
 
   if (cursor === 0) {

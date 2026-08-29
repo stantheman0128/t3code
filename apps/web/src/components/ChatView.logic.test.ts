@@ -17,6 +17,7 @@ import {
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
   composeProviderSlashMessage,
+  resolveComposerPromptForSend,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -473,6 +474,36 @@ describe("composeProviderSlashMessage", () => {
     expect(
       composeProviderSlashMessage({ name: "goal", hint: "objective" }, "keep tests green"),
     ).toBe("/goal keep tests green");
+  });
+});
+
+describe("resolveComposerPromptForSend", () => {
+  it("rewrites clear-go aliases so Grok receives /goal clear instead of prose", () => {
+    expect(resolveComposerPromptForSend(null, "clear go")).toEqual({
+      composed: "clear go",
+      send: "/goal clear",
+    });
+    expect(resolveComposerPromptForSend(null, "go clear")).toEqual({
+      composed: "go clear",
+      send: "/goal clear",
+    });
+    expect(resolveComposerPromptForSend({ name: "goal clear", hint: null }, "")).toEqual({
+      composed: "/goal clear",
+      send: "/goal clear",
+    });
+  });
+
+  it("leaves ordinary prompts and goal-set commands unchanged", () => {
+    expect(resolveComposerPromptForSend(null, "keep going")).toEqual({
+      composed: "keep going",
+      send: "keep going",
+    });
+    expect(
+      resolveComposerPromptForSend({ name: "goal", hint: "objective" }, "pack the NSIS installer"),
+    ).toEqual({
+      composed: "/goal pack the NSIS installer",
+      send: "/goal pack the NSIS installer",
+    });
   });
 });
 

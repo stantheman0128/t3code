@@ -1771,6 +1771,53 @@ describe("computeStableMessagesTimelineRows", () => {
     expect(repeated.result[0]).toBe(initial.result[0]);
   });
 
+  it("drops simulated thinking once a tool has started", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "think-entry",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:00:00Z",
+          entry: {
+            id: "think-1",
+            createdAt: "2026-01-01T00:00:00Z",
+            label: "thinking",
+            detail: "Inspecting repository state",
+            tone: "thinking" as const,
+          },
+        },
+        {
+          id: "read-entry",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "read-1",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "read",
+            detail: "Reading package.json",
+            tone: "tool" as const,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    const workIds = rows.flatMap((row) => {
+      if (row.kind === "work") {
+        return row.groupedEntries.map((entry) => entry.id);
+      }
+      if (row.kind === "work-toggle") {
+        return row.processLabels;
+      }
+      return [];
+    });
+    expect(workIds.join(" ")).not.toContain("think-1");
+    expect(workIds.join(" ")).not.toMatch(/thinking/i);
+  });
+
   it("returns a new result when row order changes without content changes", () => {
     const firstUserMessage = {
       id: "user-1" as never,

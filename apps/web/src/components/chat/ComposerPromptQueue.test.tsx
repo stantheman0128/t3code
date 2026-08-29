@@ -39,9 +39,10 @@ describe("ComposerPromptQueue", () => {
     expect(markup).toContain("then ship it");
     expect(markup).toContain("shot.png");
     expect(markup).toContain("blob:shot.png");
-    expect(markup).toContain("rounded-xl border");
+    expect(markup).toContain("line-clamp-3");
+    expect(markup).toContain("chat-composer-drawer-attached");
     expect(markup).toContain("Preview shot.png");
-    expect(markup).toContain("max-h-56 flex-col gap-2 overflow-y-auto");
+    expect(markup).toContain("max-h-40 flex-col gap-1.5 overflow-y-auto");
   });
 
   it("keeps a photo-only follow-up visible", () => {
@@ -57,5 +58,25 @@ describe("ComposerPromptQueue", () => {
     expect(markup).toContain("hero.png");
     expect(markup).toContain("Photo follow-up");
     expect(markup).toContain("Preview hero.png");
+  });
+
+  it("keeps a long queued prompt to three lines until edit", () => {
+    const longPrompt = Array.from(
+      { length: 12 },
+      (_, index) => `Line ${index + 1} of a long follow-up`,
+    ).join("\n");
+    const markup = renderToStaticMarkup(
+      <ComposerPromptQueue
+        items={[queueItem("q1", longPrompt)]}
+        onRemove={vi.fn()}
+        onUpdate={vi.fn()}
+        onExpandImage={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain("Line 1 of a long follow-up");
+    expect(markup).toContain("line-clamp-3");
+    expect(markup).not.toContain("max-h-40 min-h-16");
+    expect(markup).toContain('data-editing="false"');
   });
 });

@@ -122,7 +122,7 @@ function QueueItemCard({
 
   return (
     <li
-      className="rounded-xl border border-border/70 bg-muted/40 px-2.5 py-2"
+      className="rounded-lg px-0.5 py-1.5"
       data-composer-prompt-queue-item={item.id}
       data-editing={editing ? "true" : "false"}
     >
@@ -138,7 +138,7 @@ function QueueItemCard({
               size="sm"
               value={draft}
               aria-label={`Edit queued follow-up ${index + 1}`}
-              className="min-h-16 flex-1 bg-transparent"
+              className="max-h-40 min-h-16 flex-1 overflow-y-auto bg-transparent"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
@@ -185,7 +185,7 @@ function QueueItemCard({
             aria-label={`Edit queued follow-up ${index + 1}`}
             onClick={onBeginEdit}
           >
-            <p className="whitespace-pre-wrap break-words text-sm leading-5 text-foreground/90">
+            <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm leading-5 text-foreground/90">
               {item.prompt.trim() || <span className="text-muted-foreground">Photo follow-up</span>}
             </p>
             <QueueThumbnails images={item.images} onExpandImage={onExpandImage} />
@@ -248,7 +248,10 @@ export function ComposerPromptQueue({
   return (
     <section
       data-composer-prompt-queue="true"
-      className={cn("min-w-0", className)}
+      className={cn(
+        "chat-composer-drawer-slot chat-composer-drawer-surface chat-composer-drawer-attached min-w-0 px-3 pt-2 pb-[calc(var(--chat-composer-attachment-overlap)_+_0.375rem)] sm:px-4",
+        className,
+      )}
       aria-label="Queued follow-ups"
     >
       <div className="mb-1.5 flex items-center gap-2 px-1">
@@ -260,7 +263,7 @@ export function ComposerPromptQueue({
           {items.length}
         </span>
       </div>
-      <ul className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+      <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
         {items.map((item, index) => (
           <QueueItemCard
             key={item.id}

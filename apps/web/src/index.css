@@ -1165,6 +1165,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
 
+  .chat-composer-glass-shell-attached [data-testid="composer-editor"] {
+    max-height: 7rem;
+  }
+
+  .chat-composer-glass-shell-attached:focus-within [data-testid="composer-editor"] {
+    max-height: 11rem;
+  }
+
   .chat-composer-glass-shell:is(
       .chat-composer-glass-shell-attached,
       :has(.chat-composer-top-drawer)

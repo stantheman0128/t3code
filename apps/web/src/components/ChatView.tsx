@@ -7675,7 +7675,9 @@ function ChatViewContent(props: ChatViewProps) {
     addFiles: (files) => composerRef.current?.addDroppedFiles(files),
   });
   const externalComposerDrawerAttached =
-    composerBannerItems.length > 0 || Boolean(threadSyncPhase && !activeEnvironmentUnavailable);
+    composerBannerItems.length > 0 ||
+    promptQueue.length > 0 ||
+    Boolean(threadSyncPhase && !activeEnvironmentUnavailable);
 
   return (
     <div
@@ -7885,7 +7887,7 @@ function ChatViewContent(props: ChatViewProps) {
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
                   {promptQueue.length > 0 ? (
-                    <div className="relative z-10 mx-auto mb-2 w-full max-w-[var(--provider-chrome-column,48rem)]">
+                    <div className="relative z-10 mx-auto w-full">
                       <ComposerPromptQueue
                         items={promptQueue}
                         onUpdate={(id, prompt) => {

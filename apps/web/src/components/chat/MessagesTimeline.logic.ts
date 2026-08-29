@@ -1065,10 +1065,16 @@ export function deriveMessagesTimelineRows(input: {
         groupedEntries.push(nextEntry.entry);
         cursor += 1;
       }
+      const hasToolActivity = groupedEntries.some(
+        (entry) => workLogEntryIsToolLike(entry) && entry.tone !== "thinking",
+      );
       const visibleGroupedEntries = omitSupersededLifecycleMarkers(
-        groupedEntries.filter((entry) =>
-          workEntryIsVisibleInGroup(entry, workEntryIsInActiveRun(entry)),
-        ),
+        groupedEntries.filter((entry) => {
+          if (hasToolActivity && entry.tone === "thinking") {
+            return false;
+          }
+          return workEntryIsVisibleInGroup(entry, workEntryIsInActiveRun(entry));
+        }),
         (entry) => entry,
       );
       if (visibleGroupedEntries.length > 0) {

@@ -57,7 +57,7 @@ describe("resolveComposerGoalBanner", () => {
     expect(collapsed).toContain("Goal active");
     expect(collapsed).toContain('aria-label="Show full goal"');
     expect(collapsed).toContain('aria-expanded="false"');
-    expect(collapsed).toContain("line-clamp-2");
+    expect(collapsed).toContain("line-clamp-1");
     expect(expanded).toContain("Goal running");
     expect(expanded).toContain('aria-label="Hide full goal"');
     expect(expanded).toContain('aria-expanded="true"');

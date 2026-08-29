@@ -63,6 +63,7 @@ describe("changed-files presentation", () => {
       "apps/web/src/App.tsx",
       "packages/shared/src/git.ts",
       "README.md",
+      "apps/web/src/App.test.tsx",
     ]);
     expect(changedFileName("apps\\web\\src\\App.tsx")).toBe("App.tsx");
   });

@@ -28,7 +28,7 @@ export function createGoalBannerItem(input: {
     icon: <TargetIcon />,
     title: content.title,
     description: (
-      <span className={input.expanded ? "whitespace-pre-wrap" : "line-clamp-2"}>
+      <span className={input.expanded ? "whitespace-pre-wrap" : "line-clamp-1"}>
         {content.body}
       </span>
     ),

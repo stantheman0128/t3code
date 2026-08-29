@@ -5,6 +5,7 @@ import {
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
+  mergeCursorTodos,
 } from "./CursorAcpExtension.ts";
 
 describe("CursorAcpExtension", () => {
@@ -105,6 +106,32 @@ describe("CursorAcpExtension", () => {
         { step: "Unknown status", status: "pending" },
       ],
     });
+  });
+
+  it("merges update_todos by id when merge is true", () => {
+    expect(
+      mergeCursorTodos(
+        [
+          { id: "1", content: "Inspect state", status: "in_progress" },
+          { id: "2", content: "Apply fix", status: "pending" },
+        ],
+        {
+          toolCallId: "todos-merge",
+          merge: true,
+          todos: [{ id: "1", content: "Inspect state", status: "completed" }],
+        },
+      ),
+    ).toEqual([
+      { id: "1", content: "Inspect state", status: "completed" },
+      { id: "2", content: "Apply fix", status: "pending" },
+    ]);
+    expect(
+      mergeCursorTodos([{ id: "1", content: "Inspect state", status: "completed" }], {
+        toolCallId: "todos-replace",
+        merge: false,
+        todos: [{ id: "9", content: "Ship it", status: "pending" }],
+      }),
+    ).toEqual([{ id: "9", content: "Ship it", status: "pending" }]);
   });
 
   it("falls back to the title when content is present but blank", () => {

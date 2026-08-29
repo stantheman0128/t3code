@@ -54,6 +54,35 @@ export const CursorUpdateTodosRequest = Schema.Struct({
   merge: Schema.Boolean,
 });
 
+export type CursorTodoItem = typeof CursorTodo.Type;
+
+/** Apply a Cursor `update_todos` payload onto the last known todo list. */
+export function mergeCursorTodos(
+  previous: ReadonlyArray<CursorTodoItem>,
+  update: typeof CursorUpdateTodosRequest.Type,
+): ReadonlyArray<CursorTodoItem> {
+  if (!update.merge) {
+    return update.todos;
+  }
+  const byId = new Map<string, CursorTodoItem>();
+  const unkeyed: CursorTodoItem[] = [];
+  for (const todo of previous) {
+    if (todo.id) {
+      byId.set(todo.id, todo);
+    } else {
+      unkeyed.push(todo);
+    }
+  }
+  for (const todo of update.todos) {
+    if (todo.id) {
+      byId.set(todo.id, { ...byId.get(todo.id), ...todo });
+    } else {
+      unkeyed.push(todo);
+    }
+  }
+  return [...byId.values(), ...unkeyed];
+}
+
 const CursorAvailableModel = Schema.Struct({
   value: Schema.String,
   name: Schema.String,

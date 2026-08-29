@@ -712,6 +712,11 @@ export function deriveActivePlanState(
   return addPlanStepDurations(plan, matchingActivities.slice(latestClearIndex + 1));
 }
 
+export interface PlanTodoDiff {
+  readonly createdAt: string;
+  readonly sentence: string;
+}
+
 export interface TurnPlanEntry {
   /** Stable per-turn row id (plans rewrite constantly; the row must not churn). */
   id: string;
@@ -719,6 +724,50 @@ export interface TurnPlanEntry {
   createdAt: string;
   turnId: TurnId | null;
   plan: ActivePlanState;
+  /** Incremental Cursor-style sentences as todos complete, start, or appear. */
+  diffs: ReadonlyArray<PlanTodoDiff>;
+}
+
+type PlanTodoStep = ActivePlanState["steps"][number];
+
+/** Glass-style todo delta: completed / started / added, nothing if the snapshot is identical. */
+export function describePlanTodoDiff(
+  previous: ReadonlyArray<Pick<PlanTodoStep, "step" | "status">> | null,
+  next: ReadonlyArray<Pick<PlanTodoStep, "step" | "status">>,
+): string | null {
+  const previousByStep = new Map((previous ?? []).map((step) => [step.step, step.status]));
+  const completed: string[] = [];
+  const started: string[] = [];
+  const added: string[] = [];
+  for (const step of next) {
+    const prior = previousByStep.get(step.step);
+    if (prior === undefined) {
+      if (step.status === "completed") {
+        completed.push(step.step);
+      } else if (step.status === "inProgress") {
+        started.push(step.step);
+      } else {
+        added.push(step.step);
+      }
+      continue;
+    }
+    if (prior !== "completed" && step.status === "completed") {
+      completed.push(step.step);
+    } else if (prior === "pending" && step.status === "inProgress") {
+      started.push(step.step);
+    }
+  }
+  const parts: string[] = [];
+  if (completed.length > 0) {
+    parts.push(`Completed ${completed.join(", ")}`);
+  }
+  if (started.length > 0) {
+    parts.push(`Started ${started.join(", ")}`);
+  }
+  if (added.length > 0) {
+    parts.push(`Added ${added.join(", ")}`);
+  }
+  return parts.length > 0 ? `${parts.join(". ")}.` : null;
 }
 
 /**
@@ -748,9 +797,17 @@ export function deriveTurnPlans(
     }
     const existing = byTurn.get(key);
     if (existing) {
+      const sentence = describePlanTodoDiff(existing.entry.plan.steps, plan.steps);
       existing.entry.plan = plan;
       existing.activities.push(activity);
+      if (sentence) {
+        existing.entry.diffs = [
+          ...existing.entry.diffs,
+          { createdAt: activity.createdAt, sentence },
+        ];
+      }
     } else {
+      const sentence = describePlanTodoDiff(null, plan.steps);
       byTurn.set(key, {
         activities: [activity],
         entry: {
@@ -758,6 +815,7 @@ export function deriveTurnPlans(
           createdAt: activity.createdAt,
           turnId: activity.turnId,
           plan,
+          diffs: sentence ? [{ createdAt: activity.createdAt, sentence }] : [],
         },
       });
     }

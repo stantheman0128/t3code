@@ -1994,4 +1994,56 @@ describe("tool-call density", () => {
         : [],
     ).toEqual(["work-1", "work-2", "work-3"]);
   });
+
+  it("keeps compact live tools in one grouped toggle instead of a separate live row", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "work-entry-1",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            ...DENSITY_TOOL_ENTRY,
+            id: "work-1",
+            turnId: "turn-1" as never,
+            toolLifecycleStatus: "completed",
+          },
+        },
+        {
+          id: "work-entry-2",
+          kind: "work" as const,
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            ...DENSITY_TOOL_ENTRY,
+            id: "work-2",
+            createdAt: "2026-01-01T00:00:02Z",
+            turnId: "turn-1" as never,
+            command: "pnpm lint",
+            rawCommand: "pnpm lint",
+            toolLifecycleStatus: "inProgress",
+          },
+        },
+      ],
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+      toolCallDensity: "compact",
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle"]);
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
+      kind: "work-toggle",
+      hiddenCount: 2,
+      live: true,
+      processLabels: [],
+    });
+    expect(rows.some((row) => row.kind === "work-live")).toBe(false);
+  });
 });

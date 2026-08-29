@@ -781,20 +781,6 @@ export function ProviderInstanceCard({
               {summary.detail ? <span>· {summary.detail}</span> : null}
             </p>
           ) : null}
-          {hasAuthenticatedEmail || (usageLimits && usageLimits.windows.length > 0) ? (
-            <div className="flex min-w-0 flex-col gap-3" data-provider-editor-quota="true">
-              {hasAuthenticatedEmail ? (
-                <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-[13px] leading-[1.45] text-muted-foreground/80">
-                  <span>Authenticated as</span>
-                  <ProviderAuthEmail email={authEmail} />
-                  {authenticatedDetail ? <span>· {authenticatedDetail}</span> : null}
-                </p>
-              ) : null}
-              {usageLimits && usageLimits.windows.length > 0 ? (
-                <ProviderUsageLimitBars windows={usageLimits.windows} />
-              ) : null}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -828,12 +814,25 @@ export function ProviderInstanceCard({
           className="space-y-5 px-4 py-5 lg:h-full lg:overflow-y-auto"
           hidden={visibleTab !== "configuration"}
         >
-          {authEmail?.trim() ? (
-            <div className="min-w-0">
-              <div className="text-xs font-medium text-foreground">Account email</div>
-              <div className="mt-1.5 flex min-h-8 min-w-0 items-center">
-                <ProviderAuthEmail email={authEmail} />
-              </div>
+          {hasAuthenticatedEmail || (usageLimits && usageLimits.windows.length > 0) ? (
+            <div className="flex min-w-0 flex-col gap-3" data-provider-editor-quota="true">
+              {authEmail?.trim() ? (
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-foreground">Account email</div>
+                  <div className="mt-1.5 flex min-h-8 min-w-0 items-center">
+                    <ProviderAuthEmail email={authEmail} />
+                  </div>
+                  {hasAuthenticatedEmail ? (
+                    <p className="mt-1.5 text-xs leading-[1.45] text-muted-foreground">
+                      Authenticated as
+                      {authenticatedDetail ? ` · ${authenticatedDetail}` : null}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {usageLimits && usageLimits.windows.length > 0 ? (
+                <ProviderUsageLimitBars windows={usageLimits.windows} />
+              ) : null}
             </div>
           ) : null}
 

@@ -93,4 +93,11 @@ describe("searchSettings", () => {
       targetId: "appearance",
     });
   });
+
+  it("routes app version to General", () => {
+    expect(searchSettings("app version")[0]).toMatchObject({
+      id: "app-version",
+      to: "/settings/general",
+    });
+  });
 });

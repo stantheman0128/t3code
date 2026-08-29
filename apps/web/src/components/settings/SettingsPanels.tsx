@@ -376,6 +376,7 @@ function AboutVersionSection() {
   return (
     <>
       <SettingsRow
+        {...searchableSetting("app-version")}
         title={<AboutVersionTitle />}
         description={description}
         control={
@@ -1035,15 +1036,7 @@ export function AppearanceSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        id="appearance"
-        title="Appearance"
-        headerAction={
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            {APP_VERSION}
-          </span>
-        }
-      >
+      <SettingsSection id="appearance" title="Appearance">
         <div id={searchableSetting("theme").id}>
           <ThemeLibrary
             appearanceMode={appearanceMode}
@@ -1151,14 +1144,6 @@ export function AppearanceSettingsPanel() {
                 value={settings.glassOpacity}
               />
             </div>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("app-version")}
-          description="Installed T3 Code version. Use this to confirm a reinstall actually landed."
-          control={
-            <code className="text-xs tabular-nums text-muted-foreground">{APP_VERSION}</code>
           }
         />
 
@@ -2065,6 +2050,18 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <SettingsSection title="About">
+        {isElectron || HOSTED_APP_CHANNEL ? (
+          <AboutVersionSection />
+        ) : (
+          <SettingsRow
+            {...searchableSetting("app-version")}
+            title={<AboutVersionTitle />}
+            description="Installed T3 Code version. Use this to confirm a reinstall actually landed."
+          />
+        )}
+      </SettingsSection>
+
       <SettingsSection title="General">
         <SettingsRow
           {...searchableSetting("project-grouping")}
@@ -2629,15 +2626,7 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection title="About">
-        {isElectron || HOSTED_APP_CHANNEL ? (
-          <AboutVersionSection />
-        ) : (
-          <SettingsRow
-            title={<AboutVersionTitle />}
-            description="Current version of the application."
-          />
-        )}
+      <SettingsSection title="Diagnostics">
         <SettingsRow
           {...searchableSetting("diagnostics")}
           description={diagnosticsDescription}

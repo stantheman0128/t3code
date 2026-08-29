@@ -303,6 +303,7 @@ export type MessagesTimelineRow =
       summaryKind: ToolGroupSummaryKind | null;
       hasFailure: boolean;
       processLabels?: readonly string[];
+      live?: boolean;
     }
   | {
       kind: "turn-fold";
@@ -968,6 +969,34 @@ export function deriveMessagesTimelineRows(input: {
   };
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
+    if (toolCallDensity === "compact") {
+      nextRows.push({
+        kind: "work-toggle",
+        id: `work-toggle:${activeWorkRow.groupId}`,
+        createdAt: activeWorkRow.createdAt,
+        groupId: activeWorkRow.groupId,
+        hiddenCount: activeWorkRow.groupedEntries.length,
+        expanded: activeWorkRow.expanded,
+        onlyToolEntries: true,
+        summary: summarizeToolGroup(activeWorkRow.groupedEntries),
+        summaryKind: toolGroupSummaryKind(activeWorkRow.groupedEntries),
+        hasFailure: activeWorkRow.groupedEntries.some(workEntryDisplayIndicatesToolFailure),
+        processLabels: [],
+        live: true,
+      });
+      if (!activeWorkRow.expanded) return;
+      for (const [entryIndex, workEntry] of activeWorkRow.groupedEntries.entries()) {
+        nextRows.push({
+          kind: "work",
+          id: workEntry.id,
+          createdAt: workEntry.createdAt,
+          groupedEntries: [workEntry],
+          isExpandedToolGroupEntry: true,
+          isLastExpandedToolGroupEntry: entryIndex === activeWorkRow.groupedEntries.length - 1,
+        });
+      }
+      return;
+    }
     if (!activeWorkRow.expanded && input.isWorking) {
       const earlier = activeWorkRow.groupedEntries.slice(0, -1);
       const failedEarlier = earlier.filter((entry) => workEntryDisplayIndicatesToolFailure(entry));
@@ -1086,7 +1115,37 @@ export function deriveMessagesTimelineRows(input: {
         );
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
         const visibleCap = workLogVisibleEntryCap(input.isWorking, toolCallDensity);
-        if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
+        if (onlyToolEntries && toolCallDensity === "compact") {
+          const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
+          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+          const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          nextRows.push({
+            kind: "work-toggle",
+            id: `work-toggle:${timelineEntry.id}`,
+            createdAt: timelineEntry.createdAt,
+            groupId,
+            hiddenCount: visibleGroupedEntries.length,
+            expanded,
+            onlyToolEntries: true,
+            summary: summarizeToolGroup(visibleGroupedEntries),
+            summaryKind,
+            hasFailure: visibleGroupedEntries.some(workEntryDisplayIndicatesToolFailure),
+            processLabels: [],
+            live: activeInProgressToolEntries.length > 0,
+          });
+          if (expanded) {
+            for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
+              nextRows.push({
+                kind: "work",
+                id: workEntry.id,
+                createdAt: workEntry.createdAt,
+                groupedEntries: [workEntry],
+                isExpandedToolGroupEntry: true,
+                isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
+              });
+            }
+          }
+        } else if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;

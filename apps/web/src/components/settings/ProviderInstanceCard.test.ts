@@ -150,11 +150,14 @@ describe("deriveProviderModelsForDisplay", () => {
       }),
     );
 
+    expect(editor).toContain("Account email");
     expect(editor).toContain("Authenticated as");
+    expect(editor).toContain("ChatGPT Plus Subscription");
     expect(editor).toContain('data-provider-editor-quota="true"');
     expect(editor).toContain("flex min-w-0 flex-col gap-3");
-    expect(editor).not.toContain("pt-1");
-    expect(editor).toContain("Configuration");
+    expect(editor.indexOf("Configuration")).toBeLessThan(editor.indexOf("Account email"));
+    expect(editor.indexOf("Account email")).toBeLessThan(editor.indexOf("Authenticated as"));
+    expect(editor.indexOf("Authenticated as")).toBeLessThan(editor.indexOf("5h"));
     expect(list).toContain('aria-pressed="true"');
     expect(list).toContain("Enable");
   });

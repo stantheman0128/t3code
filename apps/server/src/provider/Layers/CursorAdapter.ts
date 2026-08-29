@@ -73,6 +73,8 @@ import {
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
+  mergeCursorTodos,
+  type CursorTodoItem,
 } from "../acp/CursorAcpExtension.ts";
 import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
@@ -132,6 +134,7 @@ interface CursorSessionContext {
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   lastPlanFingerprint: string | undefined;
+  lastTodos: ReadonlyArray<CursorTodoItem>;
   activeTurnId: TurnId | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
    * >0 means a turn is actively running, so a new sendTurn is a steer that
@@ -622,6 +625,9 @@ export function makeCursorAdapter(
                     params,
                     "acp.cursor.extension",
                   );
+                  if (ctx) {
+                    ctx.lastTodos = params.todos;
+                  }
                   yield* offerRuntimeEvent({
                     type: "turn.proposed.completed",
                     ...(yield* makeEventStamp()),
@@ -652,9 +658,11 @@ export function makeCursorAdapter(
                       "acp.cursor.extension",
                     );
                     if (ctx) {
+                      const todos = mergeCursorTodos(ctx.lastTodos, params);
+                      ctx.lastTodos = todos;
                       yield* emitPlanUpdate(
                         ctx,
-                        extractTodosAsPlan(params),
+                        extractTodosAsPlan({ ...params, todos }),
                         params,
                         "acp.cursor.extension",
                         "cursor/update_todos",
@@ -777,6 +785,7 @@ export function makeCursorAdapter(
             pendingUserInputs,
             turns: [],
             lastPlanFingerprint: undefined,
+            lastTodos: [],
             activeTurnId: undefined,
             promptsInFlight: 0,
             stopped: false,
@@ -953,6 +962,7 @@ export function makeCursorAdapter(
           ctx.activeTurnId = turnId;
           if (steeringTurnId === undefined) {
             ctx.lastPlanFingerprint = undefined;
+            ctx.lastTodos = [];
           }
           ctx.session = {
             ...ctx.session,

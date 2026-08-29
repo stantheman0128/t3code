@@ -72,7 +72,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "app-version",
     title: "App version",
-    to: "/settings/appearance",
+    to: "/settings/general",
   },
   {
     id: "interface-animations",

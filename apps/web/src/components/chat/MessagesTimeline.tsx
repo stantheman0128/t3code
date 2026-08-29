@@ -1267,12 +1267,35 @@ function AssistantThinkingBlock({ thinking, streaming }: { thinking: string; str
         <ChevronRightIcon className="size-3 transition-transform [[data-panel-open]_&]:rotate-90" />
       </CollapsibleTrigger>
       <CollapsiblePanel>
-        <div
-          data-assistant-thinking="true"
-          className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground"
-        >
-          {thinking}
-        </div>
+        {streaming ? (
+          <div className="relative mt-1 min-w-0 overflow-hidden">
+            <div
+              data-assistant-thinking="true"
+              className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground"
+            >
+              {thinking}
+            </div>
+            <div
+              aria-hidden
+              className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
+            >
+              <div className="live-activity-focus-counter">
+                <div className="live-activity-focus-aligned">
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                    {thinking}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            data-assistant-thinking="true"
+            className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground"
+          >
+            {thinking}
+          </div>
+        )}
       </CollapsiblePanel>
     </Collapsible>
   );
@@ -1424,6 +1447,18 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
           </span>
         ) : null}
       </button>
+      {row.turnPlan.diffs.length > 0 ? (
+        <ul className="mt-0.5 space-y-px pl-6">
+          {(expanded ? row.turnPlan.diffs : row.turnPlan.diffs.slice(-2)).map((diff) => (
+            <li
+              key={`${diff.createdAt}:${diff.sentence}`}
+              className="text-[12px] leading-5 text-muted-foreground/70"
+            >
+              {diff.sentence}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {expanded ? (
         <div className="mt-0.5 space-y-px pl-6">
           {steps.map((step) => (
@@ -1708,13 +1743,23 @@ function WorkGroupToggleTimelineRow({
           aria-expanded={row.expanded}
           onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
         >
-          <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-            <WorkEntryIconSvg
-              name={toolGroupSummaryIconName(row.summaryKind)}
-              className="size-4 shrink-0 stroke-[1.8] opacity-70"
+          {row.live ? (
+            <LiveActivityRow
+              label={row.summary}
+              iconName={toolGroupSummaryIconName(row.summaryKind)}
+              failed={row.hasFailure}
             />
-          </span>
-          <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
+          ) : (
+            <>
+              <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
+                <WorkEntryIconSvg
+                  name={toolGroupSummaryIconName(row.summaryKind)}
+                  className="size-4 shrink-0 stroke-[1.8] opacity-70"
+                />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
+            </>
+          )}
         </button>
         {processLabels.length > 0 ? (
           <ol className="ml-7 list-none space-y-px pb-0.5 text-[12px] leading-5 text-muted-foreground">

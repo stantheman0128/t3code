@@ -12,6 +12,7 @@ import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   deriveTurnPlans,
+  describePlanTodoDiff,
   derivePendingApprovals,
   derivePendingUserInputs,
   deriveTimelineEntries,
@@ -546,6 +547,32 @@ describe("deriveTurnPlans", () => {
       { durationMs: 4_000, step: "Inspect code", status: "completed" },
     ]);
     expect(turnPlans[1]?.plan.steps).toEqual([{ step: "Ship it", status: "pending" }]);
+    expect(turnPlans[0]?.diffs.map((diff) => diff.sentence)).toEqual([
+      "Started Inspect code.",
+      "Completed Inspect code.",
+    ]);
+  });
+
+  it("describes completed, started, and added todo steps", () => {
+    expect(
+      describePlanTodoDiff(
+        [
+          { step: "Inspect code", status: "inProgress" },
+          { step: "Ship it", status: "pending" },
+        ],
+        [
+          { step: "Inspect code", status: "completed" },
+          { step: "Ship it", status: "inProgress" },
+          { step: "Write tests", status: "pending" },
+        ],
+      ),
+    ).toBe("Completed Inspect code. Started Ship it. Added Write tests.");
+    expect(
+      describePlanTodoDiff(
+        [{ step: "Inspect code", status: "completed" }],
+        [{ step: "Inspect code", status: "completed" }],
+      ),
+    ).toBeNull();
   });
 
   it("skips activities without parseable steps", () => {

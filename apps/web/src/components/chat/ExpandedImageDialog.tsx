@@ -52,6 +52,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       role="dialog"
       aria-modal="true"
       aria-label="Expanded image preview"
+      data-expanded-image-preview="true"
     >
       <button
         type="button"

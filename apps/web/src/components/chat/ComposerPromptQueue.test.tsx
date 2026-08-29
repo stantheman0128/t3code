@@ -44,7 +44,31 @@ describe("ComposerPromptQueue", () => {
     expect(markup).toContain("bg-[var(--chat-composer-glass-surface,var(--card))]");
     expect(markup).not.toContain("chat-composer-drawer-surface");
     expect(markup).toContain("Preview shot.png");
-    expect(markup).toContain("max-h-40 flex-col gap-1.5 overflow-y-auto");
+    expect(markup).toContain("max-h-40");
+    expect(markup).toContain("relative z-0");
+    expect(markup).not.toContain("relative z-10");
+  });
+
+  it("expands a queued follow-up for full-text edit with photo add and remove", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerPromptQueue
+        items={[queueItem("q1", "look at the screenshot\nand keep going", ["shot.png"])]}
+        onRemove={vi.fn()}
+        onUpdate={vi.fn()}
+        onExpandImage={vi.fn()}
+        initialEditingId="q1"
+      />,
+    );
+
+    expect(markup).toContain('data-editing="true"');
+    expect(markup).toContain("look at the screenshot");
+    expect(markup).toContain("and keep going");
+    expect(markup).toContain("Add photos");
+    expect(markup).toContain("Remove shot.png");
+    expect(markup).toContain('accept="image/*"');
+    expect(markup).not.toContain("Cancel");
+    expect(markup).not.toContain(">Save</");
+    expect(markup).toContain("max-h-[min(28rem,70vh)]");
   });
 
   it("keeps a photo-only follow-up visible", () => {

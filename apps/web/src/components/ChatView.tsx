@@ -7892,11 +7892,20 @@ function ChatViewContent(props: ChatViewProps) {
                     <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
                   {promptQueue.length > 0 ? (
-                    <div className="relative z-10 mx-auto w-full">
+                    <div className="relative z-0 mx-auto w-full">
                       <ComposerPromptQueue
                         items={promptQueue}
-                        onUpdate={(id, prompt) => {
-                          updateQueuedPrompt(routeThreadKey, id, { prompt });
+                        onUpdate={(id, patch) => {
+                          const item = promptQueue.find((entry) => entry.id === id);
+                          if (patch.images) {
+                            const nextIds = new Set(patch.images.map((image) => image.id));
+                            for (const image of item?.images ?? []) {
+                              if (!nextIds.has(image.id)) {
+                                revokeBlobPreviewUrl(image.previewUrl);
+                              }
+                            }
+                          }
+                          updateQueuedPrompt(routeThreadKey, id, patch);
                         }}
                         onRemove={(id) => {
                           const item = promptQueue.find((entry) => entry.id === id);

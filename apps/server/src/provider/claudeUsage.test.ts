@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   claudeAccessTokenFromDocument,
   claudeCredentialsFileCandidates,
+  claudeDesktopPlanUsageFileCandidates,
   claudeUsageStateFileCandidates,
 } from "./claudeUsage.ts";
 
@@ -55,5 +56,16 @@ describe("claudeUsageStateFileCandidates", () => {
       USERPROFILE: "C:\\Users\\ada",
     });
     expect(files.some((file) => file.endsWith(".claude\\usage-state.json"))).toBe(true);
+  });
+});
+
+describe("claudeDesktopPlanUsageFileCandidates", () => {
+  it("reads Claude Desktop's plan-usage-history.json from AppData", () => {
+    const files = claudeDesktopPlanUsageFileCandidates({
+      APPDATA: "C:\\Users\\ada\\AppData\\Roaming",
+      LOCALAPPDATA: "C:\\Users\\ada\\AppData\\Local",
+    });
+    expect(files).toContain("C:\\Users\\ada\\AppData\\Roaming\\Claude\\plan-usage-history.json");
+    expect(files).toContain("C:\\Users\\ada\\AppData\\Local\\Claude\\plan-usage-history.json");
   });
 });

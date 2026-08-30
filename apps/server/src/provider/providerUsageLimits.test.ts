@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   mapClaudeUsageLimits,
+  mapClaudeDesktopPlanUsageHistory,
   mapClaudeUsageStateDocument,
   mapCodexRateLimits,
   mapCursorPeriodUsage,
@@ -154,6 +155,33 @@ describe("mapClaudeUsageStateDocument", () => {
     ).toMatchObject({
       status: "available",
       windows: [{ id: "seven_day", remainingPercent: 48 }],
+    });
+  });
+});
+
+describe("mapClaudeDesktopPlanUsageHistory", () => {
+  it("maps the latest Desktop sample's used percentages", () => {
+    expect(
+      mapClaudeDesktopPlanUsageHistory(
+        {
+          version: 2,
+          samples: [
+            { t: Date.parse("2026-08-30T17:00:00.000Z"), u: { fh: 1, sd: 1 } },
+            { t: Date.parse("2026-08-30T18:40:28.213Z"), u: { fh: 8, sd: 3, xu: 65.2 } },
+          ],
+        },
+        observedAt,
+        "Claude Pro",
+      ),
+    ).toMatchObject({
+      status: "available",
+      planLabel: "Claude Pro",
+      observedAt: "2026-08-30T18:40:28.213Z",
+      windows: [
+        { id: "five_hour", label: "5h", remainingPercent: 92 },
+        { id: "seven_day", label: "Week", remainingPercent: 97 },
+        { id: "extra_usage", label: "Extra", remainingPercent: 35 },
+      ],
     });
   });
 });

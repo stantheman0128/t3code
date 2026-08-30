@@ -3,7 +3,8 @@
 // @effect-diagnostics globalErrorInEffectFailure:off
 /**
  * Claude remaining quota from the same oauth/usage endpoint Claude Code uses,
- * with a fallback to ~/.claude/usage-state.json when the access token is empty.
+ * then CLI usage-state.json, then Claude Desktop plan-usage-history.json.
+ * Desktop login is a separate encrypted store; this never decrypts it.
  *
  * Tokens stay on disk. This never refreshes them, so it cannot race Claude
  * Code's single-use refresh token.
@@ -17,6 +18,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 
 import {
+  mapClaudeDesktopPlanUsageHistory,
   mapClaudeUsageLimits,
   mapClaudeUsageStateDocument,
   remoteUsageProbesEnabled,
@@ -99,6 +101,21 @@ export function claudeUsageStateFileCandidates(
   return [...new Set(files)];
 }
 
+export function claudeDesktopPlanUsageFileCandidates(
+  environment: NodeJS.ProcessEnv = process.env,
+): ReadonlyArray<string> {
+  const files: string[] = [];
+  const roaming = nonEmptyString(environment.APPDATA);
+  const local = nonEmptyString(environment.LOCALAPPDATA);
+  if (roaming) {
+    files.push(join(roaming, "Claude", "plan-usage-history.json"));
+  }
+  if (local) {
+    files.push(join(local, "Claude", "plan-usage-history.json"));
+  }
+  return [...new Set(files)];
+}
+
 const readClaudeAccessToken = (input: {
   readonly homeDir: string;
   readonly environment: NodeJS.ProcessEnv;
@@ -172,6 +189,32 @@ const readClaudeUsageStateLimits = (input: {
     return undefined;
   });
 
+const readClaudeDesktopPlanUsageLimits = (input: {
+  readonly environment: NodeJS.ProcessEnv;
+  readonly planLabel?: string;
+}) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    for (const filePath of claudeDesktopPlanUsageFileCandidates(input.environment)) {
+      const raw = yield* fileSystem
+        .readFileString(filePath)
+        .pipe(Effect.orElseSucceed((): string | null => null));
+      if (raw === null || raw.trim().length === 0) {
+        continue;
+      }
+      const document = yield* decodeUnknownJson(raw).pipe(Effect.orElseSucceed(() => null));
+      const usageLimits = mapClaudeDesktopPlanUsageHistory(
+        document,
+        new Date().toISOString(),
+        input.planLabel,
+      );
+      if (usageLimits.status === "available") {
+        return usageLimits;
+      }
+    }
+    return undefined;
+  });
+
 export const readClaudeUsageLimits = (input: {
   readonly homeDir: string;
   readonly environment?: NodeJS.ProcessEnv;
@@ -193,8 +236,15 @@ export const readClaudeUsageLimits = (input: {
         return usageLimits;
       }
     }
-    return yield* readClaudeUsageStateLimits({
+    const fromCliState = yield* readClaudeUsageStateLimits({
       homeDir: input.homeDir,
+      environment,
+      planLabel: input.planLabel,
+    });
+    if (fromCliState) {
+      return fromCliState;
+    }
+    return yield* readClaudeDesktopPlanUsageLimits({
       environment,
       planLabel: input.planLabel,
     });

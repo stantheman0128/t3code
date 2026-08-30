@@ -351,6 +351,53 @@ export function mapClaudeUsageStateDocument(
   });
 }
 
+/**
+ * Claude Desktop writes %APPDATA%/Claude/plan-usage-history.json while the
+ * app is signed in. That login is not the CLI's ~/.claude/.credentials.json.
+ */
+export function mapClaudeDesktopPlanUsageHistory(
+  document: unknown,
+  observedAt: string,
+  planLabel?: string,
+): ProviderUsageLimits {
+  const root = asRecord(document);
+  const samples = Array.isArray(root?.samples) ? root.samples : [];
+  const last = asRecord(samples[samples.length - 1]);
+  if (!last) {
+    return {
+      status: "unavailable",
+      ...(planLabel ? { planLabel } : {}),
+      windows: [],
+    };
+  }
+  const usage = asRecord(last.u) ?? last;
+  const sampledAt = isoFromUnknown(last.t) ?? observedAt;
+  return availableUsageLimits({
+    planLabel,
+    observedAt: sampledAt,
+    windows: [
+      usageWindow(
+        "five_hour",
+        "5h",
+        remainingFromUsed(unwrapNumeric(usage.fh ?? usage.five_hour ?? usage.fiveHour)),
+        null,
+      ),
+      usageWindow(
+        "seven_day",
+        "Week",
+        remainingFromUsed(unwrapNumeric(usage.sd ?? usage.seven_day ?? usage.sevenDay)),
+        null,
+      ),
+      usageWindow(
+        "extra_usage",
+        "Extra",
+        remainingFromUsed(unwrapNumeric(usage.xu ?? usage.extra_usage ?? usage.extraUsage)),
+        null,
+      ),
+    ],
+  });
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;

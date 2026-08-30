@@ -36,7 +36,7 @@ export const DEFAULT_TOOL_CALL_DENSITY: ToolCallDensity = "standard";
 
 export const PerformanceBarFpsMode = Schema.Literals(["bars", "wave"]);
 export type PerformanceBarFpsMode = typeof PerformanceBarFpsMode.Type;
-export const DEFAULT_PERFORMANCE_BAR_FPS_MODE: PerformanceBarFpsMode = "bars";
+export const DEFAULT_PERFORMANCE_BAR_FPS_MODE: PerformanceBarFpsMode = "wave";
 
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;

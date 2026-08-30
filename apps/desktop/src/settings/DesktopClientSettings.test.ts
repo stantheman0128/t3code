@@ -41,7 +41,7 @@ const clientSettings: ClientSettings = {
   showProviderUsage: true,
   toolCallDensity: "standard",
   showPerformanceBar: false,
-  performanceBarFpsMode: "bars",
+  performanceBarFpsMode: "wave",
   providerChrome: false,
   planModeEnabled: false,
   showSkillsInSlashMenu: false,

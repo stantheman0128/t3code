@@ -114,7 +114,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Docked performance bar height. The toolbar uses this var for its own
      height; `--dev-performance-bar-offset` subtracts it from the app chrome
      so composer and sidebar move up instead of being painted over. */
-  --dev-performance-bar-height: 1.75rem;
+  --dev-performance-bar-height: 2.25rem;
   --dev-performance-bar-offset: 0px;
 
   @variant dark {

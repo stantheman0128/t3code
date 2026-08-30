@@ -1,7 +1,8 @@
 import type { PerformanceBarFpsMode } from "@t3tools/contracts/settings";
-import { ActivityIcon, ChevronDownIcon, HelpCircleIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { ChevronDownIcon, HelpCircleIcon } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
 
+import { APP_BASE_NAME, APP_STAGE_LABEL, APP_VERSION } from "../../branding";
 import { cn } from "~/lib/utils";
 import {
   toggleShowPerformanceBar,
@@ -10,6 +11,7 @@ import {
 } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { PERFORMANCE_BAR_TONE_CLASS, patchPerformanceBarDom } from "./performanceBarDom";
 import { applyPerformanceBarLayout } from "./performanceBarLayout";
 import {
   derivePerformanceBarSnapshot,
@@ -17,10 +19,15 @@ import {
   formatPerformanceBarHeap,
   formatPerformanceBarJank,
   formatPerformanceBarMs,
-  isPerformanceBarDelayHot,
-  isPerformanceBarJankHot,
+  PERFORMANCE_BAR_DELAY_HOT_MS,
   PERFORMANCE_BAR_DELAY_WARN_MS,
   PERFORMANCE_BAR_JANK_WARN_RATIO,
+  PERFORMANCE_BAR_NUMBER_INTERVAL_MS,
+  PERFORMANCE_BAR_SPARKLINE_HEIGHT,
+  PERFORMANCE_BAR_SPARKLINE_WIDTH,
+  performanceBarDelayTone,
+  performanceBarFpsTone,
+  performanceBarJankTone,
   type PerformanceBarSnapshot,
   readRendererHeapBytes,
   trimFrameTimes,
@@ -29,16 +36,16 @@ import {
 const METRIC_HELP = [
   {
     label: "Delay",
-    definition: `Longest gap between frames in the last 500 ms. Flashes red at ${PERFORMANCE_BAR_DELAY_WARN_MS} ms or higher.`,
+    definition: `Duration of the latest animation frame. Turns amber at ${PERFORMANCE_BAR_DELAY_WARN_MS} ms and red at ${PERFORMANCE_BAR_DELAY_HOT_MS} ms.`,
   },
   {
     label: "FPS",
     definition:
-      "Renderer frames per second over the last 500 ms. Click to switch between bars and a scrolling wave.",
+      "Frames per second from the latest animation frame. Click to switch between bars and a scrolling wave.",
   },
   {
     label: "Jank",
-    definition: `Share of frames slower than ${PERFORMANCE_BAR_DELAY_WARN_MS} ms. Turns red at ${Math.round(PERFORMANCE_BAR_JANK_WARN_RATIO * 100)}% or higher.`,
+    definition: `Share of frames slower than ${PERFORMANCE_BAR_DELAY_HOT_MS} ms in the last 500 ms. Turns red at ${Math.round(PERFORMANCE_BAR_JANK_WARN_RATIO * 100)}% or higher.`,
   },
   {
     label: "Heap",
@@ -51,6 +58,10 @@ export function PerformanceBar() {
   const fpsMode = useClientSettings((settings) => settings.performanceBarFpsMode);
   const updateClientSettings = useUpdateClientSettings();
   const [snapshot, setSnapshot] = useState<PerformanceBarSnapshot | null>(null);
+  const toolbarRef = useRef<HTMLFooterElement>(null);
+  const snapshotRef = useRef<PerformanceBarSnapshot | null>(null);
+  const fpsModeRef = useRef(fpsMode);
+  fpsModeRef.current = fpsMode;
 
   useLayoutEffect(() => {
     applyPerformanceBarLayout(document.documentElement, visible);
@@ -59,25 +70,43 @@ export function PerformanceBar() {
 
   useEffect(() => {
     if (!visible) {
+      snapshotRef.current = null;
       setSnapshot(null);
       return;
     }
     let frameTimes: number[] = [];
     let raf = 0;
+    let lastNumbersAt = Number.NEGATIVE_INFINITY;
     const tick = (now: number) => {
       frameTimes = trimFrameTimes([...frameTimes, now], now);
-      setSnapshot(
-        derivePerformanceBarSnapshot({
-          frameTimes,
-          now,
-          heapBytes: readRendererHeapBytes(),
-        }),
-      );
+      const next = derivePerformanceBarSnapshot({
+        frameTimes,
+        now,
+        heapBytes: readRendererHeapBytes(),
+      });
+      snapshotRef.current = next;
+      const toolbar = toolbarRef.current;
+      if (toolbar === null) {
+        setSnapshot(next);
+      } else {
+        const numbers = now - lastNumbersAt >= PERFORMANCE_BAR_NUMBER_INTERVAL_MS;
+        if (numbers) lastNumbersAt = now;
+        patchPerformanceBarDom(toolbar, next, fpsModeRef.current, {
+          numbers,
+          sparkline: true,
+        });
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [visible]);
+
+  useLayoutEffect(() => {
+    const live = snapshotRef.current;
+    if (live === null || toolbarRef.current === null) return;
+    patchPerformanceBarDom(toolbarRef.current, live, fpsMode);
+  }, [fpsMode, snapshot]);
 
   if (!visible || snapshot === null) {
     return null;
@@ -87,6 +116,7 @@ export function PerformanceBar() {
     <PerformanceBarView
       snapshot={snapshot}
       fpsMode={fpsMode}
+      toolbarRef={toolbarRef}
       onCycleFpsMode={() =>
         updateClientSettings({
           performanceBarFpsMode: fpsMode === "bars" ? "wave" : "bars",
@@ -100,42 +130,76 @@ export function PerformanceBar() {
 export function PerformanceBarView(props: {
   readonly snapshot: PerformanceBarSnapshot;
   readonly fpsMode: PerformanceBarFpsMode;
+  readonly toolbarRef?: Ref<HTMLFooterElement>;
   readonly onCycleFpsMode: () => void;
   readonly onHide: () => void;
 }) {
-  const { snapshot, fpsMode, onCycleFpsMode, onHide } = props;
-  const delayHot = isPerformanceBarDelayHot(snapshot.delayMs);
-  const jankHot = isPerformanceBarJankHot(snapshot.jankRatio);
+  const { snapshot, fpsMode, toolbarRef, onCycleFpsMode, onHide } = props;
+  const delayTone = performanceBarDelayTone(snapshot.delayMs);
+  const fpsTone = performanceBarFpsTone(snapshot.fps);
+  const jankTone = performanceBarJankTone(snapshot.jankRatio);
+  const stage = APP_STAGE_LABEL.trim().toLowerCase();
 
   return (
     <footer
+      ref={toolbarRef}
       data-component="t3-dev-performance-toolbar"
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[80] flex h-(--dev-performance-bar-height) items-center gap-3 border-t border-border/70 bg-background/92 px-3 font-mono text-[11px] leading-none text-muted-foreground backdrop-blur-sm"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[80] flex h-(--dev-performance-bar-height) items-center gap-3 border-t border-border/70 bg-background/95 px-3 font-mono text-[11px] leading-none text-muted-foreground"
     >
-      <span className="flex items-center gap-1.5 text-foreground">
-        <ActivityIcon className="size-3.5" aria-hidden />
-        Perf
+      <span data-performance-toolbar-brand="" className="min-w-0 truncate text-muted-foreground">
+        {APP_BASE_NAME} {APP_VERSION}
+        {stage ? ` (${stage})` : ""}
       </span>
       <div
         data-component="t3-dev-performance-toolbar-metrics"
-        className="flex min-w-0 flex-1 items-center gap-3"
+        className="ml-auto flex min-w-0 items-center gap-3.5"
       >
-        <Metric label="Delay" value={formatPerformanceBarMs(snapshot.delayMs)} hot={delayHot} />
+        <Metric
+          name="delay"
+          label="Delay"
+          value={formatPerformanceBarMs(snapshot.delayMs)}
+          tone={delayTone}
+        />
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          data-performance-fps-toggle=""
+          className="flex items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`FPS ${formatPerformanceBarFps(snapshot.fps)}. Switch indicator.`}
           onClick={onCycleFpsMode}
         >
+          <canvas
+            data-performance-sparkline=""
+            data-fps-mode={fpsMode}
+            width={PERFORMANCE_BAR_SPARKLINE_WIDTH}
+            height={PERFORMANCE_BAR_SPARKLINE_HEIGHT}
+            className="block"
+            style={{
+              width: PERFORMANCE_BAR_SPARKLINE_WIDTH,
+              height: PERFORMANCE_BAR_SPARKLINE_HEIGHT,
+            }}
+            aria-hidden
+          />
           <span className="text-muted-foreground">FPS</span>
-          <span className="tabular-nums text-foreground">
+          <span
+            data-performance-metric="fps"
+            className={cn("min-w-[3ch] tabular-nums", PERFORMANCE_BAR_TONE_CLASS[fpsTone])}
+          >
             {formatPerformanceBarFps(snapshot.fps)}
           </span>
-          <FpsSparkline gapsMs={snapshot.sparklineGapsMs} mode={fpsMode} hot={delayHot} />
         </button>
-        <Metric label="Jank" value={formatPerformanceBarJank(snapshot.jankRatio)} hot={jankHot} />
+        <Metric
+          name="jank"
+          label="Jank"
+          value={formatPerformanceBarJank(snapshot.jankRatio)}
+          tone={jankTone}
+        />
         {snapshot.heapBytes !== null ? (
-          <Metric label="Heap" value={formatPerformanceBarHeap(snapshot.heapBytes)} />
+          <Metric
+            name="heap"
+            label="Heap"
+            value={formatPerformanceBarHeap(snapshot.heapBytes)}
+            tone="good"
+          />
         ) : null}
       </div>
       <div className="flex items-center gap-0.5">
@@ -177,54 +241,21 @@ export function PerformanceBarView(props: {
   );
 }
 
-function Metric(props: { readonly label: string; readonly value: string; readonly hot?: boolean }) {
+function Metric(props: {
+  readonly name: string;
+  readonly label: string;
+  readonly value: string;
+  readonly tone: keyof typeof PERFORMANCE_BAR_TONE_CLASS;
+}) {
   return (
     <span className="flex items-center gap-1.5">
       <span>{props.label}</span>
-      <span className={cn("tabular-nums", props.hot ? "text-destructive" : "text-foreground")}>
+      <span
+        data-performance-metric={props.name}
+        className={cn("tabular-nums", PERFORMANCE_BAR_TONE_CLASS[props.tone])}
+      >
         {props.value}
       </span>
-    </span>
-  );
-}
-
-function FpsSparkline(props: {
-  readonly gapsMs: ReadonlyArray<number>;
-  readonly mode: PerformanceBarFpsMode;
-  readonly hot: boolean;
-}) {
-  const { gapsMs, mode, hot } = props;
-  const max = Math.max(PERFORMANCE_BAR_DELAY_WARN_MS, ...gapsMs, 1);
-  if (mode === "wave") {
-    const points = gapsMs
-      .map((gap, index) => {
-        const x = gapsMs.length <= 1 ? 0 : (index / (gapsMs.length - 1)) * 36;
-        const y = 10 - (Math.min(gap, max) / max) * 10;
-        return `${x},${y}`;
-      })
-      .join(" ");
-    return (
-      <svg
-        aria-hidden
-        viewBox="0 0 36 10"
-        className={cn("h-2.5 w-9", hot ? "text-destructive" : "text-foreground")}
-      >
-        <polyline fill="none" stroke="currentColor" strokeWidth="1.2" points={points} />
-      </svg>
-    );
-  }
-  return (
-    <span aria-hidden className="flex h-2.5 w-9 items-end gap-px">
-      {gapsMs.map((gap, index) => (
-        <span
-          key={index}
-          className={cn(
-            "min-h-px flex-1 rounded-[1px]",
-            gap >= PERFORMANCE_BAR_DELAY_WARN_MS ? "bg-destructive" : "bg-foreground/70",
-          )}
-          style={{ height: `${Math.max(12, (Math.min(gap, max) / max) * 100)}%` }}
-        />
-      ))}
     </span>
   );
 }

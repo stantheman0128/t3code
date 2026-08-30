@@ -135,12 +135,12 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings({ toolCallDensity: "detailed" }).toolCallDensity).toBe("detailed");
   });
 
-  it("defaults the performance bar off, with bars as the FPS indicator", () => {
+  it("defaults the performance bar off, with a wave as the FPS indicator", () => {
     expect(decodeClientSettings({}).showPerformanceBar).toBe(false);
-    expect(decodeClientSettings({}).performanceBarFpsMode).toBe("bars");
+    expect(decodeClientSettings({}).performanceBarFpsMode).toBe("wave");
     expect(decodeClientSettings({ showPerformanceBar: true }).showPerformanceBar).toBe(true);
-    expect(decodeClientSettings({ performanceBarFpsMode: "wave" }).performanceBarFpsMode).toBe(
-      "wave",
+    expect(decodeClientSettings({ performanceBarFpsMode: "bars" }).performanceBarFpsMode).toBe(
+      "bars",
     );
   });
 

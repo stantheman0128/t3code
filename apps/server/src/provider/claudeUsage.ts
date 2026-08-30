@@ -2,7 +2,8 @@
 // @effect-diagnostics globalErrorInEffectCatch:off
 // @effect-diagnostics globalErrorInEffectFailure:off
 /**
- * Claude remaining quota from the same oauth/usage endpoint Claude Code uses.
+ * Claude remaining quota from the same oauth/usage endpoint Claude Code uses,
+ * with a fallback to ~/.claude/usage-state.json when the access token is empty.
  *
  * Tokens stay on disk. This never refreshes them, so it cannot race Claude
  * Code's single-use refresh token.
@@ -15,7 +16,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 
-import { mapClaudeUsageLimits, remoteUsageProbesEnabled } from "./providerUsageLimits.ts";
+import {
+  mapClaudeUsageLimits,
+  mapClaudeUsageStateDocument,
+  remoteUsageProbesEnabled,
+} from "./providerUsageLimits.ts";
 
 const decodeUnknownJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -78,6 +83,22 @@ export function claudeCredentialsFileCandidates(
   return [...new Set(files)];
 }
 
+export function claudeUsageStateFileCandidates(
+  homeDir: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): ReadonlyArray<string> {
+  const files = [join(homeDir, "usage-state.json"), join(homeDir, ".claude", "usage-state.json")];
+  const configDir = nonEmptyString(environment.CLAUDE_CONFIG_DIR);
+  if (configDir) {
+    files.push(join(configDir, "usage-state.json"));
+  }
+  const userHome = nonEmptyString(environment.HOME) ?? nonEmptyString(environment.USERPROFILE);
+  if (userHome) {
+    files.push(join(userHome, ".claude", "usage-state.json"));
+  }
+  return [...new Set(files)];
+}
+
 const readClaudeAccessToken = (input: {
   readonly homeDir: string;
   readonly environment: NodeJS.ProcessEnv;
@@ -124,6 +145,33 @@ const fetchClaudeOauthUsage = (token: string) =>
     catch: () => new Error("claude-usage-fetch-failed"),
   }).pipe(Effect.orElseSucceed((): unknown => undefined));
 
+const readClaudeUsageStateLimits = (input: {
+  readonly homeDir: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly planLabel?: string;
+}) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    for (const filePath of claudeUsageStateFileCandidates(input.homeDir, input.environment)) {
+      const raw = yield* fileSystem
+        .readFileString(filePath)
+        .pipe(Effect.orElseSucceed((): string | null => null));
+      if (raw === null || raw.trim().length === 0) {
+        continue;
+      }
+      const document = yield* decodeUnknownJson(raw).pipe(Effect.orElseSucceed(() => null));
+      const usageLimits = mapClaudeUsageStateDocument(
+        document,
+        new Date().toISOString(),
+        input.planLabel,
+      );
+      if (usageLimits.status === "available") {
+        return usageLimits;
+      }
+    }
+    return undefined;
+  });
+
 export const readClaudeUsageLimits = (input: {
   readonly homeDir: string;
   readonly environment?: NodeJS.ProcessEnv;
@@ -138,10 +186,16 @@ export const readClaudeUsageLimits = (input: {
       homeDir: input.homeDir,
       environment,
     });
-    if (!token) {
-      return undefined;
+    if (token) {
+      const document = yield* fetchClaudeOauthUsage(token);
+      const usageLimits = mapClaudeUsageLimits(document, new Date().toISOString(), input.planLabel);
+      if (usageLimits.status === "available") {
+        return usageLimits;
+      }
     }
-    const document = yield* fetchClaudeOauthUsage(token);
-    const usageLimits = mapClaudeUsageLimits(document, new Date().toISOString(), input.planLabel);
-    return usageLimits.status === "available" ? usageLimits : undefined;
+    return yield* readClaudeUsageStateLimits({
+      homeDir: input.homeDir,
+      environment,
+      planLabel: input.planLabel,
+    });
   });

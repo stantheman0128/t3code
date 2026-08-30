@@ -107,7 +107,7 @@ export function ContextWindowMeter(props: {
               <div className="font-medium text-muted-foreground text-xs">Context Window</div>
               {usage.maxTokens !== null && usedPercentage ? (
                 <div className="text-secondary-label text-[11px] tabular-nums">
-                  <span>{usedPercentage}</span>
+                  <span>{usedPercentage} used</span>
                   <span className="mx-1">·</span>
                   <span>
                     {formatContextWindowTokens(usage.usedTokens)}/

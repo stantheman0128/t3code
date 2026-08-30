@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { claudeAccessTokenFromDocument, claudeCredentialsFileCandidates } from "./claudeUsage.ts";
+import {
+  claudeAccessTokenFromDocument,
+  claudeCredentialsFileCandidates,
+  claudeUsageStateFileCandidates,
+} from "./claudeUsage.ts";
 
 describe("claudeAccessTokenFromDocument", () => {
   it("reads the Claude Code oauth access token when it is still valid", () => {
@@ -42,5 +46,14 @@ describe("claudeCredentialsFileCandidates", () => {
     expect(
       files.some((file) => file.includes(".claude") && file.endsWith(".credentials.json")),
     ).toBe(true);
+  });
+});
+
+describe("claudeUsageStateFileCandidates", () => {
+  it("includes the Claude Code statusline usage-state file", () => {
+    const files = claudeUsageStateFileCandidates("C:\\Users\\ada", {
+      USERPROFILE: "C:\\Users\\ada",
+    });
+    expect(files.some((file) => file.endsWith(".claude\\usage-state.json"))).toBe(true);
   });
 });

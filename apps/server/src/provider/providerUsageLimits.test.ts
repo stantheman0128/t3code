@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   mapClaudeUsageLimits,
+  mapClaudeUsageStateDocument,
   mapCodexRateLimits,
   mapCursorPeriodUsage,
   mapGenericSubscriptionDocument,
@@ -113,6 +114,46 @@ describe("mapClaudeUsageLimits", () => {
         { id: "seven_day_sonnet", label: "Sonnet", remainingPercent: 61 },
         { id: "extra_usage", label: "Extra", remainingPercent: 75 },
       ],
+    });
+  });
+});
+
+describe("mapClaudeUsageStateDocument", () => {
+  it("maps Claude Code statusline used percentages", () => {
+    expect(
+      mapClaudeUsageStateDocument(
+        {
+          five_hour: { pct: 47, resets_at: "2026-08-27T17:00:00.000Z" },
+          seven_day: { pct: 52, resets_at: "2026-09-03T20:00:00.000Z" },
+          ts: "2026-08-27T12:00:00.000Z",
+        },
+        observedAt,
+        "Claude Pro",
+      ),
+    ).toMatchObject({
+      status: "available",
+      planLabel: "Claude Pro",
+      observedAt: "2026-08-27T12:00:00.000Z",
+      windows: [
+        { id: "five_hour", label: "5h", remainingPercent: 53 },
+        { id: "seven_day", label: "Week", remainingPercent: 48 },
+      ],
+    });
+  });
+
+  it("drops windows whose reset is already in the past", () => {
+    expect(
+      mapClaudeUsageStateDocument(
+        {
+          five_hour: { pct: 47, resets_at: "2026-08-27T11:00:00.000Z" },
+          seven_day: { pct: 52, resets_at: "2026-09-03T20:00:00.000Z" },
+        },
+        observedAt,
+        "Claude Pro",
+      ),
+    ).toMatchObject({
+      status: "available",
+      windows: [{ id: "seven_day", remainingPercent: 48 }],
     });
   });
 });

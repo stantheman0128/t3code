@@ -307,6 +307,50 @@ export function mapClaudeUsageLimits(
   });
 }
 
+/**
+ * Claude Code statusline writes ~/.claude/usage-state.json with used
+ * percentages. Use it when oauth/usage cannot run because the access token
+ * lives in Claude Code's process, not the credentials file.
+ */
+export function mapClaudeUsageStateDocument(
+  document: unknown,
+  observedAt: string,
+  planLabel?: string,
+): ProviderUsageLimits {
+  const root = asRecord(document);
+  if (!root) {
+    return {
+      status: "unavailable",
+      ...(planLabel ? { planLabel } : {}),
+      windows: [],
+    };
+  }
+  const fromTs = isoFromUnknown(root.ts);
+  const effectiveObservedAt = fromTs ?? observedAt;
+  const nowMs = Date.parse(effectiveObservedAt);
+  const stateWindow = (id: string, label: string, raw: unknown) => {
+    const record = asRecord(raw);
+    if (!record) {
+      return undefined;
+    }
+    const used = unwrapNumeric(record.pct ?? record.used_percentage ?? record.usedPercentage);
+    const resetsAt = record.resets_at ?? record.resetsAt;
+    const resetIso = isoFromUnknown(resetsAt);
+    if (resetIso && Number.isFinite(nowMs) && Date.parse(resetIso) <= nowMs) {
+      return undefined;
+    }
+    return usageWindow(id, label, remainingFromUsed(used), resetsAt);
+  };
+  return availableUsageLimits({
+    planLabel,
+    observedAt: effectiveObservedAt,
+    windows: [
+      stateWindow("five_hour", "5h", root.five_hour ?? root.fiveHour),
+      stateWindow("seven_day", "Week", root.seven_day ?? root.sevenDay),
+    ],
+  });
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;

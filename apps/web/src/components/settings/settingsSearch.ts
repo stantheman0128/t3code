@@ -85,6 +85,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "usage-percent-display",
+    title: "用量百分比",
+    to: "/settings/appearance",
+  },
+  {
     id: "provider-chrome",
     title: "Provider chrome",
     to: "/settings/appearance",

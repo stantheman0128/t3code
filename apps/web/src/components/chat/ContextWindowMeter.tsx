@@ -1,20 +1,11 @@
-import type { ProviderUsageLimits } from "@t3tools/contracts";
+import type { ProviderUsageLimits, UsagePercentDisplay } from "@t3tools/contracts";
+import { formatContextUsagePercent } from "@t3tools/shared/usageFormat";
 import { Button } from "../ui/button";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 import { ProviderUsageLimitBars } from "../usage/ProviderUsageLimitBars";
 import { Minimize2Icon } from "lucide-react";
-
-function formatPercentage(value: number | null): string | null {
-  if (value === null || !Number.isFinite(value)) {
-    return null;
-  }
-  if (value < 10) {
-    return `${value.toFixed(1).replace(/\.0$/, "")}%`;
-  }
-  return `${Math.round(value)}%`;
-}
 
 export function ContextWindowMeter(props: {
   usage?: ContextWindowSnapshot | null;
@@ -23,6 +14,7 @@ export function ContextWindowMeter(props: {
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
+  percentDisplay?: UsagePercentDisplay;
 }) {
   const {
     usage,
@@ -31,8 +23,12 @@ export function ContextWindowMeter(props: {
     onCompact,
     compactDisabled,
     compactDisabledReason,
+    percentDisplay = "left",
   } = props;
-  const usedPercentage = formatPercentage(usage?.usedPercentage ?? null);
+  const usagePercentLabel =
+    usage?.usedPercentage != null && Number.isFinite(usage.usedPercentage)
+      ? formatContextUsagePercent(usage.usedPercentage, percentDisplay)
+      : null;
   const normalizedPercentage = Math.max(0, Math.min(100, usage?.usedPercentage ?? 0));
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
@@ -56,8 +52,8 @@ export function ContextWindowMeter(props: {
             variant="ghost-muted"
             className="size-7 rounded-full hover:text-muted-foreground data-pressed:text-muted-foreground"
             aria-label={
-              usage && usage.maxTokens !== null && usedPercentage
-                ? `Context window ${usedPercentage} used`
+              usage && usage.maxTokens !== null && usagePercentLabel
+                ? `Context window ${usagePercentLabel}`
                 : usage
                   ? `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
                   : "Plan usage limits"
@@ -105,9 +101,9 @@ export function ContextWindowMeter(props: {
           {usage ? (
             <div className="flex items-center justify-between gap-3">
               <div className="font-medium text-muted-foreground text-xs">Context Window</div>
-              {usage.maxTokens !== null && usedPercentage ? (
+              {usage.maxTokens !== null && usagePercentLabel ? (
                 <div className="text-secondary-label text-[11px] tabular-nums">
-                  <span>{usedPercentage} used</span>
+                  <span>{usagePercentLabel}</span>
                   <span className="mx-1">·</span>
                   <span>
                     {formatContextWindowTokens(usage.usedTokens)}/
@@ -154,7 +150,7 @@ export function ContextWindowMeter(props: {
               <div className="font-medium text-muted-foreground text-xs">
                 {planUsageLimits?.planLabel ? `${planUsageLimits.planLabel} limits` : "Plan limits"}
               </div>
-              <ProviderUsageLimitBars windows={planWindows} />
+              <ProviderUsageLimitBars windows={planWindows} percentDisplay={percentDisplay} />
             </div>
           ) : null}
           {onCompact ? (

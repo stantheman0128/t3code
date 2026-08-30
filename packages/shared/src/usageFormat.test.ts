@@ -10,6 +10,8 @@ import {
   formatDateTimeShort,
   formatUsageResetLabel,
   formatUsageLeftPercent,
+  formatUsagePercent,
+  formatContextUsagePercent,
   clampRemainingPercent,
   formatHourShort,
   formatOptionalUsd,
@@ -116,6 +118,15 @@ describe("formatUsageLeftPercent", () => {
     expect(formatUsageLeftPercent(58)).toBe("58% left");
     expect(formatUsageLeftPercent(100)).toBe("100% left");
     expect(formatUsageLeftPercent(0)).toBe("0% left");
+  });
+});
+
+describe("formatUsagePercent", () => {
+  it("can label the same remaining window as used instead", () => {
+    expect(formatUsagePercent(58, "left")).toBe("58% left");
+    expect(formatUsagePercent(58, "used")).toBe("42% used");
+    expect(formatContextUsagePercent(10, "left")).toBe("90% left");
+    expect(formatContextUsagePercent(10, "used")).toBe("10% used");
   });
 });
 

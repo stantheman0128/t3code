@@ -57,8 +57,33 @@ describe("ContextWindowMeter", () => {
 
     expect(markup).toContain("ChatGPT Plus limits");
     expect(markup).toContain("5h");
-    expect(markup).toContain("10% used");
+    expect(markup).toContain("90% left");
     expect(markup).toContain("58% left");
+  });
+
+  it("can label context and plan quota as used", () => {
+    const markup = renderToStaticMarkup(
+      <ContextWindowMeter
+        usage={usage}
+        percentDisplay="used"
+        planUsageLimits={{
+          status: "available",
+          planLabel: "ChatGPT Plus",
+          windows: [
+            {
+              id: "primary",
+              label: "5h",
+              remainingPercent: 58,
+              resetsAt: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("10% used");
+    expect(markup).toContain("42% used");
+    expect(markup).not.toContain("left");
   });
 
   it("explains why the compact action is disabled", () => {

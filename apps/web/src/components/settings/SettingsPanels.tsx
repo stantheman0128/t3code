@@ -10,6 +10,7 @@ import {
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
   type ToolCallDensity,
+  type UsagePercentDisplay,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -164,6 +165,11 @@ const TOOL_CALL_DENSITY_LABELS: Record<ToolCallDensity, string> = {
   compact: "Compact",
   standard: "Standard",
   detailed: "Detailed",
+};
+
+const USAGE_PERCENT_DISPLAY_LABELS: Record<UsagePercentDisplay, string> = {
+  left: "剩餘 N% left",
+  used: "已用 N% used",
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -495,6 +501,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.showProviderUsage !== DEFAULT_UNIFIED_SETTINGS.showProviderUsage
         ? ["Provider usage"]
         : []),
+      ...(settings.usagePercentDisplay !== DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay
+        ? ["用量百分比"]
+        : []),
       ...(settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome
         ? ["Provider chrome"]
         : []),
@@ -596,6 +605,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.glassOpacity,
       settings.layoutMotion,
       settings.showProviderUsage,
+      settings.usagePercentDisplay,
       settings.providerChrome,
       settings.toolCallDensity,
       settings.enableLegacyTokenStreaming,
@@ -685,6 +695,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       layoutMotion: DEFAULT_UNIFIED_SETTINGS.layoutMotion,
       showProviderUsage: DEFAULT_UNIFIED_SETTINGS.showProviderUsage,
+      usagePercentDisplay: DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay,
       providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
       toolCallDensity: DEFAULT_UNIFIED_SETTINGS.toolCallDensity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
@@ -1197,6 +1208,47 @@ export function AppearanceSettingsPanel() {
               onCheckedChange={(checked) => updateSettings({ showProviderUsage: Boolean(checked) })}
               aria-label="Provider usage"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("usage-percent-display")}
+          description="計畫額度跟 context window 一起切：顯示還剩多少，或已經用了多少。"
+          resetAction={
+            settings.usagePercentDisplay !== DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay ? (
+              <SettingResetButton
+                label="用量百分比"
+                onClick={() =>
+                  updateSettings({
+                    usagePercentDisplay: DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.usagePercentDisplay}
+              onValueChange={(value) => {
+                if (value === "left" || value === "used") {
+                  updateSettings({ usagePercentDisplay: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="用量百分比">
+                <SelectValue>
+                  {USAGE_PERCENT_DISPLAY_LABELS[settings.usagePercentDisplay]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="left">
+                  {USAGE_PERCENT_DISPLAY_LABELS.left}
+                </SelectItem>
+                <SelectItem hideIndicator value="used">
+                  {USAGE_PERCENT_DISPLAY_LABELS.used}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

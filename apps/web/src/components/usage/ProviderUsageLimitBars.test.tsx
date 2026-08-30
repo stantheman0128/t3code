@@ -27,6 +27,25 @@ describe("ProviderUsageLimitBars", () => {
     expect(html).not.toContain("title=");
   });
 
+  it("can fill and label the same window as used", () => {
+    const html = renderToStaticMarkup(
+      <ProviderUsageLimitBars
+        percentDisplay="used"
+        windows={[
+          {
+            id: "primary",
+            label: "5h",
+            remainingPercent: 58,
+            resetsAt: null,
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("42% used");
+    expect(html).toContain("width:42%");
+    expect(html).not.toContain("left");
+  });
+
   it("turns a nearly empty remaining window into 0% left", () => {
     const html = renderToStaticMarkup(
       <ProviderUsageLimitBars

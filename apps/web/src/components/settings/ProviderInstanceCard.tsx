@@ -481,6 +481,7 @@ export function ProviderInstanceCard({
       ? (liveProvider.auth.label ?? liveProvider.auth.type ?? null)
       : null;
   const showProviderUsage = useClientSettings((settings) => settings.showProviderUsage);
+  const usagePercentDisplay = useClientSettings((settings) => settings.usagePercentDisplay);
   const usageLimits =
     showProviderUsage && liveProvider?.usageLimits?.status === "available"
       ? liveProvider.usageLimits
@@ -898,7 +899,10 @@ export function ProviderInstanceCard({
           >
             {usageLimits && usageLimits.windows.length > 0 ? (
               <div className="flex min-w-0 flex-col gap-3" data-provider-editor-quota="true">
-                <ProviderUsageLimitBars windows={usageLimits.windows} />
+                <ProviderUsageLimitBars
+                  windows={usageLimits.windows}
+                  percentDisplay={usagePercentDisplay}
+                />
               </div>
             ) : null}
             <div>

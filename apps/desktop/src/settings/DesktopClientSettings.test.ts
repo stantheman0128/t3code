@@ -39,6 +39,7 @@ const clientSettings: ClientSettings = {
   interfaceAnimations: false,
   layoutMotion: true,
   showProviderUsage: true,
+  usagePercentDisplay: "left",
   toolCallDensity: "standard",
   showPerformanceBar: false,
   performanceBarFpsMode: "wave",

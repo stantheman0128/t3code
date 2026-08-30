@@ -129,6 +129,11 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings({ showProviderUsage: false }).showProviderUsage).toBe(false);
   });
 
+  it("defaults quota labels to leftover and accepts used", () => {
+    expect(decodeClientSettings({}).usagePercentDisplay).toBe("left");
+    expect(decodeClientSettings({ usagePercentDisplay: "used" }).usagePercentDisplay).toBe("used");
+  });
+
   it("defaults tool-call density to standard", () => {
     expect(decodeClientSettings({}).toolCallDensity).toBe("standard");
     expect(decodeClientSettings({ toolCallDensity: "compact" }).toolCallDensity).toBe("compact");

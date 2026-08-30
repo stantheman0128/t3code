@@ -72,8 +72,33 @@ export function clampRemainingPercent(remainingPercent: number): number {
   return Math.max(0, Math.min(100, Math.round(remainingPercent)));
 }
 
+export type UsagePercentDisplayMode = "left" | "used";
+
+export function usageFillPercent(
+  remainingPercent: number,
+  display: UsagePercentDisplayMode = "left",
+): number {
+  const remaining = clampRemainingPercent(remainingPercent);
+  return display === "used" ? 100 - remaining : remaining;
+}
+
+export function formatUsagePercent(
+  remainingPercent: number,
+  display: UsagePercentDisplayMode = "left",
+): string {
+  const fill = usageFillPercent(remainingPercent, display);
+  return display === "used" ? `${fill}% used` : `${fill}% left`;
+}
+
 export function formatUsageLeftPercent(remainingPercent: number): string {
-  return `${clampRemainingPercent(remainingPercent)}% left`;
+  return formatUsagePercent(remainingPercent, "left");
+}
+
+export function formatContextUsagePercent(
+  usedPercent: number,
+  display: UsagePercentDisplayMode = "left",
+): string {
+  return formatUsagePercent(100 - usedPercent, display);
 }
 
 /** Compact remaining-time label so quota reset is readable without a tooltip. */

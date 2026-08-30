@@ -583,6 +583,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   compactDisabled: boolean;
   compactDisabledReason: string | null;
   planUsageLimits?: ServerProvider["usageLimits"] | null;
+  usagePercentDisplay?: "left" | "used";
 }) {
   return (
     <>
@@ -594,6 +595,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
+          percentDisplay={props.usagePercentDisplay}
         />
       ) : null}
       {props.isPreparingWorktree ? (
@@ -4480,6 +4482,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       compactDisabled || noProviderAvailable || isSendBusy || isConnecting
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
+                    usagePercentDisplay={settings.usagePercentDisplay}
                     {...(selectedProvider === "claudeAgent"
                       ? { onCompactContext: compactThreadContext }
                       : {})}

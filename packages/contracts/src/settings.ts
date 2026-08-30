@@ -34,6 +34,10 @@ export const ToolCallDensity = Schema.Literals(["compact", "standard", "detailed
 export type ToolCallDensity = typeof ToolCallDensity.Type;
 export const DEFAULT_TOOL_CALL_DENSITY: ToolCallDensity = "standard";
 
+export const UsagePercentDisplay = Schema.Literals(["left", "used"]);
+export type UsagePercentDisplay = typeof UsagePercentDisplay.Type;
+export const DEFAULT_USAGE_PERCENT_DISPLAY: UsagePercentDisplay = "left";
+
 export const PerformanceBarFpsMode = Schema.Literals(["bars", "wave"]);
 export type PerformanceBarFpsMode = typeof PerformanceBarFpsMode.Type;
 export const DEFAULT_PERFORMANCE_BAR_FPS_MODE: PerformanceBarFpsMode = "wave";
@@ -270,6 +274,9 @@ export const ClientSettingsSchema = Schema.Struct({
    */
   layoutMotion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   showProviderUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  usagePercentDisplay: UsagePercentDisplay.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_USAGE_PERCENT_DISPLAY)),
+  ),
   toolCallDensity: ToolCallDensity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TOOL_CALL_DENSITY)),
   ),
@@ -1004,6 +1011,7 @@ export const ClientSettingsPatch = Schema.Struct({
   interfaceAnimations: Schema.optionalKey(Schema.Boolean),
   layoutMotion: Schema.optionalKey(Schema.Boolean),
   showProviderUsage: Schema.optionalKey(Schema.Boolean),
+  usagePercentDisplay: Schema.optionalKey(UsagePercentDisplay),
   toolCallDensity: Schema.optionalKey(ToolCallDensity),
   showPerformanceBar: Schema.optionalKey(Schema.Boolean),
   performanceBarFpsMode: Schema.optionalKey(PerformanceBarFpsMode),

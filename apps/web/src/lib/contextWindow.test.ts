@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { EventId, type OrchestrationThreadActivity, TurnId } from "@t3tools/contracts";
 
 import {
+  contextWindowBreakdown,
   contextWindowBreakdownRows,
   deriveLatestContextWindowSnapshot,
   formatContextWindowTokens,
@@ -75,7 +76,7 @@ describe("contextWindow", () => {
     expect(formatContextWindowTokens(9_200_000)).toBe("9.2m");
   });
 
-  it("builds a Traditional Chinese context breakdown", () => {
+  it("builds a Claude-style English context breakdown with percents", () => {
     const snapshot = deriveLatestContextWindowSnapshot([
       makeActivity("activity-1", "context-window.updated", {
         usedTokens: 81_659,
@@ -89,15 +90,25 @@ describe("contextWindow", () => {
       }),
     ]);
 
-    expect(contextWindowBreakdownRows(snapshot!)).toEqual([
-      { id: "input", label: "輸入", value: "70k" },
-      { id: "cached", label: "快取", value: "10k" },
-      { id: "output", label: "輸出", value: "1.5k" },
-      { id: "reasoning", label: "推理", value: "200" },
-      { id: "last", label: "上一輪", value: "2k" },
-      { id: "remaining", label: "剩餘", value: "177k" },
-      { id: "tools", label: "工具次數", value: "4" },
+    const rows = contextWindowBreakdownRows(snapshot!);
+    expect(rows.map((row) => ({ id: row.id, label: row.label, value: row.value }))).toEqual([
+      { id: "input", label: "Input", value: "60k" },
+      { id: "cached", label: "Cached", value: "10k" },
+      { id: "output", label: "Output", value: "1.5k" },
+      { id: "reasoning", label: "Reasoning", value: "200" },
+      { id: "used", label: "Other", value: "10k" },
+      { id: "remaining", label: "Free space", value: "176.7k" },
+      { id: "tools", label: "Tools", value: "4" },
     ]);
+    expect(rows.find((row) => row.id === "input")?.inBar).toBe(true);
+    expect(rows.find((row) => row.id === "input")?.color).toBe("#3B82F6");
+    expect(rows.find((row) => row.id === "tools")?.inBar).toBe(false);
+
+    const { barSegments } = contextWindowBreakdown(snapshot!);
+    const barTotal = barSegments.reduce((sum, segment) => sum + segment.percent, 0);
+    expect(barTotal).toBeGreaterThan(99);
+    expect(barTotal).toBeLessThan(101);
+    expect(barSegments.some((segment) => segment.id === "remaining")).toBe(true);
   });
 
   it("includes total processed tokens when available", () => {

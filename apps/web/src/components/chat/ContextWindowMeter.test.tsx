@@ -55,12 +55,14 @@ describe("ContextWindowMeter", () => {
       />,
     );
 
-    expect(markup).toContain("ChatGPT Plus limits");
+    expect(markup).toContain("Plan usage limits · ChatGPT Plus");
     expect(markup).toContain("5h");
     expect(markup).toContain("90% left");
     expect(markup).toContain("58% left");
-    expect(markup).toContain("明細");
-    expect(markup).toContain("剩餘");
+    expect(markup).toContain("Free space");
+    expect(markup).toContain("Used");
+    expect(markup).toContain("background-color:#3B82F6");
+    expect(markup).toContain("bg-muted-foreground/25");
   });
 
   it("can label context and plan quota as used", () => {

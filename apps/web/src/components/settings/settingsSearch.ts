@@ -86,7 +86,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "usage-percent-display",
-    title: "用量百分比",
+    title: "Usage percent",
     to: "/settings/appearance",
   },
   {

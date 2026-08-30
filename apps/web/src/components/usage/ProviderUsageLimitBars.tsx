@@ -28,7 +28,7 @@ export function ProviderUsageLimitBars(props: {
             <div className="flex min-w-0 items-center gap-2">
               <span className="w-16 shrink-0 truncate text-muted-foreground">{window.label}</span>
               <div
-                className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-muted-foreground/25"
                 role="progressbar"
                 aria-valuemin={0}
                 aria-valuemax={100}
@@ -36,7 +36,7 @@ export function ProviderUsageLimitBars(props: {
                 aria-label={`${window.label} ${percentLabel}`}
               >
                 <div
-                  className={`h-full rounded-full ${overloaded ? "bg-error" : "bg-primary"}`}
+                  className={`h-full rounded-[2px] ${overloaded ? "bg-error" : "bg-primary"}`}
                   style={{ width: `${fillPercent}%` }}
                 />
               </div>

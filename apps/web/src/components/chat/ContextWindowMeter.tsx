@@ -2,8 +2,9 @@ import type { ProviderUsageLimits, UsagePercentDisplay } from "@t3tools/contract
 import { formatContextUsagePercent } from "@t3tools/shared/usageFormat";
 import { Button } from "../ui/button";
 import {
-  contextWindowBreakdownRows,
+  contextWindowBreakdown,
   type ContextWindowSnapshot,
+  formatContextWindowPercent,
   formatContextWindowTokens,
 } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -37,8 +38,6 @@ export function ContextWindowMeter(props: {
   const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference * (1 - normalizedPercentage / 100);
-  const totalProcessedTokens = usage?.totalProcessedTokens ?? null;
-  const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
   const usageColor = isOverloaded
     ? "var(--color-error)"
@@ -46,7 +45,7 @@ export function ContextWindowMeter(props: {
 
   const planWindows = planUsageLimits?.status === "available" ? planUsageLimits.windows : [];
   const hasPlanLimits = planWindows.length > 0;
-  const breakdownRows = usage ? contextWindowBreakdownRows(usage) : [];
+  const breakdown = usage ? contextWindowBreakdown(usage) : { rows: [], barSegments: [] };
 
   return (
     <Popover>
@@ -100,20 +99,19 @@ export function ContextWindowMeter(props: {
         side="top"
         align="end"
         viewportClassName="p-0"
-        className="w-64 max-w-none text-left whitespace-normal"
+        className="w-[18.5rem] max-w-none text-left whitespace-normal"
       >
         <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">
           {usage ? (
             <div className="flex items-center justify-between gap-3">
-              <div className="font-medium text-muted-foreground text-xs">Context Window</div>
+              <div className="font-medium text-muted-foreground text-xs">Context window</div>
               {usage.maxTokens !== null && usagePercentLabel ? (
                 <div className="text-secondary-label text-[11px] tabular-nums">
-                  <span>{usagePercentLabel}</span>
-                  <span className="mx-1">·</span>
                   <span>
-                    {formatContextWindowTokens(usage.usedTokens)}/
-                    {formatContextWindowTokens(usage.maxTokens ?? null)}
+                    {formatContextWindowTokens(usage.usedTokens)} /{" "}
+                    {formatContextWindowTokens(usage.maxTokens)}
                   </span>
+                  <span className="ml-1 text-muted-foreground">({usagePercentLabel})</span>
                 </div>
               ) : (
                 <div className="text-secondary-label text-[11px] tabular-nums">
@@ -124,39 +122,55 @@ export function ContextWindowMeter(props: {
           ) : null}
           {usage && usage.maxTokens !== null ? (
             <div
-              className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+              className="flex h-1.5 w-full overflow-hidden rounded-[2px] bg-muted-foreground/25"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(normalizedPercentage)}
               aria-label="Context window usage"
             >
-              <div
-                className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
-                style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
-              />
-            </div>
-          ) : null}
-          {showTotalProcessed ? (
-            <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
-              <span className="text-secondary-label">總處理量</span>
-              <span className="font-medium tabular-nums text-secondary-label">
-                {formatContextWindowTokens(totalProcessedTokens)}
-              </span>
-            </div>
-          ) : null}
-          {breakdownRows.length > 0 ? (
-            <div className="flex flex-col gap-1">
-              <div className="font-medium text-muted-foreground text-xs">明細</div>
-              {breakdownRows.map((row) => (
+              {breakdown.barSegments.length > 0 ? (
+                breakdown.barSegments.map((segment) => (
+                  <div
+                    key={segment.id}
+                    className="h-full min-w-px"
+                    style={{
+                      width: `${segment.percent}%`,
+                      backgroundColor: segment.color,
+                    }}
+                  />
+                ))
+              ) : (
                 <div
-                  key={row.id}
-                  className="flex items-center justify-between gap-3 text-[11px] leading-4"
-                >
-                  <span className="text-secondary-label">{row.label}</span>
-                  <span className="font-medium tabular-nums text-secondary-label">{row.value}</span>
-                </div>
-              ))}
+                  className="h-full rounded-[2px] transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
+                  style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
+                />
+              )}
+            </div>
+          ) : null}
+          {breakdown.rows.length > 0 ? (
+            <div className="flex flex-col gap-[5px]">
+              {breakdown.rows.map((row) => {
+                const percentLabel = formatContextWindowPercent(row.percent);
+                return (
+                  <div key={row.id} className="flex items-center gap-2 text-[11px] leading-4">
+                    {row.color ? (
+                      <span
+                        className="size-[8px] shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: row.color }}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="size-[8px] shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-foreground">{row.label}</span>
+                    <span className="shrink-0 tabular-nums text-secondary-label">{row.value}</span>
+                    <span className="w-[2.75rem] shrink-0 text-right tabular-nums text-muted-foreground">
+                      {percentLabel ?? (row.id === "tools" || row.id === "processed" ? "—" : "")}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
           {usage?.compactsAutomatically ? (
@@ -165,9 +179,13 @@ export function ContextWindowMeter(props: {
             </div>
           ) : null}
           {hasPlanLimits ? (
-            <div className="flex flex-col gap-1.5">
+            <div
+              className={`flex flex-col gap-1.5 ${usage ? "border-border/70 border-t pt-2" : ""}`}
+            >
               <div className="font-medium text-muted-foreground text-xs">
-                {planUsageLimits?.planLabel ? `${planUsageLimits.planLabel} limits` : "Plan limits"}
+                {planUsageLimits?.planLabel
+                  ? `Plan usage limits · ${planUsageLimits.planLabel}`
+                  : "Plan usage limits"}
               </div>
               <ProviderUsageLimitBars windows={planWindows} percentDisplay={percentDisplay} />
             </div>

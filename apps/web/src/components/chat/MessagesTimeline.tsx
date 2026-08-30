@@ -1070,6 +1070,19 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const [draft, setDraft] = useState(editableText);
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
+  if (
+    editableText.trim().length === 0 &&
+    regularImages.length === 0 &&
+    previewImages.length === 0 &&
+    userVideos.length === 0 &&
+    otherUserFiles.length === 0 &&
+    unknownAttachments.length === 0 &&
+    terminalContexts.length === 0 &&
+    elementContexts.length === 0 &&
+    previewAnnotations.length === 0
+  ) {
+    return null;
+  }
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
   const canSendEditedMessage =
     canRevertAgentWork && !activity.isWorking && !activity.isRevertingCheckpoint;

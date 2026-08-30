@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isLanguageInstructionOnly,
   isLeadingSlashPrompt,
   prependTraditionalChineseInstruction,
+  stripLanguageInstruction,
   TRADITIONAL_CHINESE_INSTRUCTION,
   TRADITIONAL_CHINESE_INSTRUCTION_BLOCK,
 } from "./traditionalChineseInstruction.ts";
@@ -38,5 +40,14 @@ describe("prependTraditionalChineseInstruction", () => {
     expect(slash.injected).toBe(false);
     expect(slash.parts).toEqual([makeTextPart("/compact")]);
     expect(isLeadingSlashPrompt("/compact")).toBe(true);
+  });
+});
+
+describe("stripLanguageInstruction", () => {
+  it("removes the injected language block from visible user text", () => {
+    const leaked = `${TRADITIONAL_CHINESE_INSTRUCTION_BLOCK} 上衣論的更動`;
+    expect(stripLanguageInstruction(leaked)).toBe("上衣論的更動");
+    expect(isLanguageInstructionOnly(TRADITIONAL_CHINESE_INSTRUCTION_BLOCK)).toBe(true);
+    expect(isLanguageInstructionOnly(leaked)).toBe(false);
   });
 });

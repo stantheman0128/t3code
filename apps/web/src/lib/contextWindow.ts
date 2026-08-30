@@ -96,48 +96,192 @@ export function deriveLatestContextWindowSnapshot(
   return null;
 }
 
+export const CONTEXT_WINDOW_SEGMENT_COLORS = {
+  input: "#3B82F6",
+  cached: "#F97316",
+  output: "#22C55E",
+  reasoning: "#EAB308",
+  used: "#3B82F6",
+  remaining: "color-mix(in oklab, var(--color-muted-foreground) 38%, transparent)",
+} as const;
+
 export interface ContextWindowBreakdownRow {
   readonly id: string;
   readonly label: string;
   readonly value: string;
+  readonly tokens: number | null;
+  readonly percent: number | null;
+  readonly color: string | null;
+  readonly inBar: boolean;
 }
 
-function pushTokenRow(
+export interface ContextWindowBarSegment {
+  readonly id: string;
+  readonly percent: number;
+  readonly color: string;
+}
+
+function tokenPercent(tokens: number, maxTokens: number | null): number | null {
+  if (maxTokens === null || maxTokens <= 0) {
+    return null;
+  }
+  return Math.max(0, (tokens / maxTokens) * 100);
+}
+
+export function formatContextWindowPercent(percent: number | null): string | null {
+  if (percent === null || !Number.isFinite(percent)) {
+    return null;
+  }
+  if (percent > 0 && percent < 0.1) {
+    return "<0.1%";
+  }
+  return `${percent.toFixed(1)}%`;
+}
+
+function pushCategoryRow(
   rows: ContextWindowBreakdownRow[],
-  id: string,
-  label: string,
-  value: number | null,
-  options?: { readonly skipZero?: boolean },
+  input: {
+    readonly id: string;
+    readonly label: string;
+    readonly tokens: number | null;
+    readonly maxTokens: number | null;
+    readonly color: string | null;
+    readonly inBar: boolean;
+    readonly skipZero?: boolean;
+  },
 ): void {
-  if (value === null) {
+  if (input.tokens === null) {
     return;
   }
-  if (options?.skipZero && value === 0) {
+  if (input.skipZero && input.tokens === 0) {
     return;
   }
-  rows.push({ id, label, value: formatContextWindowTokens(value) });
+  rows.push({
+    id: input.id,
+    label: input.label,
+    value: formatContextWindowTokens(input.tokens),
+    tokens: input.tokens,
+    percent: tokenPercent(input.tokens, input.maxTokens),
+    color: input.color,
+    inBar: input.inBar && input.tokens > 0,
+  });
 }
 
 export function contextWindowBreakdownRows(
   usage: ContextWindowSnapshot,
 ): ReadonlyArray<ContextWindowBreakdownRow> {
+  return contextWindowBreakdown(usage).rows;
+}
+
+export function contextWindowBreakdown(usage: ContextWindowSnapshot): {
+  readonly rows: ReadonlyArray<ContextWindowBreakdownRow>;
+  readonly barSegments: ReadonlyArray<ContextWindowBarSegment>;
+} {
   const rows: ContextWindowBreakdownRow[] = [];
-  pushTokenRow(rows, "input", "輸入", usage.inputTokens);
-  pushTokenRow(rows, "cached", "快取", usage.cachedInputTokens, { skipZero: true });
-  pushTokenRow(rows, "output", "輸出", usage.outputTokens);
-  pushTokenRow(rows, "reasoning", "推理", usage.reasoningOutputTokens, { skipZero: true });
-  pushTokenRow(rows, "last", "上一輪", usage.lastUsedTokens, { skipZero: true });
-  if (usage.remainingTokens !== null) {
-    rows.push({
-      id: "remaining",
-      label: "剩餘",
-      value: formatContextWindowTokens(usage.remainingTokens),
+  const maxTokens = usage.maxTokens;
+  const cached = usage.cachedInputTokens;
+  const rawInput = usage.inputTokens;
+  const uncachedInput =
+    rawInput !== null && cached !== null ? Math.max(0, rawInput - cached) : rawInput;
+
+  pushCategoryRow(rows, {
+    id: "input",
+    label: "Input",
+    tokens: uncachedInput,
+    maxTokens,
+    color: CONTEXT_WINDOW_SEGMENT_COLORS.input,
+    inBar: true,
+  });
+  pushCategoryRow(rows, {
+    id: "cached",
+    label: "Cached",
+    tokens: cached,
+    maxTokens,
+    color: CONTEXT_WINDOW_SEGMENT_COLORS.cached,
+    inBar: true,
+    skipZero: true,
+  });
+  pushCategoryRow(rows, {
+    id: "output",
+    label: "Output",
+    tokens: usage.outputTokens,
+    maxTokens,
+    color: CONTEXT_WINDOW_SEGMENT_COLORS.output,
+    inBar: true,
+  });
+  pushCategoryRow(rows, {
+    id: "reasoning",
+    label: "Reasoning",
+    tokens: usage.reasoningOutputTokens,
+    maxTokens,
+    color: CONTEXT_WINDOW_SEGMENT_COLORS.reasoning,
+    inBar: true,
+    skipZero: true,
+  });
+
+  const categorizedTokens = rows.reduce((sum, row) => sum + (row.inBar ? (row.tokens ?? 0) : 0), 0);
+  if (categorizedTokens === 0 && usage.usedTokens > 0) {
+    pushCategoryRow(rows, {
+      id: "used",
+      label: "Used",
+      tokens: usage.usedTokens,
+      maxTokens,
+      color: CONTEXT_WINDOW_SEGMENT_COLORS.used,
+      inBar: true,
+    });
+  } else if (usage.usedTokens > categorizedTokens + 1) {
+    pushCategoryRow(rows, {
+      id: "used",
+      label: "Other",
+      tokens: usage.usedTokens - categorizedTokens,
+      maxTokens,
+      color: CONTEXT_WINDOW_SEGMENT_COLORS.used,
+      inBar: true,
     });
   }
-  if (usage.toolUses !== null && usage.toolUses > 0) {
-    rows.push({ id: "tools", label: "工具次數", value: String(usage.toolUses) });
+
+  pushCategoryRow(rows, {
+    id: "remaining",
+    label: "Free space",
+    tokens: usage.remainingTokens,
+    maxTokens,
+    color: CONTEXT_WINDOW_SEGMENT_COLORS.remaining,
+    inBar: true,
+  });
+
+  if (usage.totalProcessedTokens !== null && usage.totalProcessedTokens > 0) {
+    rows.push({
+      id: "processed",
+      label: "Total processed",
+      value: formatContextWindowTokens(usage.totalProcessedTokens),
+      tokens: usage.totalProcessedTokens,
+      percent: null,
+      color: null,
+      inBar: false,
+    });
   }
-  return rows;
+
+  if (usage.toolUses !== null && usage.toolUses > 0) {
+    rows.push({
+      id: "tools",
+      label: "Tools",
+      value: String(usage.toolUses),
+      tokens: null,
+      percent: null,
+      color: null,
+      inBar: false,
+    });
+  }
+
+  const barSegments = rows
+    .filter((row) => row.inBar && row.percent !== null && row.percent > 0 && row.color !== null)
+    .map((row) => ({
+      id: row.id,
+      percent: row.percent ?? 0,
+      color: row.color ?? CONTEXT_WINDOW_SEGMENT_COLORS.used,
+    }));
+
+  return { rows, barSegments };
 }
 
 export function formatContextWindowTokens(value: number | null): string {
@@ -147,11 +291,9 @@ export function formatContextWindowTokens(value: number | null): string {
   if (value < 1_000) {
     return `${Math.round(value)}`;
   }
-  if (value < 10_000) {
-    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
-  }
   if (value < 1_000_000) {
-    return `${Math.round(value / 1_000)}k`;
+    const thousands = value / 1_000;
+    return `${thousands.toFixed(1).replace(/\.0$/, "")}k`;
   }
   return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
 }

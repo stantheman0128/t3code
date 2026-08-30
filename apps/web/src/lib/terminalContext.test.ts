@@ -109,6 +109,15 @@ describe("terminalContext", () => {
     });
   });
 
+  it("hides an injected language instruction from the user bubble", () => {
+    const leaked =
+      "<language>When writing Chinese, always use Traditional Chinese (Taiwan, zh-TW) unless the user explicitly asks for Simplified Chinese. If the user writes Simplified Chinese, still reply in Traditional Chinese. Do not mix the two.</language> 上衣論的更動";
+    expect(deriveDisplayedUserMessageState(leaked)).toMatchObject({
+      visibleText: "上衣論的更動",
+      copyText: "上衣論的更動",
+    });
+  });
+
   it("derives displayed user message state from terminal context prompts", () => {
     const prompt = appendTerminalContextsToPrompt("Investigate this", [makeContext()]);
     expect(deriveDisplayedUserMessageState(prompt)).toEqual({

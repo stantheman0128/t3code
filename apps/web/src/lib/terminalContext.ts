@@ -245,15 +245,23 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
   };
 }
 
+const LANGUAGE_INSTRUCTION_BLOCK_RE = /<language>[\s\S]*?<\/language>\s*/g;
+
+/** Drop the standing language tag if a provider echoed it as user text. */
+export function stripLanguageInstructionFromUserText(text: string): string {
+  return text.replace(LANGUAGE_INSTRUCTION_BLOCK_RE, "").replace(/^\s+/, "");
+}
+
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
   // Order matters: send-time appends `<terminal_context>` first, then
   // `<element_context>` last. Strip element first so the (now-trailing)
   // terminal block can be matched by `extractTrailingTerminalContexts`.
-  const extractedElement = extractTrailingElementContexts(prompt);
+  const visiblePrompt = stripLanguageInstructionFromUserText(prompt);
+  const extractedElement = extractTrailingElementContexts(visiblePrompt);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {
     visibleText: extractedTerminal.promptText,
-    copyText: prompt,
+    copyText: stripLanguageInstructionFromUserText(prompt),
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,

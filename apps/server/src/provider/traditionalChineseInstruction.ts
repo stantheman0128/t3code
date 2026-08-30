@@ -9,6 +9,18 @@ export const TRADITIONAL_CHINESE_INSTRUCTION =
 
 export const TRADITIONAL_CHINESE_INSTRUCTION_BLOCK = `<language>${TRADITIONAL_CHINESE_INSTRUCTION}</language>`;
 
+const LANGUAGE_INSTRUCTION_BLOCK_RE = /<language>[\s\S]*?<\/language>\s*/g;
+
+/** Strip injected language tags so they never show as chat text. */
+export function stripLanguageInstruction(text: string): string {
+  return text.replace(LANGUAGE_INSTRUCTION_BLOCK_RE, "").replace(/^\s+/, "");
+}
+
+export function isLanguageInstructionOnly(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && stripLanguageInstruction(trimmed).length === 0;
+}
+
 export function isLeadingSlashPrompt(text: string | undefined): boolean {
   return Boolean(text?.trim().startsWith("/"));
 }

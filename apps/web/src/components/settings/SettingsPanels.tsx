@@ -168,8 +168,8 @@ const TOOL_CALL_DENSITY_LABELS: Record<ToolCallDensity, string> = {
 };
 
 const USAGE_PERCENT_DISPLAY_LABELS: Record<UsagePercentDisplay, string> = {
-  left: "剩餘 N% left",
-  used: "已用 N% used",
+  left: "N% left",
+  used: "N% used",
 };
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
@@ -502,7 +502,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Provider usage"]
         : []),
       ...(settings.usagePercentDisplay !== DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay
-        ? ["用量百分比"]
+        ? ["Usage percent"]
         : []),
       ...(settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome
         ? ["Provider chrome"]
@@ -1213,11 +1213,11 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("usage-percent-display")}
-          description="計畫額度跟 context window 一起切：顯示還剩多少，或已經用了多少。"
+          description="Plan quota and the context window use the same switch: leftover, or already used."
           resetAction={
             settings.usagePercentDisplay !== DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay ? (
               <SettingResetButton
-                label="用量百分比"
+                label="Usage percent"
                 onClick={() =>
                   updateSettings({
                     usagePercentDisplay: DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay,
@@ -1235,7 +1235,7 @@ export function AppearanceSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger className="w-full sm:w-40" aria-label="用量百分比">
+              <SelectTrigger className="w-full sm:w-40" aria-label="Usage percent">
                 <SelectValue>
                   {USAGE_PERCENT_DISPLAY_LABELS[settings.usagePercentDisplay]}
                 </SelectValue>

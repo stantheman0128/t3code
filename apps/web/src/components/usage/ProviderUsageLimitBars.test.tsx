@@ -27,6 +27,39 @@ describe("ProviderUsageLimitBars", () => {
     expect(html).not.toContain("title=");
   });
 
+  it("fills leftover 65% as 65% of the track in left mode, matching Claude leftover", () => {
+    const html = renderToStaticMarkup(
+      <ProviderUsageLimitBars
+        percentDisplay="left"
+        windows={[
+          { id: "five_hour", label: "5h", remainingPercent: 65, resetsAt: null },
+          { id: "seven_day", label: "Week", remainingPercent: 7, resetsAt: null },
+        ]}
+      />,
+    );
+    expect(html).toContain("65% left");
+    expect(html).toContain("width:65%");
+    expect(html).toContain("7% left");
+    expect(html).toContain("width:7%");
+    expect(html).toContain("bg-muted-foreground/25");
+  });
+
+  it("inverts leftover 65% to 35% used fill when the setting is used", () => {
+    const html = renderToStaticMarkup(
+      <ProviderUsageLimitBars
+        percentDisplay="used"
+        windows={[
+          { id: "five_hour", label: "5h", remainingPercent: 65, resetsAt: null },
+          { id: "seven_day", label: "Week", remainingPercent: 7, resetsAt: null },
+        ]}
+      />,
+    );
+    expect(html).toContain("35% used");
+    expect(html).toContain("width:35%");
+    expect(html).toContain("93% used");
+    expect(html).toContain("width:93%");
+  });
+
   it("can fill and label the same window as used", () => {
     const html = renderToStaticMarkup(
       <ProviderUsageLimitBars

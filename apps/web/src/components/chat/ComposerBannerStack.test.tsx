@@ -107,6 +107,32 @@ describe("ComposerBannerStack", () => {
     expect(markup).toMatch(
       /data-slot="alert-title"[^>]*>Monitoring[\s\S]*data-slot="alert-action"[\s\S]*Stop/,
     );
+    const titleAt = markup.indexOf(">Monitoring");
+    const contentAt = markup.indexOf("flex min-w-0 flex-1 flex-col");
+    const iconAt = markup.indexOf("size-4");
+    expect(contentAt).toBeGreaterThan(iconAt);
+    expect(titleAt).toBeGreaterThan(contentAt);
+  });
+
+  it("keeps a title plus description out of the icon box", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerBannerStack
+        items={[
+          {
+            id: "background-liveness:desc",
+            variant: "default",
+            icon: <span aria-hidden="true">•</span>,
+            title: "Monitoring",
+            description: "watching src",
+            actions: <button type="button">Stop</button>,
+          },
+        ]}
+      />,
+    );
+
+    const contentAt = markup.indexOf("flex min-w-0 flex-1 flex-col");
+    expect(markup.indexOf(">Monitoring")).toBeGreaterThan(contentAt);
+    expect(markup.indexOf("watching src")).toBeGreaterThan(contentAt);
   });
 
   it("renders a disabled compaction action on the shared accessible banner surface", () => {

@@ -227,11 +227,13 @@ function ComposerBannerStackAlert({
           ) : null}
         </button>
       ) : (
-        <>
-          <AlertTitle className="min-w-0 truncate">{item.title}</AlertTitle>
-          {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
-        </>
+        <AlertTitle data-slot="alert-title" className="min-w-0 truncate">
+          {item.title}
+        </AlertTitle>
       )}
+      {!item.onActivate && item.description ? (
+        <AlertDescription data-slot="alert-description">{item.description}</AlertDescription>
+      ) : null}
       {item.actions || item.onDismiss ? (
         <AlertAction
           className={cn(

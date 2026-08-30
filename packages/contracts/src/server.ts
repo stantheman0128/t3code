@@ -181,8 +181,8 @@ export type ProviderUsageLimitsStatus = typeof ProviderUsageLimitsStatus.Type;
 /**
  * Subscription remaining quota for one configured provider instance.
  * Credentials and limits belong to the instance, not the thread.
- * `windows.remainingPercent` is remaining of that window. Clients invert it
- * and label "N% used" so every provider matches Codex.
+ * `windows.remainingPercent` is remaining of that window. Clients label
+ * it "N% left" so every provider matches ChatGPT Usage.
  */
 export const ProviderUsageLimits = Schema.Struct({
   status: ProviderUsageLimitsStatus,

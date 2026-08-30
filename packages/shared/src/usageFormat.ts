@@ -64,19 +64,16 @@ export function formatCodexWindowLabel(minutes: number | null): string | null {
   return `${minutes}m`;
 }
 
-/**
- * Quota windows are stored as remaining. Display them as used so every
- * provider matches Codex (`N% used`) instead of mixing remaining and used.
- */
-export function usedPercentFromRemaining(remainingPercent: number): number {
+/** Quota windows are stored as remaining. ChatGPT's Usage menu says `N% left`. */
+export function clampRemainingPercent(remainingPercent: number): number {
   if (!Number.isFinite(remainingPercent)) {
     return 0;
   }
-  return Math.max(0, Math.min(100, Math.round(100 - remainingPercent)));
+  return Math.max(0, Math.min(100, Math.round(remainingPercent)));
 }
 
-export function formatUsageUsedPercent(remainingPercent: number): string {
-  return `${usedPercentFromRemaining(remainingPercent)}% used`;
+export function formatUsageLeftPercent(remainingPercent: number): string {
+  return `${clampRemainingPercent(remainingPercent)}% left`;
 }
 
 /** Compact remaining-time label so quota reset is readable without a tooltip. */

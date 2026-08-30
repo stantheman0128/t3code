@@ -9,8 +9,8 @@ import {
   formatCodexWindowLabel,
   formatDateTimeShort,
   formatUsageResetLabel,
-  formatUsageUsedPercent,
-  usedPercentFromRemaining,
+  formatUsageLeftPercent,
+  clampRemainingPercent,
   formatHourShort,
   formatOptionalUsd,
   formatRelativeHourShort,
@@ -110,12 +110,12 @@ describe("formatUsageResetLabel", () => {
   });
 });
 
-describe("formatUsageUsedPercent", () => {
-  it("inverts remaining quota so every provider shows used, like Codex", () => {
-    expect(usedPercentFromRemaining(58)).toBe(42);
-    expect(formatUsageUsedPercent(58)).toBe("42% used");
-    expect(formatUsageUsedPercent(100)).toBe("0% used");
-    expect(formatUsageUsedPercent(0)).toBe("100% used");
+describe("formatUsageLeftPercent", () => {
+  it("labels remaining quota the way ChatGPT does, `N% left`", () => {
+    expect(clampRemainingPercent(58)).toBe(58);
+    expect(formatUsageLeftPercent(58)).toBe("58% left");
+    expect(formatUsageLeftPercent(100)).toBe("100% left");
+    expect(formatUsageLeftPercent(0)).toBe("0% left");
   });
 });
 

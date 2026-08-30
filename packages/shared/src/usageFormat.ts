@@ -64,6 +64,21 @@ export function formatCodexWindowLabel(minutes: number | null): string | null {
   return `${minutes}m`;
 }
 
+/**
+ * Quota windows are stored as remaining. Display them as used so every
+ * provider matches Codex (`N% used`) instead of mixing remaining and used.
+ */
+export function usedPercentFromRemaining(remainingPercent: number): number {
+  if (!Number.isFinite(remainingPercent)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(100 - remainingPercent)));
+}
+
+export function formatUsageUsedPercent(remainingPercent: number): string {
+  return `${usedPercentFromRemaining(remainingPercent)}% used`;
+}
+
 /** Compact remaining-time label so quota reset is readable without a tooltip. */
 export function formatUsageResetLabel(
   resetsAt: string | null | undefined,

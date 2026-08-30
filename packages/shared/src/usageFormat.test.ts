@@ -9,6 +9,8 @@ import {
   formatCodexWindowLabel,
   formatDateTimeShort,
   formatUsageResetLabel,
+  formatUsageUsedPercent,
+  usedPercentFromRemaining,
   formatHourShort,
   formatOptionalUsd,
   formatRelativeHourShort,
@@ -105,6 +107,15 @@ describe("formatUsageResetLabel", () => {
     expect(formatUsageResetLabel("2026-08-28T15:00:00.000Z", now)).toBe("resets in 3h");
     expect(formatUsageResetLabel("2026-08-28T12:20:00.000Z", now)).toBe("resets in 20m");
     expect(formatUsageResetLabel("2026-08-28T11:00:00.000Z", now)).toBe("resets soon");
+  });
+});
+
+describe("formatUsageUsedPercent", () => {
+  it("inverts remaining quota so every provider shows used, like Codex", () => {
+    expect(usedPercentFromRemaining(58)).toBe(42);
+    expect(formatUsageUsedPercent(58)).toBe("42% used");
+    expect(formatUsageUsedPercent(100)).toBe("0% used");
+    expect(formatUsageUsedPercent(0)).toBe("100% used");
   });
 });
 

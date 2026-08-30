@@ -57,7 +57,7 @@ describe("ContextWindowMeter", () => {
 
     expect(markup).toContain("ChatGPT Plus limits");
     expect(markup).toContain("5h");
-    expect(markup).toContain("58%");
+    expect(markup).toContain("42% used");
   });
 
   it("explains why the compact action is disabled", () => {

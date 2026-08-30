@@ -59,6 +59,8 @@ describe("ContextWindowMeter", () => {
     expect(markup).toContain("5h");
     expect(markup).toContain("90% left");
     expect(markup).toContain("58% left");
+    expect(markup).toContain("明細");
+    expect(markup).toContain("剩餘");
   });
 
   it("can label context and plan quota as used", () => {

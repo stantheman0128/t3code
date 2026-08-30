@@ -510,6 +510,7 @@ describe("buildCodexDeveloperInstructions", () => {
     NodeAssert.match(instructions, /T3 Code/);
     NodeAssert.match(instructions, /Codex harness/);
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
+    NodeAssert.match(instructions, /Traditional Chinese/);
   });
 
   it("includes runtime info alongside plan mode instructions", () => {

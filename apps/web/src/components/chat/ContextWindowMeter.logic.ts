@@ -12,6 +12,12 @@ import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils
 export const CLAUDE_RESUME_COMPACTION_MINUTES = 70;
 export const CLAUDE_RESUME_COMPACTION_TOKENS = 100_000;
 
+export const MANUAL_COMPACTION_DRIVERS = new Set(["claudeAgent", "codex", "grok"]);
+
+export function supportsManualCompaction(driver: string | null | undefined): boolean {
+  return driver != null && MANUAL_COMPACTION_DRIVERS.has(driver);
+}
+
 export function hasAvailableClaudeCompactionProvider(input: {
   readonly providers: ReadonlyArray<ProviderInstanceEntry>;
   readonly instanceId: ProviderInstanceId | null;

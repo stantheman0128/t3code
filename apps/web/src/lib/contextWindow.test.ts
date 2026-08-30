@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EventId, type OrchestrationThreadActivity, TurnId } from "@t3tools/contracts";
 
-import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "./contextWindow";
+import {
+  contextWindowBreakdownRows,
+  deriveLatestContextWindowSnapshot,
+  formatContextWindowTokens,
+} from "./contextWindow";
 
 function makeActivity(id: string, kind: string, payload: unknown): OrchestrationThreadActivity {
   return {
@@ -69,6 +73,31 @@ describe("contextWindow", () => {
     expect(formatContextWindowTokens(14_000)).toBe("14k");
     expect(formatContextWindowTokens(258_000)).toBe("258k");
     expect(formatContextWindowTokens(9_200_000)).toBe("9.2m");
+  });
+
+  it("builds a Traditional Chinese context breakdown", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 81_659,
+        maxTokens: 258_400,
+        inputTokens: 70_000,
+        cachedInputTokens: 10_000,
+        outputTokens: 1_500,
+        reasoningOutputTokens: 200,
+        lastUsedTokens: 2_000,
+        toolUses: 4,
+      }),
+    ]);
+
+    expect(contextWindowBreakdownRows(snapshot!)).toEqual([
+      { id: "input", label: "輸入", value: "70k" },
+      { id: "cached", label: "快取", value: "10k" },
+      { id: "output", label: "輸出", value: "1.5k" },
+      { id: "reasoning", label: "推理", value: "200" },
+      { id: "last", label: "上一輪", value: "2k" },
+      { id: "remaining", label: "剩餘", value: "177k" },
+      { id: "tools", label: "工具次數", value: "4" },
+    ]);
   });
 
   it("includes total processed tokens when available", () => {

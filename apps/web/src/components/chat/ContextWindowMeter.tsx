@@ -1,7 +1,11 @@
 import type { ProviderUsageLimits, UsagePercentDisplay } from "@t3tools/contracts";
 import { formatContextUsagePercent } from "@t3tools/shared/usageFormat";
 import { Button } from "../ui/button";
-import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
+import {
+  contextWindowBreakdownRows,
+  type ContextWindowSnapshot,
+  formatContextWindowTokens,
+} from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 import { ProviderUsageLimitBars } from "../usage/ProviderUsageLimitBars";
@@ -42,6 +46,7 @@ export function ContextWindowMeter(props: {
 
   const planWindows = planUsageLimits?.status === "available" ? planUsageLimits.windows : [];
   const hasPlanLimits = planWindows.length > 0;
+  const breakdownRows = usage ? contextWindowBreakdownRows(usage) : [];
 
   return (
     <Popover>
@@ -134,10 +139,24 @@ export function ContextWindowMeter(props: {
           ) : null}
           {showTotalProcessed ? (
             <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
-              <span className="text-secondary-label">Total processed</span>
+              <span className="text-secondary-label">總處理量</span>
               <span className="font-medium tabular-nums text-secondary-label">
                 {formatContextWindowTokens(totalProcessedTokens)}
               </span>
+            </div>
+          ) : null}
+          {breakdownRows.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <div className="font-medium text-muted-foreground text-xs">明細</div>
+              {breakdownRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex items-center justify-between gap-3 text-[11px] leading-4"
+                >
+                  <span className="text-secondary-label">{row.label}</span>
+                  <span className="font-medium tabular-nums text-secondary-label">{row.value}</span>
+                </div>
+              ))}
             </div>
           ) : null}
           {usage?.compactsAutomatically ? (

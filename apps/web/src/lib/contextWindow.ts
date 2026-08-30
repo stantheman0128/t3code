@@ -96,6 +96,50 @@ export function deriveLatestContextWindowSnapshot(
   return null;
 }
 
+export interface ContextWindowBreakdownRow {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+}
+
+function pushTokenRow(
+  rows: ContextWindowBreakdownRow[],
+  id: string,
+  label: string,
+  value: number | null,
+  options?: { readonly skipZero?: boolean },
+): void {
+  if (value === null) {
+    return;
+  }
+  if (options?.skipZero && value === 0) {
+    return;
+  }
+  rows.push({ id, label, value: formatContextWindowTokens(value) });
+}
+
+export function contextWindowBreakdownRows(
+  usage: ContextWindowSnapshot,
+): ReadonlyArray<ContextWindowBreakdownRow> {
+  const rows: ContextWindowBreakdownRow[] = [];
+  pushTokenRow(rows, "input", "輸入", usage.inputTokens);
+  pushTokenRow(rows, "cached", "快取", usage.cachedInputTokens, { skipZero: true });
+  pushTokenRow(rows, "output", "輸出", usage.outputTokens);
+  pushTokenRow(rows, "reasoning", "推理", usage.reasoningOutputTokens, { skipZero: true });
+  pushTokenRow(rows, "last", "上一輪", usage.lastUsedTokens, { skipZero: true });
+  if (usage.remainingTokens !== null) {
+    rows.push({
+      id: "remaining",
+      label: "剩餘",
+      value: formatContextWindowTokens(usage.remainingTokens),
+    });
+  }
+  if (usage.toolUses !== null && usage.toolUses > 0) {
+    rows.push({ id: "tools", label: "工具次數", value: String(usage.toolUses) });
+  }
+  return rows;
+}
+
 export function formatContextWindowTokens(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return "0";

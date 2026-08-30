@@ -152,7 +152,10 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
-import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
+import {
+  resolveContextWindowModelDisplayName,
+  supportsManualCompaction,
+} from "./ContextWindowMeter.logic";
 import {
   attachVideoThumbnail,
   buildExpandedImagePreview,
@@ -4483,7 +4486,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
                     usagePercentDisplay={settings.usagePercentDisplay}
-                    {...(selectedProvider === "claudeAgent"
+                    {...(supportsManualCompaction(selectedProvider)
                       ? { onCompactContext: compactThreadContext }
                       : {})}
                   />

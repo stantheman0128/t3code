@@ -53,6 +53,10 @@ const CODEX_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
     input: { hint: "[status|create|steer|pause|resume|clear|reset] [objective]" },
   },
   {
+    name: "compact",
+    description: "Compact this thread and free context",
+  },
+  {
     name: "feedback",
     description: "Send this thread and Codex logs to OpenAI",
     input: { hint: "Describe the issue (optional)" },

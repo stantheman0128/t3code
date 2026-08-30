@@ -7,6 +7,7 @@ import {
   hasDismissedResumeCompaction,
   resolveContextWindowModelDisplayName,
   shouldOfferResumeCompaction,
+  supportsManualCompaction,
 } from "./ContextWindowMeter.logic";
 
 function claudeProvider(input: {
@@ -29,6 +30,16 @@ function claudeProvider(input: {
     skills: [],
   };
 }
+
+describe("supportsManualCompaction", () => {
+  it("covers Claude, Codex, and Grok compact commands", () => {
+    expect(supportsManualCompaction("claudeAgent")).toBe(true);
+    expect(supportsManualCompaction("codex")).toBe(true);
+    expect(supportsManualCompaction("grok")).toBe(true);
+    expect(supportsManualCompaction("cursor")).toBe(false);
+    expect(supportsManualCompaction("opencode")).toBe(false);
+  });
+});
 
 describe("hasAvailableClaudeCompactionProvider", () => {
   const originalInstanceId = ProviderInstanceId.make("claude_original");

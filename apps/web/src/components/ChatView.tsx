@@ -346,6 +346,7 @@ import {
   hasAvailableClaudeCompactionProvider,
   hasDismissedResumeCompaction,
   shouldOfferResumeCompaction,
+  supportsManualCompaction,
 } from "./chat/ContextWindowMeter.logic";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
@@ -3218,29 +3219,33 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
-  const compactionProviderAvailable = useMemo(
-    () =>
-      hasAvailableClaudeCompactionProvider({
-        providers: applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(providerStatuses),
-          settings,
-        ),
-        instanceId: activeProviderInstanceId,
-        lockedInstanceId: lockedProvider
-          ? (activeThread?.session?.providerInstanceId ??
-            activeThread?.modelSelection.instanceId ??
-            null)
-          : null,
-      }),
-    [
-      activeProviderInstanceId,
-      activeThread?.modelSelection.instanceId,
-      activeThread?.session?.providerInstanceId,
-      lockedProvider,
-      providerStatuses,
+  const compactionProviderAvailable = useMemo(() => {
+    const providers = applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(providerStatuses),
       settings,
-    ],
-  );
+    );
+    const lockedInstanceId = lockedProvider
+      ? (activeThread?.session?.providerInstanceId ??
+        activeThread?.modelSelection.instanceId ??
+        null)
+      : null;
+    if (selectedProvider === "claudeAgent") {
+      return hasAvailableClaudeCompactionProvider({
+        providers,
+        instanceId: activeProviderInstanceId,
+        lockedInstanceId,
+      });
+    }
+    return supportsManualCompaction(selectedProvider);
+  }, [
+    activeProviderInstanceId,
+    activeThread?.modelSelection.instanceId,
+    activeThread?.session?.providerInstanceId,
+    lockedProvider,
+    providerStatuses,
+    selectedProvider,
+    settings,
+  ]);
   const activeProviderStatus = useMemo(() => {
     if (activeProviderInstanceId) {
       return (
@@ -5419,7 +5424,6 @@ function ChatViewContent(props: ChatViewProps) {
     !activeThread ||
     !activeProject ||
     !isServerThread ||
-    selectedProvider !== "claudeAgent" ||
     !compactionProviderAvailable ||
     isWorking ||
     threadDetailLoading ||
@@ -5436,7 +5440,7 @@ function ChatViewContent(props: ChatViewProps) {
       : !activeProject
         ? "Choose a project before compacting"
         : !compactionProviderAvailable
-          ? "Enable a Claude provider before compacting"
+          ? "Enable this provider before compacting"
           : "Compacting is unavailable right now"
     : null;
   const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {

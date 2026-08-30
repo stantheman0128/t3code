@@ -17,6 +17,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import {
   createModelCapabilities,
+  getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
@@ -34,6 +35,8 @@ const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
 /** Composer option id for Grok reasoning effort. Same shape as Codex. */
 export const GROK_REASONING_EFFORT_OPTION_ID = "reasoningEffort";
+/** Composer option id for xAI priority / Fast Mode. Same id as Claude and Cursor. */
+export const GROK_FAST_MODE_OPTION_ID = "fastMode";
 
 const GROK_SPAWN_EFFORT_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 const GROK_REASONING_EFFORT_TOKEN = /^[a-z0-9][a-z0-9._-]{0,31}$/i;
@@ -93,12 +96,15 @@ export interface GrokAcpModelMeta {
   readonly supportsReasoningEffort: boolean;
   readonly reasoningEffort?: string;
   readonly reasoningEfforts: ReadonlyArray<GrokReasoningEffortChoice>;
+  readonly supportsFastMode: boolean;
+  readonly fastMode?: boolean;
   readonly totalContextTokens?: number;
 }
 
 export interface GrokAcpSelection {
   readonly modelId: string | undefined;
   readonly reasoningEffort: string | undefined;
+  readonly fastMode: boolean | undefined;
 }
 
 export function buildGrokAcpSpawnInput(
@@ -270,7 +276,7 @@ function parseGrokReasoningEffortChoice(value: unknown): GrokReasoningEffortChoi
 /** Reads the per-model effort menu Grok stamps onto ACP `models._meta`. */
 export function parseGrokAcpModelMeta(meta: unknown): GrokAcpModelMeta {
   if (!isRecord(meta)) {
-    return { supportsReasoningEffort: false, reasoningEfforts: [] };
+    return { supportsReasoningEffort: false, reasoningEfforts: [], supportsFastMode: true };
   }
 
   const reasoningEfforts = Array.isArray(meta.reasoningEfforts)
@@ -289,6 +295,18 @@ export function parseGrokAcpModelMeta(meta: unknown): GrokAcpModelMeta {
   const current = trimmedString(meta.reasoningEffort);
   const defaultId = current ?? choices.find((choice) => choice.isDefault)?.id;
   const supportsReasoningEffort = meta.supportsReasoningEffort === true || choices.length > 0;
+  const serviceTier = trimmedString(meta.serviceTier) ?? trimmedString(meta.service_tier);
+  const fastModeFromMeta =
+    meta.fastMode === true || meta.fast_mode === true
+      ? true
+      : meta.fastMode === false || meta.fast_mode === false
+        ? false
+        : serviceTier === "priority" || serviceTier === "fast"
+          ? true
+          : serviceTier === "default"
+            ? false
+            : undefined;
+  const supportsFastMode = meta.supportsFastMode !== false && meta.supports_fast_mode !== false;
   const totalContextTokens =
     typeof meta.totalContextTokens === "number" &&
     Number.isFinite(meta.totalContextTokens) &&
@@ -305,37 +323,64 @@ export function parseGrokAcpModelMeta(meta: unknown): GrokAcpModelMeta {
       ...(choice.description ? { description: choice.description } : {}),
       ...(choice.id === defaultId ? { isDefault: true } : {}),
     })),
+    supportsFastMode,
+    ...(fastModeFromMeta !== undefined ? { fastMode: fastModeFromMeta } : {}),
     ...(totalContextTokens !== undefined ? { totalContextTokens } : {}),
+  };
+}
+
+function grokFastModeDescriptor(currentValue?: boolean): {
+  readonly id: typeof GROK_FAST_MODE_OPTION_ID;
+  readonly label: "Fast Mode";
+  readonly type: "boolean";
+  readonly currentValue?: boolean;
+} {
+  return {
+    id: GROK_FAST_MODE_OPTION_ID,
+    label: "Fast Mode",
+    type: "boolean",
+    ...(currentValue !== undefined ? { currentValue } : {}),
   };
 }
 
 export function grokReasoningEffortCapabilities(
   efforts: ReadonlyArray<GrokReasoningEffortChoice>,
+  fastMode?: { readonly include: boolean; readonly currentValue?: boolean },
 ): ModelCapabilities {
-  if (efforts.length === 0) {
-    return createModelCapabilities({ optionDescriptors: [] });
-  }
-  const defaultId = efforts.find((choice) => choice.isDefault)?.id ?? efforts[0]?.id;
-  return createModelCapabilities({
-    optionDescriptors: [
-      {
-        id: GROK_REASONING_EFFORT_OPTION_ID,
-        label: "Reasoning",
-        type: "select",
-        options: efforts.map((choice) => ({
-          id: choice.id,
-          label: choice.label,
-          ...(choice.description ? { description: choice.description } : {}),
-          ...(choice.isDefault ? { isDefault: true } : {}),
-        })),
-        ...(defaultId ? { currentValue: defaultId } : {}),
-      },
-    ],
-  });
+  const includeFastMode = fastMode?.include !== false;
+  const defaultEffortId = efforts.find((choice) => choice.isDefault)?.id ?? efforts[0]?.id;
+  const effortDescriptors =
+    efforts.length === 0
+      ? []
+      : [
+          {
+            id: GROK_REASONING_EFFORT_OPTION_ID,
+            label: "Reasoning",
+            type: "select" as const,
+            options: efforts.map((choice) => ({
+              id: choice.id,
+              label: choice.label,
+              ...(choice.description ? { description: choice.description } : {}),
+              ...(choice.isDefault ? { isDefault: true } : {}),
+            })),
+            ...(defaultEffortId ? { currentValue: defaultEffortId } : {}),
+          },
+        ];
+  const optionDescriptors = [
+    ...effortDescriptors,
+    ...(includeFastMode ? [grokFastModeDescriptor(fastMode?.currentValue)] : []),
+  ];
+  return createModelCapabilities({ optionDescriptors });
 }
 
 export function fallbackGrokReasoningEffortCapabilities(): ModelCapabilities {
   return grokReasoningEffortCapabilities([...FALLBACK_GROK_REASONING_EFFORTS]);
+}
+
+export function requestedGrokFastMode(
+  modelSelection: ModelSelection | null | undefined,
+): boolean | undefined {
+  return getModelSelectionBooleanOptionValue(modelSelection, GROK_FAST_MODE_OPTION_ID);
 }
 
 export function requestedGrokReasoningEffort(
@@ -361,11 +406,15 @@ export function requestedGrokReasoningEffort(
 }
 
 export function grokDiscoveredModelCapabilities(meta: GrokAcpModelMeta): ModelCapabilities {
+  const fastMode = { include: meta.supportsFastMode, currentValue: meta.fastMode };
   if (meta.reasoningEfforts.length > 0) {
-    return grokReasoningEffortCapabilities(meta.reasoningEfforts);
+    return grokReasoningEffortCapabilities(meta.reasoningEfforts, fastMode);
   }
   if (meta.supportsReasoningEffort) {
-    return fallbackGrokReasoningEffortCapabilities();
+    return grokReasoningEffortCapabilities([...FALLBACK_GROK_REASONING_EFFORTS], fastMode);
+  }
+  if (meta.supportsFastMode) {
+    return grokReasoningEffortCapabilities([], fastMode);
   }
   return createModelCapabilities({ optionDescriptors: [] });
 }
@@ -459,6 +508,19 @@ export function currentGrokReasoningEffortFromSessionSetup(
   return parseGrokAcpModelMeta(current?._meta).reasoningEffort;
 }
 
+export function currentGrokFastModeFromSessionSetup(
+  sessionSetupResult:
+    | EffectAcpSchema.LoadSessionResponse
+    | EffectAcpSchema.NewSessionResponse
+    | EffectAcpSchema.ResumeSessionResponse,
+): boolean | undefined {
+  const currentModelId = sessionSetupResult.models?.currentModelId;
+  const current = sessionSetupResult.models?.availableModels.find(
+    (model) => model.modelId === currentModelId,
+  );
+  return parseGrokAcpModelMeta(current?._meta).fastMode;
+}
+
 export function currentGrokMaxTokensFromSessionSetup(
   sessionSetupResult:
     | EffectAcpSchema.LoadSessionResponse
@@ -496,6 +558,8 @@ export function applyGrokAcpModelSelection<E>(input: {
   readonly availableModelIds?: ReadonlyArray<string>;
   readonly currentReasoningEffort?: string | undefined;
   readonly requestedReasoningEffort?: string | undefined;
+  readonly currentFastMode?: boolean | undefined;
+  readonly requestedFastMode?: boolean | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<GrokAcpSelection, E> {
   const requestedModelId =
@@ -506,33 +570,42 @@ export function applyGrokAcpModelSelection<E>(input: {
           availableIds: input.availableModelIds,
         })
       : input.requestedModelId;
-  const modelChanged =
-    requestedModelId !== undefined && requestedModelId !== input.currentModelId;
+  const modelChanged = requestedModelId !== undefined && requestedModelId !== input.currentModelId;
   const reasoningProvided = input.requestedReasoningEffort !== undefined;
   const reasoningEffort = reasoningProvided
     ? normalizeGrokReasoningEffort(input.requestedReasoningEffort)
     : undefined;
   const reasoningEffortChanged =
     reasoningProvided && reasoningEffort !== input.currentReasoningEffort;
+  const fastModeProvided = typeof input.requestedFastMode === "boolean";
+  const fastModeChanged = fastModeProvided && input.requestedFastMode !== input.currentFastMode;
   const targetModelId = requestedModelId ?? input.currentModelId;
-  if ((!modelChanged && !reasoningEffortChanged) || targetModelId === undefined) {
+  if (
+    (!modelChanged && !reasoningEffortChanged && !fastModeChanged) ||
+    targetModelId === undefined
+  ) {
     return Effect.succeed({
       modelId: input.currentModelId,
       reasoningEffort: input.currentReasoningEffort,
+      fastMode: input.currentFastMode,
     });
   }
-  const reasoningMeta =
-    reasoningProvided && reasoningEffort !== undefined ? { reasoningEffort } : undefined;
+  const meta: { readonly [key: string]: unknown } = {
+    ...(reasoningProvided && reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    ...(fastModeProvided ? { fastMode: input.requestedFastMode } : {}),
+  };
+  const requestMeta = Object.keys(meta).length > 0 ? meta : undefined;
   // When reasoning was explicitly provided but invalid (normalize => undefined), we deliberately
   // send no meta so the invalid value is dropped rather than forwarded. When reasoning was not
   // provided at all, we also send no meta, but we only reach this call when the model itself
   // changed - an omitted reasoning preference must not be treated as an explicit clear of the
   // CLI-advertised default (e.g. Extra High) on same-model reselections.
-  return input.runtime.setSessionModel(targetModelId, reasoningMeta).pipe(
+  return input.runtime.setSessionModel(targetModelId, requestMeta).pipe(
     Effect.mapError(input.mapError),
     Effect.as({
       modelId: targetModelId,
       reasoningEffort: reasoningEffort ?? input.currentReasoningEffort,
+      fastMode: fastModeProvided ? input.requestedFastMode : input.currentFastMode,
     }),
   );
 }

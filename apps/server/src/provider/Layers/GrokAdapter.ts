@@ -66,6 +66,7 @@ import {
   advertisedGrokReasoningEffortsFromSessionSetup,
   applyGrokAcpModelSelection,
   applyGrokAcpSessionMode,
+  currentGrokFastModeFromSessionSetup,
   currentGrokMaxTokensFromSessionSetup,
   currentGrokModelIdFromSessionSetup,
   currentGrokReasoningEffortFromSessionSetup,
@@ -73,6 +74,7 @@ import {
   grokReasoningEffortMenusFromSessionSetup,
   makeGrokAcpRuntime,
   normalizeGrokReasoningEffort,
+  requestedGrokFastMode,
   requestedGrokReasoningEffort,
   resolveGrokAcpBaseModelId,
   availableGrokSessionModelIds,
@@ -222,6 +224,7 @@ interface GrokSessionContext {
   promptResponsesReady: number;
   currentModelId: string | undefined;
   currentReasoningEffort: string | undefined;
+  currentFastMode: boolean | undefined;
   reasoningEffortMenus: Map<string, ReadonlyArray<string>>;
   maxTokensByModel: Map<string, number>;
   maxTokens: number | undefined;
@@ -1872,6 +1875,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               grokModelSelection,
               advertisedStartEfforts,
             ),
+            currentFastMode: currentGrokFastModeFromSessionSetup(started.sessionSetupResult),
+            requestedFastMode: requestedGrokFastMode(grokModelSelection),
             mapError: (cause) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
           });
@@ -1920,6 +1925,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             promptResponsesReady: 0,
             currentModelId: boundModelId,
             currentReasoningEffort: boundSelection.reasoningEffort,
+            currentFastMode: boundSelection.fastMode,
             reasoningEffortMenus: grokReasoningEffortMenusFromSessionSetup(
               started.sessionSetupResult,
             ),
@@ -2249,12 +2255,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   turnModelSelection,
                   advertisedTurnEfforts,
                 ),
+                currentFastMode: ctx.currentFastMode,
+                requestedFastMode: requestedGrokFastMode(turnModelSelection),
                 mapError: (cause) =>
                   mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
               });
               const currentModelId = turnSelection.modelId;
               ctx.currentModelId = currentModelId;
               ctx.currentReasoningEffort = turnSelection.reasoningEffort;
+              ctx.currentFastMode = turnSelection.fastMode;
               if (currentModelId) {
                 const maxTokens = ctx.maxTokensByModel.get(currentModelId);
                 if (maxTokens !== undefined) {

@@ -1974,6 +1974,22 @@ describe("composerDraftStore modelSelection", () => {
     ).toEqual(modelSelection(GROK_DRIVER, "grok-build", { reasoningEffort: "xhigh" }));
   });
 
+  it("keeps Grok Fast Mode when set through the traits picker API", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setProviderModelOptions(threadRef, GROK_DRIVER, toSelections({ fastMode: true }), {
+      model: "grok-build",
+      persistSticky: true,
+    });
+
+    expect(
+      draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[GROK_INSTANCE],
+    ).toEqual(modelSelection(GROK_DRIVER, "grok-build", { fastMode: true }));
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider[GROK_INSTANCE]).toEqual(
+      modelSelection(GROK_DRIVER, "grok-build", { fastMode: true }),
+    );
+  });
+
   it("keeps Grok reasoning effort when set through the traits picker API", () => {
     const store = useComposerDraftStore.getState();
 

@@ -1368,6 +1368,43 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect("sends session/set_model _meta.fastMode", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-fast-mode-set-model");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-fast-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
+          options: [{ id: "fastMode", value: true }],
+        },
+      });
+
+      yield* waitForFileContent(requestLogPath, 80, "session/set_model");
+      const lines = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const setModel = lines.find((line) => line.method === "session/set_model");
+      assert.isDefined(setModel);
+      assert.equal(
+        (setModel?.params as { _meta?: { fastMode?: boolean } } | undefined)?._meta?.fastMode,
+        true,
+      );
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("sends session/set_model _meta.reasoningEffort when sendTurn changes effort", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-effort-send-turn");

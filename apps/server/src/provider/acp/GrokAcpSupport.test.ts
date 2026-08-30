@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
 
@@ -6,7 +7,10 @@ import {
   applyGrokAcpModelSelection,
   buildGrokAcpSpawnInput,
   grokAcpSpawnArgs,
+  grokDiscoveredModelCapabilities,
   isValidGrokReasoningEffortToken,
+  parseGrokAcpModelMeta,
+  requestedGrokFastMode,
   resolveGrokAcpBaseModelId,
 } from "./GrokAcpSupport.ts";
 
@@ -113,7 +117,11 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-mock-alt" }]);
-      expect(result).toEqual({ modelId: "grok-mock-alt", reasoningEffort: undefined });
+      expect(result).toEqual({
+        modelId: "grok-mock-alt",
+        reasoningEffort: undefined,
+        fastMode: undefined,
+      });
     }),
   );
 
@@ -129,7 +137,11 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
-      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "xhigh" });
+      expect(result).toEqual({
+        modelId: "grok-4.6",
+        reasoningEffort: "xhigh",
+        fastMode: undefined,
+      });
     }),
   );
 
@@ -145,7 +157,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "high" });
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "high", fastMode: undefined });
     }),
   );
 
@@ -174,7 +186,11 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
+      expect(result).toEqual({
+        modelId: "grok-build",
+        reasoningEffort: undefined,
+        fastMode: undefined,
+      });
     }),
   );
 
@@ -188,7 +204,11 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
+      expect(result).toEqual({
+        modelId: "grok-build",
+        reasoningEffort: undefined,
+        fastMode: undefined,
+      });
     }),
   );
 
@@ -207,4 +227,86 @@ describe("applyGrokAcpModelSelection", () => {
       expect(error).toBe(failure.message);
     }),
   );
+
+  it.effect("applies fast mode through session/set_model metadata", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-4.6",
+        requestedModelId: "grok-4.6",
+        requestedFastMode: true,
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { fastMode: true } }]);
+      expect(result).toEqual({
+        modelId: "grok-4.6",
+        reasoningEffort: undefined,
+        fastMode: true,
+      });
+    }),
+  );
+
+  it.effect("clears fast mode when the next selection turns it off", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-4.6",
+        requestedModelId: "grok-4.6",
+        currentFastMode: true,
+        requestedFastMode: false,
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { fastMode: false } }]);
+      expect(result.fastMode).toBe(false);
+    }),
+  );
+});
+
+describe("parseGrokAcpModelMeta", () => {
+  it("defaults Fast Mode on unless Grok explicitly opts out", () => {
+    expect(parseGrokAcpModelMeta(undefined).supportsFastMode).toBe(true);
+    expect(parseGrokAcpModelMeta({ supportsFastMode: false }).supportsFastMode).toBe(false);
+    expect(parseGrokAcpModelMeta({ fastMode: true }).fastMode).toBe(true);
+    expect(parseGrokAcpModelMeta({ serviceTier: "priority" }).fastMode).toBe(true);
+  });
+});
+
+describe("grokDiscoveredModelCapabilities", () => {
+  it("exposes Fast Mode next to reasoning effort", () => {
+    const capabilities = grokDiscoveredModelCapabilities({
+      supportsReasoningEffort: true,
+      reasoningEfforts: [{ id: "high", label: "High", isDefault: true }],
+      supportsFastMode: true,
+    });
+    expect(capabilities.optionDescriptors?.map((descriptor) => descriptor.id)).toEqual([
+      "reasoningEffort",
+      "fastMode",
+    ]);
+  });
+
+  it("omits Fast Mode when Grok says the model cannot use it", () => {
+    const capabilities = grokDiscoveredModelCapabilities({
+      supportsReasoningEffort: true,
+      reasoningEfforts: [{ id: "high", label: "High", isDefault: true }],
+      supportsFastMode: false,
+    });
+    expect(capabilities.optionDescriptors?.map((descriptor) => descriptor.id)).toEqual([
+      "reasoningEffort",
+    ]);
+  });
+});
+
+describe("requestedGrokFastMode", () => {
+  it("reads the boolean composer option", () => {
+    expect(
+      requestedGrokFastMode({
+        instanceId: ProviderInstanceId.make("grok"),
+        model: "grok-4.6",
+        options: [{ id: "fastMode", value: true }],
+      }),
+    ).toBe(true);
+    expect(requestedGrokFastMode(undefined)).toBeUndefined();
+  });
 });

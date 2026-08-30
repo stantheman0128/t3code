@@ -57,7 +57,10 @@ it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
           "goal",
         ]),
       );
-      expect(snapshot.models[0]?.capabilities?.optionDescriptors?.[0]?.id).toBe("reasoningEffort");
+      expect(snapshot.models[0]?.capabilities?.optionDescriptors?.map((d) => d.id)).toEqual([
+        "reasoningEffort",
+        "fastMode",
+      ]);
     }),
   );
 });

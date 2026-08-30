@@ -55,6 +55,7 @@ import {
   toOpenCodeQuestionAnswers,
   type OpenCodeServerConnection,
 } from "../opencodeRuntime.ts";
+import { prependTraditionalChineseInstruction } from "../traditionalChineseInstruction.ts";
 import * as Option from "effect/Option";
 
 const PROVIDER = ProviderDriverKind.make("opencode");
@@ -347,6 +348,7 @@ interface OpenCodeSessionContext {
   promptGeneration: number;
   promptAdmission: OpenCodePromptAdmission | undefined;
   readonly promptSemaphore: Semaphore.Semaphore;
+  languageInstructionInjected: boolean;
   readonly firstConnection: Deferred.Deferred<void, ProviderAdapterRequestError>;
   /**
    * One-shot guard flipped by `stopOpenCodeContext` / `emitUnexpectedExit`.
@@ -2483,6 +2485,7 @@ export function makeOpenCodeAdapter(
           promptGeneration: 0,
           promptAdmission: undefined,
           promptSemaphore: Semaphore.makeUnsafe(1),
+          languageInstructionInjected: false,
           firstConnection: Deferred.makeUnsafe<void, ProviderAdapterRequestError>(),
           stopped: yield* Ref.make(false),
           sessionScope: started.sessionScope,
@@ -2684,6 +2687,13 @@ export function makeOpenCodeAdapter(
           }
 
           let promptTimedOut = false;
+          const promptParts = prependTraditionalChineseInstruction({
+            parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
+            alreadyInjected: context.languageInstructionInjected,
+            userText: text,
+            makeTextPart: (instruction) => ({ type: "text" as const, text: instruction }),
+          });
+          context.languageInstructionInjected = promptParts.injected;
           const promptEffect = runOpenCodeSdk("session.promptAsync", (signal) =>
             context.client.session.promptAsync(
               {
@@ -2692,7 +2702,7 @@ export function makeOpenCodeAdapter(
                 model: parsedModel,
                 ...(context.activeAgent ? { agent: context.activeAgent } : {}),
                 ...(context.activeVariant ? { variant: context.activeVariant } : {}),
-                parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
+                parts: promptParts.parts,
               },
               { signal },
             ),

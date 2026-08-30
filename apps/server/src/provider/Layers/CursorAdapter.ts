@@ -42,6 +42,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { prependTraditionalChineseInstruction } from "../traditionalChineseInstruction.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -141,6 +142,7 @@ interface CursorSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   stopped: boolean;
+  languageInstructionInjected: boolean;
 }
 
 function settlePendingApprovalsAsCancelled(
@@ -789,6 +791,7 @@ export function makeCursorAdapter(
             activeTurnId: undefined,
             promptsInFlight: 0,
             stopped: false,
+            languageInstructionInjected: false,
           };
 
           const nf = yield* Stream.runDrain(
@@ -981,9 +984,9 @@ export function makeCursorAdapter(
             });
           }
 
-          const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
+          const rawPromptParts: Array<EffectAcpSchema.ContentBlock> = [];
           if (input.input?.trim()) {
-            promptParts.push({ type: "text", text: input.input.trim() });
+            rawPromptParts.push({ type: "text", text: input.input.trim() });
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
@@ -1014,7 +1017,7 @@ export function makeCursorAdapter(
                     }),
                 ),
               );
-              promptParts.push({
+              rawPromptParts.push({
                 type: "image",
                 data: Buffer.from(bytes).toString("base64"),
                 mimeType: attachment.mimeType,
@@ -1022,7 +1025,16 @@ export function makeCursorAdapter(
             }
           }
 
-          if (promptParts.length === 0) {
+          const promptParts = prependTraditionalChineseInstruction({
+            parts: rawPromptParts,
+            alreadyInjected: ctx.languageInstructionInjected,
+            userText: input.input,
+            makeTextPart: (instruction) =>
+              ({ type: "text" as const, text: instruction }) satisfies EffectAcpSchema.ContentBlock,
+          });
+          ctx.languageInstructionInjected = promptParts.injected;
+
+          if (promptParts.parts.length === 0) {
             return yield* new ProviderAdapterValidationError({
               provider: PROVIDER,
               operation: "sendTurn",
@@ -1032,7 +1044,7 @@ export function makeCursorAdapter(
 
           const result = yield* ctx.acp
             .prompt({
-              prompt: promptParts,
+              prompt: promptParts.parts,
             })
             .pipe(
               Effect.mapError((error) =>
@@ -1042,9 +1054,9 @@ export function makeCursorAdapter(
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
           if (turnRecord) {
-            turnRecord.items.push({ prompt: promptParts, result });
+            turnRecord.items.push({ prompt: promptParts.parts, result });
           } else {
-            ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
+            ctx.turns.push({ id: turnId, items: [{ prompt: promptParts.parts, result }] });
           }
           ctx.session = {
             ...ctx.session,

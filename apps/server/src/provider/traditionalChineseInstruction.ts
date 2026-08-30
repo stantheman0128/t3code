@@ -6,3 +6,24 @@
  */
 export const TRADITIONAL_CHINESE_INSTRUCTION =
   "When writing Chinese, always use Traditional Chinese (Taiwan, zh-TW) unless the user explicitly asks for Simplified Chinese. If the user writes Simplified Chinese, still reply in Traditional Chinese. Do not mix the two.";
+
+export const TRADITIONAL_CHINESE_INSTRUCTION_BLOCK = `<language>${TRADITIONAL_CHINESE_INSTRUCTION}</language>`;
+
+export function isLeadingSlashPrompt(text: string | undefined): boolean {
+  return Boolean(text?.trim().startsWith("/"));
+}
+
+export function prependTraditionalChineseInstruction<T>(input: {
+  readonly parts: ReadonlyArray<T>;
+  readonly alreadyInjected: boolean;
+  readonly userText?: string;
+  readonly makeTextPart: (text: string) => T;
+}): { readonly parts: T[]; readonly injected: boolean } {
+  if (input.alreadyInjected || isLeadingSlashPrompt(input.userText)) {
+    return { parts: [...input.parts], injected: input.alreadyInjected };
+  }
+  return {
+    parts: [input.makeTextPart(TRADITIONAL_CHINESE_INSTRUCTION_BLOCK), ...input.parts],
+    injected: true,
+  };
+}

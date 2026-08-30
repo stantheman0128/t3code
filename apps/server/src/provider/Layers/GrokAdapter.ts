@@ -42,6 +42,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { prependTraditionalChineseInstruction } from "../traditionalChineseInstruction.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -229,6 +230,7 @@ interface GrokSessionContext {
   maxTokensByModel: Map<string, number>;
   maxTokens: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
+  languageInstructionInjected: boolean;
   lastCompleteCostUsd: number | undefined;
   lastQueueLength: number | undefined;
   availableModelIds: ReadonlyArray<string>;
@@ -1934,6 +1936,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               (boundModelId ? maxTokensByModel.get(boundModelId) : undefined) ??
               currentGrokMaxTokensFromSessionSetup(started.sessionSetupResult),
             lastKnownTokenUsage: undefined,
+            languageInstructionInjected: false,
             lastCompleteCostUsd: undefined,
             lastQueueLength: undefined,
             availableModelIds,
@@ -2315,12 +2318,19 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     } satisfies EffectAcpSchema.ContentBlock;
                   }),
               );
-              const promptParts: Array<EffectAcpSchema.ContentBlock> = [
-                ...(text ? [{ type: "text" as const, text }] : []),
-                ...imagePromptParts,
-              ];
+              const promptParts = prependTraditionalChineseInstruction({
+                parts: [...(text ? [{ type: "text" as const, text }] : []), ...imagePromptParts],
+                alreadyInjected: ctx.languageInstructionInjected,
+                userText: text,
+                makeTextPart: (instruction) =>
+                  ({
+                    type: "text" as const,
+                    text: instruction,
+                  }) satisfies EffectAcpSchema.ContentBlock,
+              });
+              ctx.languageInstructionInjected = promptParts.injected;
 
-              if (promptParts.length === 0) {
+              if (promptParts.parts.length === 0) {
                 return yield* new ProviderAdapterValidationError({
                   provider: PROVIDER,
                   operation: "sendTurn",
@@ -2377,7 +2387,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 acp: ctx.acp,
                 acpSessionId: ctx.acpSessionId,
                 displayModel,
-                promptParts,
+                promptParts: promptParts.parts,
                 turnId,
               };
             }).pipe(

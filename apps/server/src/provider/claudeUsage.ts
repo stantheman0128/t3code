@@ -41,6 +41,19 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+export function parseClaudeAuthStatusLoggedIn(output: string): boolean | undefined {
+  const start = output.indexOf("{");
+  if (start < 0) {
+    return undefined;
+  }
+  try {
+    const document = JSON.parse(output.slice(start)) as { loggedIn?: unknown };
+    return typeof document.loggedIn === "boolean" ? document.loggedIn : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function claudeAccessTokenFromDocument(
   document: unknown,
   nowMs: number = Date.now(),

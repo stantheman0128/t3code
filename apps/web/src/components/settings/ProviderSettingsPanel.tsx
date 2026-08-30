@@ -425,6 +425,9 @@ export function EnvironmentProviderSettings({
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
+  const loginProvider = useAtomCommand(serverEnvironment.loginProvider, {
+    reportFailure: false,
+  });
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
   const [isAddInstanceDialogOpen, setIsAddInstanceDialogOpen] = useState(false);
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | null>(null);
@@ -432,6 +435,7 @@ export function EnvironmentProviderSettings({
   const [updatingProviderDrivers, setUpdatingProviderDrivers] = useState<
     ReadonlySet<ProviderDriverKind>
   >(() => new Set());
+  const [loggingInInstanceId, setLoggingInInstanceId] = useState<ProviderInstanceId | null>(null);
   const refreshingRef = useRef(false);
   const updatingDriversRef = useRef<Set<ProviderDriverKind>>(new Set());
 
@@ -489,6 +493,43 @@ export function EnvironmentProviderSettings({
       }
     })();
   }, [environmentId, refreshServerProviders]);
+
+  const runProviderLogin = useCallback(
+    async (instanceId: ProviderInstanceId, driver: ProviderDriverKind) => {
+      if (loggingInInstanceId !== null) {
+        return;
+      }
+      setLoggingInInstanceId(instanceId);
+      const result = await loginProvider({
+        environmentId,
+        input: { instanceId },
+      });
+      setLoggingInInstanceId(null);
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: `Could not start ${PROVIDER_DISPLAY_NAMES[driver] ?? driver} login`,
+            description:
+              error instanceof Error ? error.message : "The login command could not be opened.",
+          }),
+        );
+        return;
+      }
+      if (result._tag === "Success") {
+        toastManager.add({
+          type: "success",
+          title: `Finish ${PROVIDER_DISPLAY_NAMES[driver] ?? driver} login`,
+          description: `Complete ${result.value.command} in the window that opened, then T3 will refresh this provider.`,
+        });
+        window.setTimeout(() => {
+          void refreshServerProviders({ environmentId, input: { instanceId } });
+        }, 8_000);
+      }
+    },
+    [environmentId, loggingInInstanceId, loginProvider, refreshServerProviders],
+  );
 
   const runProviderUpdate = useCallback(
     async (candidate: ProviderUpdateCandidate) => {
@@ -810,6 +851,14 @@ export function EnvironmentProviderSettings({
             : undefined
         }
         isUpdating={mode === "editor" && showInlineUpdateButton ? isDriverUpdateRunning : undefined}
+        onLogin={
+          !readOnly
+            ? () => {
+                void runProviderLogin(row.instanceId, row.driver);
+              }
+            : undefined
+        }
+        isLoggingIn={loggingInInstanceId === row.instanceId}
       />
     );
   };

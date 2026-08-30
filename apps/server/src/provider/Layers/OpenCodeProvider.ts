@@ -518,15 +518,15 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       version,
       status: connectedCount > 0 ? "ready" : "warning",
       auth: {
-        status: connectedCount > 0 ? "authenticated" : "unknown",
+        status: connectedCount > 0 ? "authenticated" : "unauthenticated",
         type: "opencode",
       },
       message:
         connectedCount > 0
           ? `${connectedCount} upstream provider${connectedCount === 1 ? "" : "s"} connected through ${isExternalServer ? "the configured OpenCode server" : "OpenCode"}.`
           : isExternalServer
-            ? "Connected to the configured OpenCode server, but it did not report any connected upstream providers."
-            : "OpenCode is available, but it did not report any connected upstream providers.",
+            ? "Connected to the configured OpenCode server, but it did not report any connected upstream providers. Use Log in to update credentials."
+            : "OpenCode is available, but it did not report any connected upstream providers. Use Log in to update credentials.",
     },
   });
 });

@@ -5,7 +5,16 @@ import {
   claudeCredentialsFileCandidates,
   claudeDesktopPlanUsageFileCandidates,
   claudeUsageStateFileCandidates,
+  parseClaudeAuthStatusLoggedIn,
 } from "./claudeUsage.ts";
+
+describe("parseClaudeAuthStatusLoggedIn", () => {
+  it("reads the CLI JSON loggedIn flag", () => {
+    expect(parseClaudeAuthStatusLoggedIn('{"loggedIn":false,"authMethod":"none"}')).toBe(false);
+    expect(parseClaudeAuthStatusLoggedIn('{"loggedIn":true,"authMethod":"claude.ai"}')).toBe(true);
+    expect(parseClaudeAuthStatusLoggedIn("not json")).toBeUndefined();
+  });
+});
 
 describe("claudeAccessTokenFromDocument", () => {
   it("reads the Claude Code oauth access token when it is still valid", () => {

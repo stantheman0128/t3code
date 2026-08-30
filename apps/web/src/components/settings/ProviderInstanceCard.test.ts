@@ -197,4 +197,53 @@ describe("deriveProviderModelsForDisplay", () => {
       expect(markup).toContain("is not a symlink");
     }
   });
+
+  it("offers Log in when the CLI is not authenticated", () => {
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    const driver = ProviderDriverKind.make("claudeAgent");
+    const props = {
+      instanceId,
+      instance: { driver },
+      driverOption: undefined,
+      liveProvider: {
+        instanceId,
+        driver,
+        enabled: true,
+        installed: true,
+        version: "2.1.251",
+        status: "warning",
+        auth: { status: "unauthenticated" },
+        checkedAt: "2026-08-31T00:00:00.000Z",
+        models: [],
+        slashCommands: [],
+        skills: [],
+        message: "Claude CLI is not signed in. Use Log in to update credentials.",
+        loginCommand: "claude auth login",
+      },
+      onUpdate: () => undefined,
+      hiddenModels: [],
+      favoriteModels: [],
+      modelOrder: [],
+      onHiddenModelsChange: () => undefined,
+      onFavoriteModelsChange: () => undefined,
+      onModelOrderChange: () => undefined,
+      onLogin: () => undefined,
+    } as const;
+
+    for (const mode of ["list", "editor"] as const) {
+      const markup = renderToStaticMarkup(createElement(ProviderInstanceCard, { ...props, mode }));
+      expect(markup).toContain("Not authenticated");
+      expect(markup).toContain("Log in");
+    }
+
+    const { loginCommand: _loginCommand, ...liveProviderWithoutCommand } = props.liveProvider;
+    const markupWithoutSnapshotCommand = renderToStaticMarkup(
+      createElement(ProviderInstanceCard, {
+        ...props,
+        liveProvider: liveProviderWithoutCommand,
+        mode: "editor",
+      }),
+    );
+    expect(markupWithoutSnapshotCommand).toContain("Log in");
+  });
 });

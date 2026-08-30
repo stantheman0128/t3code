@@ -2011,6 +2011,32 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      it.effect("reports unauthenticated when the CLI is signed out", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          assert.strictEqual(status.auth.status, "unauthenticated");
+          assert.strictEqual(status.status, "warning");
+          assert.match(status.message ?? "", /not signed in/i);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return {
+                  stdout: '{"loggedIn":false,"authMethod":"none"}\n',
+                  stderr: "",
+                  code: 0,
+                };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
@@ -2042,7 +2068,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           // Bedrock authenticates via external AWS credentials, so the SDK init
           // reports only `apiProvider` with no subscription or token.
           const status = yield* checkClaudeProviderStatus(
-            defaultClaudeSettings,
+            isolatedClaudeSettings,
             claudeCapabilities({ apiProvider: "bedrock" }),
           );
           assert.strictEqual(status.status, "ready");
@@ -2055,6 +2081,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             mockSpawnerLayer((args) => {
               const joined = args.join(" ");
               if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return {
+                  stdout: '{"loggedIn":true,"authMethod":"bedrock"}\n',
+                  stderr: "",
+                  code: 0,
+                };
               throw new Error(`Unexpected args: ${joined}`);
             }),
           ),
@@ -2367,10 +2399,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             claudeCapabilities(),
           );
           assert.strictEqual(status.status, "ready");
-          assert.deepStrictEqual(
-            recorded.commands.map((command) => command.env?.CLAUDE_CONFIG_DIR),
-            [claudeConfigDir],
+          const configDirs = recorded.commands.map((command) => command.env?.CLAUDE_CONFIG_DIR);
+          assert.strictEqual(configDirs.length, 2);
+          assert.ok(
+            configDirs.every(
+              (dir) => typeof dir === "string" && dir.includes("t3code-claude-home"),
+            ),
+            `expected both probes to use CLAUDE_CONFIG_DIR, got ${JSON.stringify(configDirs)}`,
           );
+          assert.strictEqual(configDirs[0], configDirs[1]);
         }).pipe(Effect.provide(recorded.layer));
       });
 
@@ -2535,7 +2572,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       it.effect("returns warning when the Claude initialization result is unavailable", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
-            defaultClaudeSettings,
+            isolatedClaudeSettings,
             noClaudeCapabilities,
           );
           assert.strictEqual(status.status, "warning");
@@ -2552,9 +2589,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
               if (joined === "auth status")
                 return {
-                  stdout: '{"loggedIn":false}\n',
+                  stdout: "",
                   stderr: "",
-                  code: 1,
+                  code: 0,
                 };
               throw new Error(`Unexpected args: ${joined}`);
             }),

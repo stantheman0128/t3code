@@ -45,6 +45,7 @@ describe("ServerProvider", () => {
     expect(parsed.skills).toEqual([]);
     expect(parsed.versionAdvisory).toBeUndefined();
     expect(parsed.updateState).toBeUndefined();
+    expect(parsed.loginCommand).toBeUndefined();
   });
 
   it("defaults one-click update support when decoding older advisory snapshots", () => {

@@ -191,6 +191,14 @@ const checkProvider = Effect.fn("checkProvider")(function* (
 });
 
 it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
+  it.effect("reports unauthenticated when no upstream providers are connected", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+      NodeAssert.equal(snapshot.auth.status, "unauthenticated");
+      NodeAssert.match(snapshot.message ?? "", /Log in/i);
+    }),
+  );
+
   it.effect("shows a codex-style missing binary message", () =>
     Effect.gen(function* () {
       runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");

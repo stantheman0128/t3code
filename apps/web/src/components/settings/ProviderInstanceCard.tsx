@@ -5,6 +5,7 @@ import {
   CopyIcon,
   DownloadIcon,
   LoaderIcon,
+  LogInIcon,
   PlusIcon,
   Trash2Icon,
   XIcon,
@@ -22,6 +23,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import { providerLoginSpec } from "@t3tools/shared/providerLogin";
 
 import { cn } from "../../lib/utils";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -386,6 +388,8 @@ interface ProviderInstanceCardProps {
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
   readonly onRunUpdate?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
+  readonly onLogin?: (() => void) | undefined;
+  readonly isLoggingIn?: boolean | undefined;
 }
 
 /**
@@ -427,6 +431,8 @@ export function ProviderInstanceCard({
   onModelOrderChange,
   onRunUpdate,
   isUpdating = false,
+  onLogin,
+  isLoggingIn = false,
 }: ProviderInstanceCardProps) {
   const [activeTab, setActiveTab] = useState<"configuration" | "models">("configuration");
   const enabled = resolveProviderInstanceEnabled(instance);
@@ -444,6 +450,32 @@ export function ProviderInstanceCard({
   // "Authenticated as <email> · <plan>" — with the email redacted until its
   // reveal toggle is clicked.
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";
+  const loginCommand =
+    liveProvider?.loginCommand ??
+    (isProviderDriverKind(instance.driver) ? providerLoginSpec(instance.driver)?.command : null);
+  const showLogin =
+    enabled &&
+    !readOnly &&
+    onLogin !== undefined &&
+    liveProvider?.auth.status === "unauthenticated" &&
+    Boolean(loginCommand);
+  const loginButton = showLogin ? (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className={cn("gap-1.5 px-2 text-xs", mode === "list" ? "h-6 shrink-0" : "mt-2 h-7")}
+      disabled={isLoggingIn}
+      onClick={onLogin}
+    >
+      {isLoggingIn ? (
+        <LoaderIcon className="size-3 animate-spin" />
+      ) : (
+        <LogInIcon className="size-3" />
+      )}
+      Log in
+    </Button>
+  ) : null;
   const authLabel =
     enabled && liveProvider?.auth.status === "authenticated"
       ? (liveProvider.auth.label ?? liveProvider.auth.type ?? null)
@@ -682,7 +714,8 @@ export function ProviderInstanceCard({
             </span>
           </span>
         </button>
-        <span className="flex h-5 shrink-0 items-center">
+        <span className="flex shrink-0 items-center gap-2">
+          {loginButton}
           <Switch
             checked={enabled}
             disabled={readOnly}
@@ -826,6 +859,7 @@ export function ProviderInstanceCard({
               {summary.detail}
             </p>
           ) : null}
+          {loginButton}
         </div>
       </div>
 

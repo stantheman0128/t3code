@@ -227,6 +227,10 @@
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
     },
+    "./providerLogin": {
+      "types": "./src/providerLogin.ts",
+      "import": "./src/providerLogin.ts"
+    },
     "./claudeCompaction": {
       "types": "./src/claudeCompaction.ts",
       "import": "./src/claudeCompaction.ts"

@@ -32,6 +32,7 @@ import {
 import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
+  AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
   DEFAULT_TIMEOUT_MS,
   isCommandMissingCause,
@@ -43,7 +44,7 @@ import {
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment, resolveClaudeHomePath } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
-import { readClaudeUsageLimits } from "../claudeUsage.ts";
+import { parseClaudeAuthStatusLoggedIn, readClaudeUsageLimits } from "../claudeUsage.ts";
 import { mapClaudeUsageLimits } from "../providerUsageLimits.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
@@ -1039,6 +1040,41 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const fileAccount = yield* readClaudeOauthAccount(claudeHome).pipe(
     Effect.orElseSucceed(() => undefined),
   );
+  const authStatusProbe = yield* runClaudeCommand(
+    claudeSettings,
+    ["auth", "status"],
+    resolvedEnvironment,
+  ).pipe(
+    Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
+    Effect.catchCause(() => Effect.succeed(Option.none())),
+  );
+  const cliLoggedIn = Option.isSome(authStatusProbe)
+    ? parseClaudeAuthStatusLoggedIn(
+        `${authStatusProbe.value.stdout}\n${authStatusProbe.value.stderr}`,
+      )
+    : undefined;
+  if (cliLoggedIn === false) {
+    const usageLimits = yield* readClaudeUsageLimits({
+      homeDir: claudeHome,
+      environment: resolvedEnvironment,
+    });
+    return buildServerProvider({
+      presentation: CLAUDE_PRESENTATION,
+      enabled: claudeSettings.enabled,
+      checkedAt,
+      models,
+      slashCommands: dedupedSlashCommands,
+      skills,
+      ...(usageLimits ? { usageLimits } : {}),
+      probe: {
+        installed: true,
+        version: parsedVersion,
+        status: "warning",
+        auth: { status: "unauthenticated" },
+        message: "Claude CLI is not signed in. Use Log in to update credentials.",
+      },
+    });
+  }
   if (!capabilities && !fileAccount) {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
@@ -1078,7 +1114,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       : yield* readClaudeUsageLimits({
           homeDir: claudeHome,
           environment: resolvedEnvironment,
-          planLabel: authMetadata?.label ?? subscriptionType,
+          ...((authMetadata?.label ?? subscriptionType)
+            ? { planLabel: authMetadata?.label ?? subscriptionType }
+            : {}),
         }));
   const email = capabilities?.email ?? fileAccount?.email;
   return buildServerProvider({

@@ -17,6 +17,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { normalizeCustomModelSlug } from "@t3tools/shared/model";
 import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { createProviderVersionAdvisory } from "./providerMaintenance.ts";
+import { providerLoginSpec } from "@t3tools/shared/providerLogin";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
@@ -214,6 +215,17 @@ export function buildBooleanOptionDescriptor(input: {
   };
 }
 
+export function providerLoginCommand(driver: ProviderDriverKind | undefined): string | undefined {
+  return driver ? (providerLoginSpec(driver)?.command ?? undefined) : undefined;
+}
+
+export function providerLoginCommandFields(
+  driver: ProviderDriverKind,
+): { readonly loginCommand: string } | {} {
+  const loginCommand = providerLoginCommand(driver);
+  return loginCommand ? { loginCommand } : {};
+}
+
 export function buildServerProvider(input: {
   driver?: ProviderDriverKind;
   presentation: ServerProviderPresentation;
@@ -232,6 +244,7 @@ export function buildServerProvider(input: {
         checkedAt: input.checkedAt,
       })
     : undefined;
+  const loginCommand = providerLoginCommand(input.driver);
   return {
     displayName: input.presentation.displayName,
     ...(input.presentation.badgeLabel ? { badgeLabel: input.presentation.badgeLabel } : {}),
@@ -253,6 +266,7 @@ export function buildServerProvider(input: {
     skills: [...(input.skills ?? [])],
     ...(input.usageLimits ? { usageLimits: input.usageLimits } : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
+    ...(loginCommand ? { loginCommand } : {}),
   };
 }
 

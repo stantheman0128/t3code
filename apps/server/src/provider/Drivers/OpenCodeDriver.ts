@@ -40,7 +40,7 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
+import { providerLoginCommandFields, type ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
@@ -100,6 +100,7 @@ const withInstanceIdentity =
     ...snapshot,
     instanceId: input.instanceId,
     driver: DRIVER_KIND,
+    ...providerLoginCommandFields(DRIVER_KIND),
     ...(input.displayName ? { displayName: input.displayName } : {}),
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     continuation: { groupKey: input.continuationGroupKey },

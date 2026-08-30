@@ -797,6 +797,12 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    loginProvider: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:login-provider",
+      tag: WS_METHODS.serverLoginProvider,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
     updateServer,
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:upsert-keybinding",

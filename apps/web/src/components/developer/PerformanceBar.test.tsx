@@ -34,6 +34,8 @@ describe("PerformanceBarView", () => {
     expect(markup).toContain("24.0 MB");
     expect(markup).toContain("What do these metrics mean?");
     expect(markup).toContain("Hide performance bar");
+    expect(markup).toContain("Resize performance bar");
+    expect(markup).toContain("cursor-row-resize");
   });
 
   it("marks a stalled current frame red", () => {

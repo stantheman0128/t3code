@@ -8,7 +8,6 @@ import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
-import { APP_VERSION } from "../../branding";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
@@ -198,14 +197,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
   return (
     <SidebarMenu className="flex-row items-center">
-      <SidebarMenuItem className="min-w-0 shrink">
-        <span
-          className="block truncate px-1 font-mono text-[10px] tabular-nums text-muted-foreground/70"
-          title={`T3 Code ${APP_VERSION}`}
-        >
-          {APP_VERSION}
-        </span>
-      </SidebarMenuItem>
       {currentFooterPage ? (
         <SidebarMenuItem className="min-w-0 flex-1">
           <SidebarMenuButton onClick={handleBackClick}>

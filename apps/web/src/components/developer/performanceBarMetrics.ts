@@ -1,3 +1,5 @@
+import { clampPerformanceBarHeightPx } from "./performanceBarLayout";
+
 export const PERFORMANCE_BAR_WINDOW_MS = 500;
 export const PERFORMANCE_BAR_DELAY_WARN_MS = 33;
 export const PERFORMANCE_BAR_DELAY_HOT_MS = 50;
@@ -99,6 +101,15 @@ export function isPerformanceBarDelayHot(delayMs: number): boolean {
 
 export function isPerformanceBarJankHot(jankRatio: number): boolean {
   return performanceBarJankTone(jankRatio) === "bad";
+}
+
+export function performanceBarSparklineSize(barHeightPx: number): {
+  readonly width: number;
+  readonly height: number;
+} {
+  const height = Math.max(12, clampPerformanceBarHeightPx(barHeightPx) - 14);
+  const width = Math.min(220, Math.max(72, Math.round(height * 4)));
+  return { width, height };
 }
 
 export function formatPerformanceBarFps(fps: number): string {

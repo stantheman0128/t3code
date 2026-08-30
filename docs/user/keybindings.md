@@ -51,9 +51,10 @@ successful pick; its hover glow and badge preview the element and color family t
 
 `developer.togglePerformanceBar` shows or hides a developer footer with renderer FPS, frame
 delay, jank share, and JS heap. It defaults to `mod+alt+shift+f`. Metrics sit on the right;
-click the sparkline to switch between a wave and bars. Delay and FPS follow the latest
-animation frame so they keep moving. The bar docks at the bottom and shifts the rest of the
-app up so it does not cover the composer. It stays off until you turn it on.
+click the sparkline to switch between a wave and bars. Drag the top edge to change its height,
+or use the arrow keys on that handle. Delay and FPS follow the latest animation frame so they
+keep moving. The bar docks at the bottom and shifts the rest of the app up so it does not
+cover the composer. It stays off until you turn it on.
 
 `rightPanel.toggleMaximized` maximizes or restores the open right panel. It has no default shortcut,
 so add one in **Settings** → **Keybindings** if you want to use it.

@@ -11,6 +11,7 @@ import {
   performanceBarDelayTone,
   performanceBarFpsTone,
   performanceBarJankTone,
+  performanceBarSparklineSize,
   type PerformanceBarSnapshot,
   type PerformanceBarTone,
 } from "./performanceBarMetrics";
@@ -79,6 +80,18 @@ export function patchPerformanceBarDom(
   }
 }
 
+export function sizePerformanceBarSparkline(
+  canvas: HTMLCanvasElement,
+  barHeightPx: number,
+): { readonly width: number; readonly height: number } {
+  const size = performanceBarSparklineSize(barHeightPx);
+  canvas.style.width = `${size.width}px`;
+  canvas.style.height = `${size.height}px`;
+  canvas.setAttribute("width", String(size.width));
+  canvas.setAttribute("height", String(size.height));
+  return size;
+}
+
 export function drawPerformanceBarSparkline(
   canvas: HTMLCanvasElement,
   fpsSamples: ReadonlyArray<number>,
@@ -88,8 +101,16 @@ export function drawPerformanceBarSparkline(
   const context = canvas.getContext("2d");
   if (!context) return;
 
-  const cssWidth = PERFORMANCE_BAR_SPARKLINE_WIDTH;
-  const cssHeight = PERFORMANCE_BAR_SPARKLINE_HEIGHT;
+  const cssWidth = Math.max(
+    1,
+    canvas.clientWidth || Number.parseFloat(canvas.style.width) || PERFORMANCE_BAR_SPARKLINE_WIDTH,
+  );
+  const cssHeight = Math.max(
+    1,
+    canvas.clientHeight ||
+      Number.parseFloat(canvas.style.height) ||
+      PERFORMANCE_BAR_SPARKLINE_HEIGHT,
+  );
   const dpr = typeof window !== "undefined" ? Math.max(1, window.devicePixelRatio || 1) : 1;
   const pixelWidth = Math.round(cssWidth * dpr);
   const pixelHeight = Math.round(cssHeight * dpr);

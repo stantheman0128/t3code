@@ -1,6 +1,20 @@
-import type { PerformanceBarFpsMode } from "@t3tools/contracts/settings";
+import {
+  DEFAULT_PERFORMANCE_BAR_HEIGHT_PX,
+  MAX_PERFORMANCE_BAR_HEIGHT_PX,
+  MIN_PERFORMANCE_BAR_HEIGHT_PX,
+  type PerformanceBarFpsMode,
+} from "@t3tools/contracts/settings";
 import { ChevronDownIcon, HelpCircleIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type Ref,
+} from "react";
 
 import { APP_BASE_NAME, APP_STAGE_LABEL, APP_VERSION } from "../../branding";
 import { cn } from "~/lib/utils";
@@ -11,8 +25,12 @@ import {
 } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { PERFORMANCE_BAR_TONE_CLASS, patchPerformanceBarDom } from "./performanceBarDom";
-import { applyPerformanceBarLayout } from "./performanceBarLayout";
+import {
+  PERFORMANCE_BAR_TONE_CLASS,
+  patchPerformanceBarDom,
+  sizePerformanceBarSparkline,
+} from "./performanceBarDom";
+import { applyPerformanceBarLayout, clampPerformanceBarHeightPx } from "./performanceBarLayout";
 import {
   derivePerformanceBarSnapshot,
   formatPerformanceBarFps,
@@ -23,11 +41,10 @@ import {
   PERFORMANCE_BAR_DELAY_WARN_MS,
   PERFORMANCE_BAR_JANK_WARN_RATIO,
   PERFORMANCE_BAR_NUMBER_INTERVAL_MS,
-  PERFORMANCE_BAR_SPARKLINE_HEIGHT,
-  PERFORMANCE_BAR_SPARKLINE_WIDTH,
   performanceBarDelayTone,
   performanceBarFpsTone,
   performanceBarJankTone,
+  performanceBarSparklineSize,
   type PerformanceBarSnapshot,
   readRendererHeapBytes,
   trimFrameTimes,
@@ -56,17 +73,56 @@ const METRIC_HELP = [
 export function PerformanceBar() {
   const visible = useClientSettings((settings) => settings.showPerformanceBar);
   const fpsMode = useClientSettings((settings) => settings.performanceBarFpsMode);
+  const heightPx = useClientSettings((settings) => settings.performanceBarHeightPx);
   const updateClientSettings = useUpdateClientSettings();
   const [snapshot, setSnapshot] = useState<PerformanceBarSnapshot | null>(null);
   const toolbarRef = useRef<HTMLFooterElement>(null);
   const snapshotRef = useRef<PerformanceBarSnapshot | null>(null);
   const fpsModeRef = useRef(fpsMode);
+  const heightRef = useRef(heightPx);
+  const dragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
   fpsModeRef.current = fpsMode;
+  heightRef.current = heightPx;
+
+  const previewHeight = useCallback((nextHeight: number) => {
+    const clamped = clampPerformanceBarHeightPx(nextHeight);
+    heightRef.current = clamped;
+    applyPerformanceBarLayout(document.documentElement, true, clamped);
+    const toolbar = toolbarRef.current;
+    const canvas = toolbar?.querySelector("[data-performance-sparkline]");
+    if (toolbar && canvas instanceof HTMLCanvasElement) {
+      sizePerformanceBarSparkline(canvas, clamped);
+      const live = snapshotRef.current;
+      if (live) {
+        patchPerformanceBarDom(toolbar, live, fpsModeRef.current, {
+          numbers: false,
+          sparkline: true,
+        });
+      }
+    }
+    const handle = toolbar?.querySelector("[data-performance-resize]");
+    if (handle instanceof HTMLElement) {
+      handle.setAttribute("aria-valuenow", String(clamped));
+    }
+    return clamped;
+  }, []);
+
+  const commitHeight = useCallback(
+    (nextHeight: number) => {
+      const clamped = previewHeight(nextHeight);
+      updateClientSettings({ performanceBarHeightPx: clamped });
+    },
+    [previewHeight, updateClientSettings],
+  );
 
   useLayoutEffect(() => {
-    applyPerformanceBarLayout(document.documentElement, visible);
+    applyPerformanceBarLayout(document.documentElement, visible, heightPx);
     return () => applyPerformanceBarLayout(document.documentElement, false);
-  }, [visible]);
+  }, [visible, heightPx]);
 
   useEffect(() => {
     if (!visible) {
@@ -108,6 +164,64 @@ export function PerformanceBar() {
     patchPerformanceBarDom(toolbarRef.current, live, fpsMode);
   }, [fpsMode, snapshot]);
 
+  const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: heightRef.current,
+    };
+  }, []);
+
+  const handleResizePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      previewHeight(drag.startHeight + (drag.startY - event.clientY));
+    },
+    [previewHeight],
+  );
+
+  const handleResizePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      commitHeight(heightRef.current);
+    },
+    [commitHeight],
+  );
+
+  const handleResizeKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        commitHeight(heightRef.current + 4);
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        commitHeight(heightRef.current - 4);
+        return;
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        commitHeight(DEFAULT_PERFORMANCE_BAR_HEIGHT_PX);
+      }
+    },
+    [commitHeight],
+  );
+
+  const handleResizeDoubleClick = useCallback(() => {
+    commitHeight(DEFAULT_PERFORMANCE_BAR_HEIGHT_PX);
+  }, [commitHeight]);
+
   if (!visible || snapshot === null) {
     return null;
   }
@@ -116,6 +230,7 @@ export function PerformanceBar() {
     <PerformanceBarView
       snapshot={snapshot}
       fpsMode={fpsMode}
+      heightPx={heightPx}
       toolbarRef={toolbarRef}
       onCycleFpsMode={() =>
         updateClientSettings({
@@ -123,6 +238,11 @@ export function PerformanceBar() {
         })
       }
       onHide={toggleShowPerformanceBar}
+      onResizePointerDown={handleResizePointerDown}
+      onResizePointerMove={handleResizePointerMove}
+      onResizePointerEnd={handleResizePointerEnd}
+      onResizeKeyDown={handleResizeKeyDown}
+      onResizeDoubleClick={handleResizeDoubleClick}
     />
   );
 }
@@ -130,15 +250,34 @@ export function PerformanceBar() {
 export function PerformanceBarView(props: {
   readonly snapshot: PerformanceBarSnapshot;
   readonly fpsMode: PerformanceBarFpsMode;
+  readonly heightPx?: number;
   readonly toolbarRef?: Ref<HTMLFooterElement>;
   readonly onCycleFpsMode: () => void;
   readonly onHide: () => void;
+  readonly onResizePointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onResizePointerMove?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onResizePointerEnd?: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onResizeKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  readonly onResizeDoubleClick?: () => void;
 }) {
-  const { snapshot, fpsMode, toolbarRef, onCycleFpsMode, onHide } = props;
+  const {
+    snapshot,
+    fpsMode,
+    heightPx = DEFAULT_PERFORMANCE_BAR_HEIGHT_PX,
+    toolbarRef,
+    onCycleFpsMode,
+    onHide,
+    onResizePointerDown,
+    onResizePointerMove,
+    onResizePointerEnd,
+    onResizeKeyDown,
+    onResizeDoubleClick,
+  } = props;
   const delayTone = performanceBarDelayTone(snapshot.delayMs);
   const fpsTone = performanceBarFpsTone(snapshot.fps);
   const jankTone = performanceBarJankTone(snapshot.jankRatio);
   const stage = APP_STAGE_LABEL.trim().toLowerCase();
+  const sparkline = performanceBarSparklineSize(heightPx);
 
   return (
     <footer
@@ -146,6 +285,23 @@ export function PerformanceBarView(props: {
       data-component="t3-dev-performance-toolbar"
       className="pointer-events-auto fixed inset-x-0 bottom-0 z-[80] flex h-(--dev-performance-bar-height) items-center gap-3 border-t border-border/70 bg-background/95 px-3 font-mono text-[11px] leading-none text-muted-foreground"
     >
+      <div
+        data-performance-resize=""
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize performance bar"
+        aria-valuemin={MIN_PERFORMANCE_BAR_HEIGHT_PX}
+        aria-valuemax={MAX_PERFORMANCE_BAR_HEIGHT_PX}
+        aria-valuenow={heightPx}
+        tabIndex={0}
+        className="absolute inset-x-0 top-0 z-10 h-1.5 cursor-row-resize"
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerEnd}
+        onPointerCancel={onResizePointerEnd}
+        onKeyDown={onResizeKeyDown}
+        onDoubleClick={onResizeDoubleClick}
+      />
       <span data-performance-toolbar-brand="" className="min-w-0 truncate text-muted-foreground">
         {APP_BASE_NAME} {APP_VERSION}
         {stage ? ` (${stage})` : ""}
@@ -170,12 +326,12 @@ export function PerformanceBarView(props: {
           <canvas
             data-performance-sparkline=""
             data-fps-mode={fpsMode}
-            width={PERFORMANCE_BAR_SPARKLINE_WIDTH}
-            height={PERFORMANCE_BAR_SPARKLINE_HEIGHT}
+            width={sparkline.width}
+            height={sparkline.height}
             className="block"
             style={{
-              width: PERFORMANCE_BAR_SPARKLINE_WIDTH,
-              height: PERFORMANCE_BAR_SPARKLINE_HEIGHT,
+              width: sparkline.width,
+              height: sparkline.height,
             }}
             aria-hidden
           />

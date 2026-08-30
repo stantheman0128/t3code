@@ -11,6 +11,7 @@ import {
   mapSparklinePoints,
   performanceBarDelayTone,
   performanceBarFpsTone,
+  performanceBarSparklineSize,
   readRendererHeapBytes,
   sparklineFpsRange,
   trimFrameTimes,
@@ -102,6 +103,14 @@ describe("sparklineFpsRange", () => {
     const range = sparklineFpsRange([60, 60, 12, 60]);
     expect(range.min).toBe(12);
     expect(range.max).toBe(60);
+  });
+});
+
+describe("performanceBarSparklineSize", () => {
+  it("matches the default bar and grows when the bar is taller", () => {
+    expect(performanceBarSparklineSize(36)).toEqual({ width: 88, height: 22 });
+    expect(performanceBarSparklineSize(72).height).toBeGreaterThan(22);
+    expect(performanceBarSparklineSize(72).width).toBeGreaterThan(88);
   });
 });
 

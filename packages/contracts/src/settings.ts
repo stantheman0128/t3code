@@ -37,6 +37,16 @@ export const DEFAULT_TOOL_CALL_DENSITY: ToolCallDensity = "standard";
 export const PerformanceBarFpsMode = Schema.Literals(["bars", "wave"]);
 export type PerformanceBarFpsMode = typeof PerformanceBarFpsMode.Type;
 export const DEFAULT_PERFORMANCE_BAR_FPS_MODE: PerformanceBarFpsMode = "wave";
+export const MIN_PERFORMANCE_BAR_HEIGHT_PX = 28;
+export const MAX_PERFORMANCE_BAR_HEIGHT_PX = 120;
+export const DEFAULT_PERFORMANCE_BAR_HEIGHT_PX = 36;
+export const PerformanceBarHeightPx = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_PERFORMANCE_BAR_HEIGHT_PX,
+    maximum: MAX_PERFORMANCE_BAR_HEIGHT_PX,
+  }),
+);
+export type PerformanceBarHeightPx = typeof PerformanceBarHeightPx.Type;
 
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
@@ -266,6 +276,9 @@ export const ClientSettingsSchema = Schema.Struct({
   showPerformanceBar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   performanceBarFpsMode: PerformanceBarFpsMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PERFORMANCE_BAR_FPS_MODE)),
+  ),
+  performanceBarHeightPx: PerformanceBarHeightPx.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PERFORMANCE_BAR_HEIGHT_PX)),
   ),
   /**
    * When on, the chat workspace picks up the active provider's type, accent,
@@ -994,6 +1007,7 @@ export const ClientSettingsPatch = Schema.Struct({
   toolCallDensity: Schema.optionalKey(ToolCallDensity),
   showPerformanceBar: Schema.optionalKey(Schema.Boolean),
   performanceBarFpsMode: Schema.optionalKey(PerformanceBarFpsMode),
+  performanceBarHeightPx: Schema.optionalKey(PerformanceBarHeightPx),
   providerChrome: Schema.optionalKey(Schema.Boolean),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(

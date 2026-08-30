@@ -138,10 +138,12 @@ describe("ClientSettings sidebar", () => {
   it("defaults the performance bar off, with a wave as the FPS indicator", () => {
     expect(decodeClientSettings({}).showPerformanceBar).toBe(false);
     expect(decodeClientSettings({}).performanceBarFpsMode).toBe("wave");
+    expect(decodeClientSettings({}).performanceBarHeightPx).toBe(36);
     expect(decodeClientSettings({ showPerformanceBar: true }).showPerformanceBar).toBe(true);
     expect(decodeClientSettings({ performanceBarFpsMode: "bars" }).performanceBarFpsMode).toBe(
       "bars",
     );
+    expect(decodeClientSettings({ performanceBarHeightPx: 72 }).performanceBarHeightPx).toBe(72);
   });
 
   it("defaults provider chrome off", () => {

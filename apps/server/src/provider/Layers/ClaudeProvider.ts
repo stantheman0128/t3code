@@ -582,9 +582,37 @@ export function preferClaudeSubscriptionType(
   return claudeOrganizationTypeToSubscription(organizationType) ?? sdkSubscriptionType;
 }
 
-const readClaudeOrganizationType = Effect.fn("readClaudeOrganizationType")(function* (
-  homeDir: string,
-) {
+export function parseClaudeOauthAccount(document: unknown):
+  | {
+      readonly email?: string;
+      readonly organizationType?: string;
+    }
+  | undefined {
+  if (!document || typeof document !== "object" || Array.isArray(document)) {
+    return undefined;
+  }
+  const oauthAccount = (document as { oauthAccount?: unknown }).oauthAccount;
+  if (!oauthAccount || typeof oauthAccount !== "object" || Array.isArray(oauthAccount)) {
+    return undefined;
+  }
+  const record = oauthAccount as Record<string, unknown>;
+  const emailRaw = record.emailAddress ?? record.email;
+  const email =
+    typeof emailRaw === "string" && emailRaw.includes("@") ? emailRaw.trim() : undefined;
+  const organizationType =
+    typeof record.organizationType === "string" && record.organizationType.trim().length > 0
+      ? record.organizationType
+      : undefined;
+  if (!email && !organizationType) {
+    return undefined;
+  }
+  return {
+    ...(email ? { email } : {}),
+    ...(organizationType ? { organizationType } : {}),
+  };
+}
+
+const readClaudeOauthAccount = Effect.fn("readClaudeOauthAccount")(function* (homeDir: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const raw = yield* fileSystem
@@ -595,12 +623,7 @@ const readClaudeOrganizationType = Effect.fn("readClaudeOrganizationType")(funct
   }
   try {
     // @effect-diagnostics preferSchemaOverJson:off
-    const document = JSON.parse(raw) as {
-      oauthAccount?: { organizationType?: unknown };
-    };
-    return typeof document.oauthAccount?.organizationType === "string"
-      ? document.oauthAccount.organizationType
-      : undefined;
+    return parseClaudeOauthAccount(JSON.parse(raw) as unknown);
   } catch {
     return undefined;
   }
@@ -818,6 +841,7 @@ const probeClaudeCapabilities = (
       const account = init.account as
         | {
             readonly email?: string;
+            readonly emailAddress?: string;
             readonly subscriptionType?: string;
             readonly tokenSource?: string;
             readonly apiProvider?: string;
@@ -838,7 +862,9 @@ const probeClaudeCapabilities = (
             )
           : undefined;
       return {
-        email: account?.email,
+        email:
+          nonEmptyProbeString(account?.email ?? "") ??
+          nonEmptyProbeString(account?.emailAddress ?? ""),
         subscriptionType: account?.subscriptionType,
         tokenSource: account?.tokenSource,
         apiProvider: account?.apiProvider,
@@ -1009,7 +1035,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   ];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
-  if (!capabilities) {
+  const claudeHome = yield* resolveClaudeHomePath(claudeSettings);
+  const fileAccount = yield* readClaudeOauthAccount(claudeHome).pipe(
+    Effect.orElseSucceed(() => undefined),
+  );
+  if (!capabilities && !fileAccount) {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -1027,32 +1057,30 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const claudeHome = yield* resolveClaudeHomePath(claudeSettings);
-  const organizationType = yield* readClaudeOrganizationType(claudeHome).pipe(
-    Effect.orElseSucceed(() => undefined),
-  );
+  const organizationType = fileAccount?.organizationType;
   const subscriptionType = preferClaudeSubscriptionType(
-    capabilities.subscriptionType,
+    capabilities?.subscriptionType,
     organizationType,
   );
   const authMetadata =
     claudeAuthMetadata({
       subscriptionType,
-      authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+      authMethod: capabilities?.tokenSource,
+    }) ?? apiProviderAuthMetadata(capabilities?.apiProvider);
   const sdkUsageLimits =
-    capabilities.usageLimits?.status === "available" && capabilities.usageLimits.windows.length > 0
+    capabilities?.usageLimits?.status === "available" && capabilities.usageLimits.windows.length > 0
       ? capabilities.usageLimits
       : undefined;
   const usageLimits =
     sdkUsageLimits ??
-    (normalizeClaudeAuthMethod(capabilities.tokenSource) === "apiKey"
+    (normalizeClaudeAuthMethod(capabilities?.tokenSource) === "apiKey"
       ? undefined
       : yield* readClaudeUsageLimits({
           homeDir: claudeHome,
           environment: resolvedEnvironment,
           planLabel: authMetadata?.label ?? subscriptionType,
         }));
+  const email = capabilities?.email ?? fileAccount?.email;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -1067,7 +1095,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       status: "ready",
       auth: {
         status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
+        ...(email ? { email } : {}),
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),

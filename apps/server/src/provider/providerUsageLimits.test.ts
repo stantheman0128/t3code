@@ -6,6 +6,7 @@ import {
   mapCursorPeriodUsage,
   mapGenericSubscriptionDocument,
   mapGrokBillingDocument,
+  mapOpenRouterKeyUsage,
   remoteUsageProbesEnabled,
 } from "./providerUsageLimits.ts";
 
@@ -177,6 +178,48 @@ describe("mapGrokBillingDocument", () => {
       observedAt,
       windows: [],
     });
+  });
+
+  it("does not treat empty unified-billing credits as 100% remaining", () => {
+    expect(
+      mapGrokBillingDocument(
+        {
+          config: {
+            isUnifiedBillingUser: true,
+            prepaidBalance: { val: 0 },
+            onDemandCap: { val: 0 },
+            currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY" },
+          },
+        },
+        observedAt,
+        "SuperGrok Heavy",
+      ),
+    ).toMatchObject({ status: "unavailable", windows: [] });
+  });
+});
+
+describe("mapOpenRouterKeyUsage", () => {
+  it("maps a capped key to remaining percent", () => {
+    expect(
+      mapOpenRouterKeyUsage(
+        { data: { limit: 20, limit_remaining: 5, usage: 15 } },
+        observedAt,
+        "OpenRouter",
+      ),
+    ).toMatchObject({
+      status: "available",
+      windows: [{ id: "openrouter", label: "OpenRouter", remainingPercent: 25 }],
+    });
+  });
+
+  it("does not show unlimited keys as 100% remaining", () => {
+    expect(
+      mapOpenRouterKeyUsage(
+        { data: { limit: null, limit_remaining: null, usage: 12.5 } },
+        observedAt,
+        "OpenRouter",
+      ),
+    ).toMatchObject({ status: "unavailable", windows: [] });
   });
 });
 

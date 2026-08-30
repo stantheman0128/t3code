@@ -143,11 +143,17 @@ const fetchGrokSettingsDocument = (token: string) => fetchGrokJson(GROK_SETTINGS
 
 const fetchGrokBillingDocument = (token: string) =>
   Effect.gen(function* () {
-    const credits = yield* fetchGrokJson(GROK_BILLING_CREDITS_URL, token);
-    if (credits !== undefined) {
+    const [credits, billing] = yield* Effect.all(
+      [fetchGrokJson(GROK_BILLING_CREDITS_URL, token), fetchGrokJson(GROK_BILLING_URL, token)],
+      { concurrency: "unbounded" },
+    );
+    // Unified-billing SuperGrok accounts return an empty credits payload with
+    // no remaining percent. Prefer whichever document actually maps to bars.
+    const creditsLimits = mapGrokBillingDocument(credits, new Date(0).toISOString());
+    if (creditsLimits.status === "available") {
       return credits;
     }
-    return yield* fetchGrokJson(GROK_BILLING_URL, token);
+    return billing ?? credits;
   });
 
 export function parseGrokAuthFile(document: unknown): ServerProviderAuth | null {

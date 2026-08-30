@@ -383,6 +383,15 @@ function grokUsedPercent(cfg: Record<string, unknown>): number | undefined {
   if (used !== undefined && limit !== undefined && limit > 0) {
     return (used / limit) * 100;
   }
+  const remainingCredits = unwrapNumeric(
+    recordField(cfg, "remainingCredits", "remaining_credits", "prepaidBalance", "prepaid_balance"),
+  );
+  const totalCredits = unwrapNumeric(
+    recordField(cfg, "totalCredits", "total_credits", "creditLimit", "credit_limit"),
+  );
+  if (remainingCredits !== undefined && totalCredits !== undefined && totalCredits > 0) {
+    return (1 - remainingCredits / totalCredits) * 100;
+  }
   return undefined;
 }
 
@@ -541,6 +550,53 @@ export function mapCursorPeriodUsage(
       usageWindow("included", "Included", includedFromSpend, resetsAt),
       usageWindow("auto", "Auto", autoRemaining, resetsAt),
       usageWindow("api", "API", apiRemaining, resetsAt),
+    ],
+  });
+}
+
+/**
+ * OpenRouter remaining from GET /api/v1/key.
+ * Unlimited keys (`limit` null) must not be shown as 100% remaining.
+ */
+export function mapOpenRouterKeyUsage(
+  document: unknown,
+  observedAt: string,
+  planLabel?: string,
+): ProviderUsageLimits {
+  const root = asRecord(document);
+  const data = asRecord(root?.data) ?? root;
+  if (!data) {
+    return {
+      status: "unsupported",
+      ...(planLabel ? { planLabel } : {}),
+      windows: [],
+    };
+  }
+  const limit = unwrapNumeric(recordField(data, "limit"));
+  const remainingCredits = unwrapNumeric(recordField(data, "limit_remaining", "limitRemaining"));
+  const usedCredits = unwrapNumeric(recordField(data, "usage", "usage_monthly", "usageMonthly"));
+  let remainingPercent: number | undefined;
+  if (limit !== undefined && limit > 0 && remainingCredits !== undefined) {
+    remainingPercent = clampUsagePercent((remainingCredits / limit) * 100);
+  } else if (limit !== undefined && limit > 0 && usedCredits !== undefined) {
+    remainingPercent = remainingFromUsed((usedCredits / limit) * 100);
+  } else {
+    const totalCredits = unwrapNumeric(recordField(data, "total_credits", "totalCredits"));
+    const totalUsage = unwrapNumeric(recordField(data, "total_usage", "totalUsage"));
+    if (totalCredits !== undefined && totalCredits > 0 && totalUsage !== undefined) {
+      remainingPercent = remainingFromUsed((totalUsage / totalCredits) * 100);
+    }
+  }
+  return availableUsageLimits({
+    planLabel,
+    observedAt,
+    windows: [
+      usageWindow(
+        "openrouter",
+        "OpenRouter",
+        remainingPercent,
+        recordField(data, "limit_reset", "limitReset", "resets_at", "resetsAt"),
+      ),
     ],
   });
 }

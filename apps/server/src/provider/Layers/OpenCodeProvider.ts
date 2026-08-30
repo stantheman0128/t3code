@@ -1,6 +1,7 @@
 import {
   type ModelCapabilities,
   type OpenCodeSettings,
+  type ProviderUsageLimits,
   type ServerProviderModel,
   type ServerProviderSkill,
 } from "@t3tools/contracts";
@@ -19,6 +20,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { readOpenCodeGoUsageLimits } from "../openCodeUsage.ts";
+import { readOpenRouterUsageLimits } from "../openRouterUsage.ts";
 import {
   MINIMUM_OPENCODE_VERSION,
   OpenCodeRuntime,
@@ -37,6 +39,24 @@ class OpenCodeProbeError extends Data.TaggedError("OpenCodeProbeError")<{
   readonly cause: unknown;
   readonly detail: string;
 }> {}
+
+export function mergeOpenCodeUsageLimits(
+  goUsage: ProviderUsageLimits | undefined,
+  openRouterUsage: ProviderUsageLimits | undefined,
+): ProviderUsageLimits | undefined {
+  const windows = [...(goUsage?.windows ?? []), ...(openRouterUsage?.windows ?? [])];
+  if (windows.length === 0) {
+    return goUsage ?? openRouterUsage;
+  }
+  return {
+    status: "available",
+    observedAt: openRouterUsage?.observedAt ?? goUsage?.observedAt ?? new Date().toISOString(),
+    ...(goUsage?.planLabel || openRouterUsage?.planLabel
+      ? { planLabel: goUsage?.planLabel ?? openRouterUsage?.planLabel }
+      : {}),
+    windows,
+  };
+}
 
 function normalizeProbeMessage(message: string): string | undefined {
   const trimmed = message.trim();
@@ -478,7 +498,14 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   );
   const skills = flattenOpenCodeSkills(inventoryExit.value.inventory);
   const connectedCount = inventoryExit.value.inventory.providerList.connected.length;
-  const usageLimits = yield* readOpenCodeGoUsageLimits(resolvedEnvironment);
+  const [goUsage, openRouterUsage] = yield* Effect.all(
+    [
+      readOpenCodeGoUsageLimits(resolvedEnvironment),
+      readOpenRouterUsageLimits(resolvedEnvironment),
+    ],
+    { concurrency: "unbounded" },
+  );
+  const usageLimits = mergeOpenCodeUsageLimits(goUsage, openRouterUsage);
   return buildServerProvider({
     presentation: OPENCODE_PRESENTATION,
     enabled: true,

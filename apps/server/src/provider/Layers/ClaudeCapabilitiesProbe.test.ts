@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
+  parseClaudeOauthAccount,
   preferClaudeSubscriptionType,
   probeClaudeCapabilities,
 } from "./ClaudeProvider.ts";
@@ -19,6 +20,22 @@ it("prefers ~/.claude.json organizationType over SDK maxplan", () => {
   assert.equal(preferClaudeSubscriptionType("maxplan", "claude_pro"), "pro");
   assert.equal(preferClaudeSubscriptionType("maxplan", undefined), "maxplan");
   assert.equal(preferClaudeSubscriptionType(undefined, "claude_pro"), "pro");
+});
+
+it("reads Claude account email from oauthAccount.emailAddress", () => {
+  assert.deepEqual(
+    parseClaudeOauthAccount({
+      oauthAccount: {
+        emailAddress: "dev@example.com",
+        organizationType: "claude_pro",
+      },
+    }),
+    { email: "dev@example.com", organizationType: "claude_pro" },
+  );
+  assert.equal(
+    parseClaudeOauthAccount({ oauthAccount: { organizationType: "max" } })?.email,
+    undefined,
+  );
 });
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {

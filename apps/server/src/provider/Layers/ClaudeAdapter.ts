@@ -310,6 +310,8 @@ interface ClaudeSessionContext {
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
+  /** User-selected 200k/1M window. SDK `modelUsage.contextWindow` often reports 200k even on 1M. */
+  selectedContextWindow: number | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
@@ -469,6 +471,40 @@ function maxClaudeContextWindowFromModelUsage(
   }
 
   return maxContextWindow;
+}
+
+function resolveClaudeOccupancyWindow(input: {
+  readonly selected: number | undefined;
+  readonly fromModelUsage: number | undefined;
+  readonly lastKnown: number | undefined;
+}): number | undefined {
+  if (input.selected !== undefined) {
+    return input.selected;
+  }
+  if (input.fromModelUsage !== undefined && input.lastKnown !== undefined) {
+    return Math.max(input.fromModelUsage, input.lastKnown);
+  }
+  return input.fromModelUsage ?? input.lastKnown;
+}
+
+/** After compact, billed assistant `input_tokens` often look like the old full window. */
+function shouldAdoptClaudeAssistantUsageAfterCompact(input: {
+  readonly compacted: boolean;
+  readonly lastUsedTokens: number | undefined;
+  readonly candidateUsedTokens: number;
+  readonly maxTokens: number | undefined;
+}): boolean {
+  if (!input.compacted || input.lastUsedTokens === undefined) {
+    return true;
+  }
+  if (input.candidateUsedTokens <= input.lastUsedTokens) {
+    return true;
+  }
+  if (input.maxTokens !== undefined && input.candidateUsedTokens >= input.maxTokens) {
+    return false;
+  }
+  const modestGrowthCap = input.lastUsedTokens + Math.max(32_000, input.lastUsedTokens * 0.25);
+  return input.candidateUsedTokens <= modestGrowthCap;
 }
 
 function selectedClaudeContextWindow(
@@ -631,6 +667,7 @@ function compactBoundaryTokenUsageSnapshot(
     ...(preTokens !== undefined ? { lastUsedTokens: preTokens } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(totalProcessedTokens !== undefined ? { totalProcessedTokens } : {}),
+    compactsAutomatically: true,
   });
 }
 
@@ -2091,9 +2128,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    context.lastKnownTokenUsage = usage;
+    const nextUsage =
+      usage.compactsAutomatically === true ||
+      context.lastKnownTokenUsage?.compactsAutomatically === true
+        ? { ...usage, compactsAutomatically: true }
+        : usage;
+    context.lastKnownTokenUsage = nextUsage;
     context.lastKnownTotalProcessedTokens =
-      usage.totalProcessedTokens ?? context.lastKnownTotalProcessedTokens;
+      nextUsage.totalProcessedTokens ?? context.lastKnownTotalProcessedTokens;
 
     const turnState = context.turnState;
     const stamp = yield* makeEventStamp();
@@ -2105,7 +2147,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       threadId: context.session.threadId,
       ...(turnState ? { turnId: turnState.turnId } : {}),
       payload: {
-        usage,
+        usage: nextUsage,
       },
       providerRefs: nativeProviderRefs(context),
       ...(options?.rawMethod || options?.rawPayload
@@ -2209,12 +2251,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     errorMessage?: string,
     result?: SDKResultMessage,
   ) {
-    const resultContextWindow = maxClaudeContextWindowFromModelUsage(result?.modelUsage);
-    if (resultContextWindow !== undefined) {
-      context.lastKnownContextWindow = resultContextWindow;
+    const occupancyWindow = resolveClaudeOccupancyWindow({
+      selected: context.selectedContextWindow,
+      fromModelUsage: maxClaudeContextWindowFromModelUsage(result?.modelUsage),
+      lastKnown: context.lastKnownContextWindow,
+    });
+    if (occupancyWindow !== undefined) {
+      context.lastKnownContextWindow = occupancyWindow;
     }
 
-    const maxTokens = resultContextWindow ?? context.lastKnownContextWindow;
+    const maxTokens = occupancyWindow;
     const accumulatedTotalProcessedTokens = claudeTotalProcessedTokens(result?.usage);
     if (accumulatedTotalProcessedTokens !== undefined) {
       context.lastKnownTotalProcessedTokens = accumulatedTotalProcessedTokens;
@@ -2980,12 +3026,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     if (context.turnState) {
       context.turnState.items.push(message.message);
+      const assistantUsageSnapshot = normalizeClaudeActiveTokenUsage(
+        message.message.usage,
+        context.lastKnownContextWindow,
+        context.lastKnownTotalProcessedTokens,
+      );
       if (
-        normalizeClaudeActiveTokenUsage(
-          message.message.usage,
-          context.lastKnownContextWindow,
-          context.lastKnownTotalProcessedTokens,
-        )
+        assistantUsageSnapshot &&
+        shouldAdoptClaudeAssistantUsageAfterCompact({
+          compacted: context.turnState.compactedSinceLatestAssistantUsage,
+          lastUsedTokens: context.lastKnownTokenUsage?.usedTokens,
+          candidateUsedTokens: assistantUsageSnapshot.usedTokens,
+          maxTokens: assistantUsageSnapshot.maxTokens ?? context.lastKnownContextWindow,
+        })
       ) {
         context.turnState.latestAssistantUsage = message.message.usage;
         context.turnState.compactedSinceLatestAssistantUsage = false;
@@ -4415,6 +4468,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         workflowMemberFingerprints,
         liveTaskIds,
         turnState: undefined,
+        selectedContextWindow: initialContextWindow,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
@@ -4537,6 +4591,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       );
       context.currentEffort =
         getEffectiveClaudeAgentEffort(turnEffort ?? null, modelSelection.model) ?? undefined;
+      const selectedWindow = selectedClaudeContextWindow(modelSelection);
+      if (selectedWindow !== undefined) {
+        context.selectedContextWindow = selectedWindow;
+        context.lastKnownContextWindow = selectedWindow;
+      }
     }
 
     // Apply interaction mode by switching the SDK's permission mode.

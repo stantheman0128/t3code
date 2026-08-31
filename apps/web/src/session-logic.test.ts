@@ -636,7 +636,7 @@ describe("deriveTurnPlans", () => {
       }),
     ];
 
-    expect(deriveTurnPlans(activities)[0]?.plan.steps).toEqual([
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toEqual([
       { durationMs: 4_000, step: "Check", status: "completed" },
       { durationMs: 6_000, step: "Check", status: "completed" },
     ]);
@@ -688,13 +688,13 @@ describe("deriveTurnPlans", () => {
       }),
     ];
 
-    expect(deriveTurnPlans(activities)[0]?.plan.steps).toEqual([
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toEqual([
       { durationMs: 5_000, step: "First", status: "completed" },
       { durationMs: 5_000, step: "Second", status: "completed" },
     ]);
   });
 
-  it("drops a turn's chip when a later snapshot clears the plan", () => {
+  it("clears the active plan when a later snapshot has no steps", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "plan-set",
@@ -715,7 +715,7 @@ describe("deriveTurnPlans", () => {
         payload: { plan: [] },
       }),
     ];
-    expect(deriveTurnPlans(activities)).toEqual([]);
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))).toBeNull();
   });
 });
 
@@ -942,6 +942,33 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  it("keeps the latest task progress without emitting plan-update log entries", () => {
+    const activities = [
+      makeActivity({ id: "before", kind: "tool.completed", summary: "Read files", sequence: 0 }),
+      makeActivity({
+        id: "plan-1",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        turnId: "turn-1",
+        sequence: 1,
+        payload: { plan: [{ step: "Verify the composer", status: "inProgress" }] },
+      }),
+      makeActivity({
+        id: "plan-2",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        turnId: "turn-1",
+        sequence: 2,
+        payload: { plan: [{ step: "Verify the composer", status: "completed" }] },
+      }),
+      makeActivity({ id: "after", kind: "tool.completed", summary: "Ran tests", sequence: 3 }),
+    ];
+    expect(deriveWorkLogEntries(activities).map((entry) => entry.id)).toEqual(["before", "after"]);
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toMatchObject([
+      { step: "Verify the composer", status: "completed" },
+    ]);
+  });
+
   it("omits tool started entries and keeps completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -960,6 +987,89 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities);
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+  });
+
+  it("omits routine setup updates before work starts and after later turn activity", () => {
+    const setupActivities = [
+      makeActivity({
+        id: "setup-requested",
+        kind: "setup-script.requested",
+        summary: "Preparing setup script",
+        tone: "info",
+        sequence: 1,
+      }),
+      makeActivity({
+        id: "setup-started",
+        kind: "setup-script.started",
+        summary: "Setup script started",
+        tone: "info",
+        sequence: 2,
+      }),
+    ];
+
+    expect(deriveWorkLogEntries(setupActivities)).toEqual([]);
+    expect(
+      deriveWorkLogEntries([
+        ...setupActivities,
+        makeActivity({
+          id: "first-turn-tool",
+          kind: "tool.completed",
+          summary: "Read project files",
+          turnId: "turn-1",
+          sequence: 3,
+        }),
+        makeActivity({
+          id: "later-turn-tool",
+          kind: "tool.completed",
+          summary: "Ran tests",
+          turnId: "turn-2",
+          sequence: 4,
+        }),
+      ]).map((entry) => entry.id),
+    ).toEqual(["first-turn-tool", "later-turn-tool"]);
+  });
+
+  it("preserves setup failures and unrelated info without a turn id", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "setup-requested",
+        kind: "setup-script.requested",
+        summary: "Preparing setup script",
+        tone: "info",
+        sequence: 1,
+      }),
+      makeActivity({
+        id: "setup-failed",
+        kind: "setup-script.failed",
+        summary: "Setup script failed to start",
+        tone: "error",
+        payload: { detail: "Could not start the setup terminal" },
+        sequence: 2,
+      }),
+      makeActivity({
+        id: "runtime-notice",
+        kind: "runtime.warning",
+        summary: "Reconnecting to provider",
+        tone: "info",
+        sequence: 3,
+      }),
+    ]);
+
+    expect(entries).toMatchObject([
+      {
+        id: "setup-failed",
+        label: "Setup script failed to start",
+        tone: "error",
+        detail: "Could not start the setup terminal",
+        turnId: null,
+      },
+      {
+        id: "runtime-notice",
+        label: "Reconnecting to provider",
+        tone: "info",
+        turnId: null,
+      },
+    ]);
   });
 
   it("drops runtime warnings with no displayable content, keeps ones with a preview", () => {

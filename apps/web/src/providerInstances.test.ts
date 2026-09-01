@@ -119,6 +119,39 @@ describe("applyProviderInstanceSettings", () => {
 
     expect(entry?.enabled).toBe(false);
   });
+
+  it("relabels a custom Codex instance to Codex after settings turn the default off", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        displayName: "Codex A",
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_codex_b",
+        displayName: "Codex",
+      }),
+    ]);
+    const labeled = applyProviderInstanceSettings(entries, {
+      providerInstances: {
+        [ProviderInstanceId.make("codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: false,
+        },
+        [ProviderInstanceId.make("codex_codex_b")]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+        },
+      },
+      providers: {} as never,
+    });
+
+    expect(labeled.map((entry) => [entry.instanceId, entry.enabled, entry.displayName])).toEqual([
+      ["codex", false, "Codex A"],
+      ["codex_codex_b", true, "Codex"],
+    ]);
+  });
 });
 
 describe("deriveProviderInstanceEntries", () => {
@@ -132,6 +165,42 @@ describe("deriveProviderInstanceEntries", () => {
     expect(entry?.instanceId).toBe("codex_personal");
     expect(entry?.driverKind).toBe("codex");
     expect(entry?.isDefault).toBe(false);
+  });
+
+  it("labels a lone custom Codex instance as Codex when the default is off", () => {
+    const [defaultEntry, customEntry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        displayName: "Codex A",
+        enabled: false,
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_codex_b",
+        displayName: "Codex",
+      }),
+    ]);
+
+    expect(defaultEntry?.displayName).toBe("Codex A");
+    expect(customEntry?.displayName).toBe("Codex");
+  });
+
+  it("keeps custom Codex instances distinct when more than one is enabled", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        displayName: "Codex",
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_codex_b",
+        displayName: "Codex",
+      }),
+    ]);
+
+    expect(entries.map((entry) => entry.displayName)).toEqual(["Codex", "Codex B"]);
   });
 });
 

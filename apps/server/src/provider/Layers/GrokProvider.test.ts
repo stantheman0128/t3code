@@ -96,6 +96,22 @@ describe("Grok Bot ACP model discovery", () => {
     expect(unprefixed.map((model) => model.slug)).toEqual(["sand-default", "sand-automation"]);
   });
 
+  it("does not dump unprefixed OMP catalogs that are not Grok models", () => {
+    const models = selectDiscoveredGrokModels({
+      useGrokbotBackend: true,
+      models: {
+        currentModelId: "codestral-latest",
+        availableModels: [
+          { modelId: "codestral-latest", name: "Codestral" },
+          { modelId: "devstral-latest", name: "Devstral" },
+          { modelId: "mistral-large-latest", name: "Mistral Large" },
+        ],
+      },
+    });
+
+    expect(models.map((model) => model.slug)).toEqual([]);
+  });
+
   it("does not dump OMP's other-provider catalog when grokbot/ is missing", () => {
     const models = selectDiscoveredGrokModels({
       useGrokbotBackend: true,

@@ -204,6 +204,14 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettings({ showProviderUsage: false }).showProviderUsage).toBe(false);
   });
 
+  it("defaults provider instance order to empty", () => {
+    expect(decodeClientSettings({}).providerInstanceOrder).toEqual([]);
+    expect(
+      decodeClientSettings({ providerInstanceOrder: ["grok", "claudeAgent"] })
+        .providerInstanceOrder,
+    ).toEqual(["grok", "claudeAgent"]);
+  });
+
   it("defaults quota labels to leftover and accepts used", () => {
     expect(decodeClientSettings({}).usagePercentDisplay).toBe("left");
     expect(decodeClientSettings({ usagePercentDisplay: "used" }).usagePercentDisplay).toBe("used");

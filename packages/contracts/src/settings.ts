@@ -271,6 +271,13 @@ export const ClientSettingsSchema = Schema.Struct({
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /**
+   * Model picker sidebar order. First ready instance is the default for
+   * new threads. Empty means keep the built-in driver order.
+   */
+  providerInstanceOrder: Schema.Array(ProviderInstanceId).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  /**
    * @deprecated Kept so older settings files still decode. Layout motion
    * is `layoutMotion`; the old default-off value is ignored.
    */
@@ -1088,6 +1095,7 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  providerInstanceOrder: Schema.optionalKey(Schema.Array(ProviderInstanceId)),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),

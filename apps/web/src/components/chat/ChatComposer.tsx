@@ -331,6 +331,7 @@ import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  isProviderInstancePickerReady,
   NO_PROVIDER_MODEL_SELECTION,
   resolveProviderDriverKindForInstanceSelection,
   resolveSelectableProviderInstanceEntry,
@@ -1066,16 +1067,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () =>
       sortProviderInstanceEntries(
         applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        settings.providerInstanceOrder,
       ),
     [providerStatuses, settings],
   );
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
-  const threadProvider =
-    activeThread?.session?.providerInstanceId ??
-    activeThreadModelSelection?.instanceId ??
+  const existingThreadInstanceId =
+    activeThread?.session?.providerInstanceId ?? activeThreadModelSelection?.instanceId ?? null;
+  const fallbackInstanceId =
+    providerInstanceEntries.find(isProviderInstancePickerReady)?.instanceId ??
+    providerInstanceEntries[0]?.instanceId ??
     activeProjectDefaultModelSelection?.instanceId ??
     null;
-  const explicitSelectedInstanceId = selectedProviderByThreadId ?? threadProvider;
+  const explicitSelectedInstanceId =
+    selectedProviderByThreadId ?? existingThreadInstanceId ?? fallbackInstanceId;
 
   const unlockedSelectedProvider =
     resolveProviderDriverKindForInstanceSelection(

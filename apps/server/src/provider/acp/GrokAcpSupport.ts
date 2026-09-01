@@ -198,7 +198,33 @@ export function resolveGrokAcpBaseModelId(model: string | null | undefined): str
 }
 
 /** T3 product slugs that Grok ACP `session/set_model` does not accept. */
-const GROK_PRODUCT_MODEL_ALIASES = new Set(["grok-build", "grok-code", "grok-code-fast-1"]);
+const GROK_PRODUCT_MODEL_ALIASES = new Set([
+  "grok-build",
+  "grok-code",
+  "grok-code-fast-1",
+  "grok-4.6",
+  "grok-4.5",
+]);
+
+const GROK_FAMILY_ACP_PREFIXES = [
+  "grokbot/",
+  "xai/",
+  "xai-oauth/",
+  "xai-grok-build/",
+  "grok-cli/",
+] as const;
+
+/** True for Grok / Grok Bot ids. False for OMP's other providers (mistral/, anthropic/, ...). */
+export function isGrokFamilyAcpModelId(modelId: string): boolean {
+  const slug = modelId.trim().toLowerCase();
+  if (GROK_FAMILY_ACP_PREFIXES.some((prefix) => slug.startsWith(prefix))) {
+    return true;
+  }
+  if (slug.includes("/")) {
+    return false;
+  }
+  return slug.startsWith("grok") || slug.startsWith("sand-");
+}
 
 export function availableGrokSessionModelIds(
   sessionSetupResult:
@@ -235,10 +261,19 @@ export function resolveGrokSessionModelId(input: {
 }): string | undefined {
   const available = input.availableIds.filter((id) => id.length > 0);
   if (available.length === 0) {
-    return input.requested ?? input.current;
+    return input.current;
   }
   if (input.requested && available.includes(input.requested)) {
     return input.requested;
+  }
+  if (input.requested) {
+    const requested = input.requested;
+    const prefixed = available.find(
+      (id) => id.endsWith(`/${requested}`) || id === `grokbot/${requested}`,
+    );
+    if (prefixed) {
+      return prefixed;
+    }
   }
   if (
     input.requested &&
@@ -606,7 +641,7 @@ export function applyGrokAcpModelSelection<E>(input: {
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<GrokAcpSelection, E> {
   const requestedModelId =
-    input.availableModelIds && input.availableModelIds.length > 0
+    input.availableModelIds !== undefined
       ? resolveGrokSessionModelId({
           requested: input.requestedModelId,
           current: input.currentModelId,

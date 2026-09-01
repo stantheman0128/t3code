@@ -7,9 +7,11 @@ import {
   getDefaultProviderInstanceModel,
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
+  reorderProviderInstanceIds,
   resolveDefaultProviderModelSelection,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
+  sortProviderInstanceEntries,
 } from "./providerInstances";
 
 function provider(input: {
@@ -576,5 +578,27 @@ describe("resolveDefaultProviderModelSelection", () => {
         null,
       ),
     ).toBeNull();
+  });
+});
+
+describe("provider instance order", () => {
+  it("reorders ids and sorts Grok before Claude when asked", () => {
+    const grok = ProviderInstanceId.make("grok");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const codex = ProviderInstanceId.make("codex");
+    expect(reorderProviderInstanceIds([codex, claude, grok], grok, claude)).toEqual([
+      codex,
+      grok,
+      claude,
+    ]);
+
+    const entries = deriveProviderInstanceEntries([
+      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
+      provider({ provider: ProviderDriverKind.make("grok"), instanceId: "grok" }),
+      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
+    ]);
+    expect(
+      sortProviderInstanceEntries(entries, [grok, claude, codex]).map((entry) => entry.instanceId),
+    ).toEqual([grok, claude, codex]);
   });
 });

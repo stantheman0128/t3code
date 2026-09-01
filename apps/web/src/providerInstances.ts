@@ -295,8 +295,25 @@ export function applyProviderInstanceSettings(
  * emits them). Stable across kinds: entries retain the server's
  * cross-driver ordering.
  */
+export function reorderProviderInstanceIds(
+  currentOrder: ReadonlyArray<ProviderInstanceId>,
+  fromId: ProviderInstanceId,
+  toId: ProviderInstanceId,
+): ProviderInstanceId[] {
+  const next = [...currentOrder];
+  const fromIndex = next.indexOf(fromId);
+  const toIndex = next.indexOf(toId);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+    return next;
+  }
+  next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, fromId);
+  return next;
+}
+
 export function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
+  instanceOrder?: ReadonlyArray<ProviderInstanceId>,
 ): ReadonlyArray<ProviderInstanceEntry> {
   // Group by driver kind preserving first-appearance order, then emit
   // default-first within each kind. Using a Map keeps the "first-seen"
@@ -317,7 +334,15 @@ export function sortProviderInstanceEntries(
     const customs = bucket.filter((entry) => !entry.isDefault);
     sorted.push(...defaults, ...customs);
   }
-  return sorted;
+  if (!instanceOrder || instanceOrder.length === 0) {
+    return sorted;
+  }
+  const rank = new Map(instanceOrder.map((instanceId, index) => [instanceId, index] as const));
+  return sorted.toSorted((left, right) => {
+    const leftRank = rank.get(left.instanceId) ?? instanceOrder.length;
+    const rightRank = rank.get(right.instanceId) ?? instanceOrder.length;
+    return leftRank - rightRank;
+  });
 }
 
 /**

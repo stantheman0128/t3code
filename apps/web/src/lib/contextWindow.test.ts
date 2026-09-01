@@ -111,6 +111,33 @@ describe("contextWindow", () => {
     expect(barSegments.some((segment) => segment.id === "remaining")).toBe(true);
   });
 
+  it("does not let lifetime cached tokens fill the occupancy bar", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 125_100,
+        maxTokens: 500_000,
+        inputTokens: 5_300_000,
+        cachedInputTokens: 4_100_000,
+        outputTokens: 42_300,
+        reasoningOutputTokens: 34_200,
+        totalProcessedTokens: 5_300_000,
+      }),
+    ]);
+
+    const { rows, barSegments } = contextWindowBreakdown(snapshot!);
+    const usedPercent = rows.find((row) => row.id === "used")?.percent;
+    const remainingPercent = rows.find((row) => row.id === "remaining")?.percent;
+    expect(usedPercent).toBeCloseTo(25.02, 1);
+    expect(remainingPercent).toBeCloseTo(74.98, 1);
+    expect(rows.find((row) => row.id === "cached")?.inBar).toBe(false);
+    expect(rows.find((row) => row.id === "input")?.inBar).toBe(false);
+    expect(barSegments.some((segment) => segment.id === "cached")).toBe(false);
+    const barTotal = barSegments.reduce((sum, segment) => sum + segment.percent, 0);
+    expect(barTotal).toBeGreaterThan(99);
+    expect(barTotal).toBeLessThan(101);
+    expect(barSegments.find((segment) => segment.id === "used")?.percent).toBeCloseTo(25.02, 1);
+  });
+
   it("includes total processed tokens when available", () => {
     const snapshot = deriveLatestContextWindowSnapshot([
       makeActivity("activity-1", "context-window.updated", {

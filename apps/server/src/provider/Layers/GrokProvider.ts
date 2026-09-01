@@ -34,6 +34,7 @@ import {
   fallbackGrokReasoningEffortCapabilities,
   grokDiscoveredModelCapabilities,
   isGrokAcpAuthFailure,
+  isGrokFamilyAcpModelId,
   makeGrokAcpRuntime,
   parseGrokAcpModelMeta,
   resolveGrokAcpBaseModelId,
@@ -235,8 +236,7 @@ export function buildGrokDiscoveredModelsFromSessionConfigOptions(
 }
 
 function isGrokBotSafeDiscoveredSlug(slug: string): boolean {
-  const trimmed = slug.trim();
-  return trimmed.startsWith("grokbot/") || !trimmed.includes("/");
+  return isGrokFamilyAcpModelId(slug);
 }
 
 export function selectDiscoveredGrokModels(input: {

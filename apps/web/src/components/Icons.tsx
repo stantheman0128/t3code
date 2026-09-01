@@ -202,6 +202,14 @@ export const CursorIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
+export const GrokBotIcon: Icon = ({ className, ...props }) => (
+  <svg {...props} viewBox="0 0 24 24" fill="none" className={className}>
+    <circle cx="12" cy="12" r="10" className="fill-[#0F0F0F] dark:fill-[#F5F5F5]" />
+    <ellipse cx="9.15" cy="11.1" rx="1.85" ry="2.45" className="fill-white dark:fill-[#0F0F0F]" />
+    <ellipse cx="14.85" cy="11.1" rx="1.85" ry="2.45" className="fill-white dark:fill-[#0F0F0F]" />
+  </svg>
+);
+
 export const GrokIcon: Icon = ({ className, ...props }) => (
   <svg
     {...props}

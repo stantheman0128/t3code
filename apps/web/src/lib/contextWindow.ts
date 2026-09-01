@@ -183,6 +183,16 @@ export function contextWindowBreakdown(usage: ContextWindowSnapshot): {
   const rawInput = usage.inputTokens;
   const uncachedInput =
     rawInput !== null && cached !== null ? Math.max(0, rawInput - cached) : rawInput;
+  const occupancy = usage.usedTokens;
+  const categorySum =
+    (uncachedInput ?? 0) +
+    (cached ?? 0) +
+    (usage.outputTokens ?? 0) +
+    (usage.reasoningOutputTokens ?? 0);
+  const categoriesAreLifetime =
+    (maxTokens !== null && maxTokens > 0 && categorySum > maxTokens + 1) ||
+    (occupancy > 0 && categorySum > occupancy + 1);
+  const categoriesInBar = !categoriesAreLifetime;
 
   pushCategoryRow(rows, {
     id: "input",
@@ -190,7 +200,7 @@ export function contextWindowBreakdown(usage: ContextWindowSnapshot): {
     tokens: uncachedInput,
     maxTokens,
     color: CONTEXT_WINDOW_SEGMENT_COLORS.input,
-    inBar: true,
+    inBar: categoriesInBar,
   });
   pushCategoryRow(rows, {
     id: "cached",
@@ -198,7 +208,7 @@ export function contextWindowBreakdown(usage: ContextWindowSnapshot): {
     tokens: cached,
     maxTokens,
     color: CONTEXT_WINDOW_SEGMENT_COLORS.cached,
-    inBar: true,
+    inBar: categoriesInBar,
     skipZero: true,
   });
   pushCategoryRow(rows, {
@@ -207,7 +217,7 @@ export function contextWindowBreakdown(usage: ContextWindowSnapshot): {
     tokens: usage.outputTokens,
     maxTokens,
     color: CONTEXT_WINDOW_SEGMENT_COLORS.output,
-    inBar: true,
+    inBar: categoriesInBar,
   });
   pushCategoryRow(rows, {
     id: "reasoning",
@@ -215,25 +225,34 @@ export function contextWindowBreakdown(usage: ContextWindowSnapshot): {
     tokens: usage.reasoningOutputTokens,
     maxTokens,
     color: CONTEXT_WINDOW_SEGMENT_COLORS.reasoning,
-    inBar: true,
+    inBar: categoriesInBar,
     skipZero: true,
   });
 
   const categorizedTokens = rows.reduce((sum, row) => sum + (row.inBar ? (row.tokens ?? 0) : 0), 0);
-  if (categorizedTokens === 0 && usage.usedTokens > 0) {
+  if (categoriesAreLifetime && occupancy > 0) {
     pushCategoryRow(rows, {
       id: "used",
       label: "Used",
-      tokens: usage.usedTokens,
+      tokens: occupancy,
       maxTokens,
       color: CONTEXT_WINDOW_SEGMENT_COLORS.used,
       inBar: true,
     });
-  } else if (usage.usedTokens > categorizedTokens + 1) {
+  } else if (categorizedTokens === 0 && occupancy > 0) {
+    pushCategoryRow(rows, {
+      id: "used",
+      label: "Used",
+      tokens: occupancy,
+      maxTokens,
+      color: CONTEXT_WINDOW_SEGMENT_COLORS.used,
+      inBar: true,
+    });
+  } else if (occupancy > categorizedTokens + 1) {
     pushCategoryRow(rows, {
       id: "used",
       label: "Other",
-      tokens: usage.usedTokens - categorizedTokens,
+      tokens: occupancy - categorizedTokens,
       maxTokens,
       color: CONTEXT_WINDOW_SEGMENT_COLORS.used,
       inBar: true,

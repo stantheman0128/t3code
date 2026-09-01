@@ -302,6 +302,38 @@ describe("applyGrokAcpModelSelection", () => {
     }),
   );
 
+  it.effect("does not send grok-4.6 when the ACP catalog has no Grok models", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        useConfigModelOption: true,
+        currentModelId: "mistral/codestral-latest",
+        requestedModelId: "grok-4.6",
+        availableModelIds: [],
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([]);
+      expect(result.modelId).toBe("mistral/codestral-latest");
+    }),
+  );
+
+  it.effect("maps grok-4.6 onto a grokbot catalog id instead of failing loudly", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        useConfigModelOption: true,
+        currentModelId: "grokbot/sand-default",
+        requestedModelId: "grok-4.6",
+        availableModelIds: ["grokbot/sand-default", "grokbot/grok-4.6"],
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([{ modelId: "grokbot/grok-4.6" }]);
+      expect(result.modelId).toBe("grokbot/grok-4.6");
+    }),
+  );
+
   it.effect("propagates session/set_model failures via mapError", () =>
     Effect.gen(function* () {
       const failure = EffectAcpErrors.AcpRequestError.invalidParams("session id not known");

@@ -23,6 +23,23 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
+  if (props.provider === "grokbot") {
+    const fill = isDarkMode ? "#F5F5F5" : "#0F0F0F";
+    const eyes = isDarkMode ? "#0F0F0F" : "#FFFFFF";
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          fill={fill}
+          d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z"
+        />
+        <Path
+          fill={eyes}
+          d="M9.15 8.65c1.02 0 1.85 1.1 1.85 2.45s-.83 2.45-1.85 2.45-1.85-1.1-1.85-2.45.83-2.45 1.85-2.45zm5.7 0c1.02 0 1.85 1.1 1.85 2.45s-.83 2.45-1.85 2.45-1.85-1.1-1.85-2.45.83-2.45 1.85-2.45z"
+        />
+      </Svg>
+    );
+  }
+
   if (props.provider === "grok") {
     const fill = isDarkMode ? "#F5F5F5" : "#0F0F0F";
     return (

@@ -43,6 +43,7 @@ const PICKER_TOOLTIP_CLASS = "max-w-64 text-balance font-normal leading-snug";
 export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectedInstanceId: ProviderInstanceId | "favorites";
   onSelectInstance: (instanceId: ProviderInstanceId | "favorites") => void;
+  onReorderInstances?: (fromId: ProviderInstanceId, toId: ProviderInstanceId) => void;
   /**
    * Instance entries to render as rail buttons. Each entry becomes one icon
    * keyed by `instanceId`, so the default built-in Codex and a user-authored
@@ -217,6 +218,26 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 key={entry.instanceId}
                 className="relative w-full"
                 data-model-picker-provider={entry.instanceId}
+                draggable={!isDisabled && props.onReorderInstances !== undefined}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("text/plain", entry.instanceId);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(event) => {
+                  if (!props.onReorderInstances) {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const fromId = event.dataTransfer.getData("text/plain");
+                  if (!fromId || fromId === entry.instanceId) {
+                    return;
+                  }
+                  props.onReorderInstances?.(fromId as ProviderInstanceId, entry.instanceId);
+                }}
               >
                 <Tooltip>
                   <TooltipTrigger render={trigger} />

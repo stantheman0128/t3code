@@ -38,6 +38,7 @@ import { TooltipProvider } from "../ui/tooltip";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
+  reorderProviderInstanceIds,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
@@ -124,6 +125,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const modelListRef = useRef<LegendListRef | null>(null);
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
+  const providerInstanceOrder = useClientSettings((s) => s.providerInstanceOrder ?? []);
   const activeEntry = props.instanceEntries.find(
     (entry) => entry.instanceId === props.activeInstanceId,
   );
@@ -176,6 +178,25 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       });
     },
     [focusSearchInput],
+  );
+
+  const handleReorderInstances = useCallback(
+    (fromId: ProviderInstanceId, toId: ProviderInstanceId) => {
+      const visibleIds = instanceEntries
+        .filter(isProviderInstancePickerVisible)
+        .map((entry) => entry.instanceId);
+      const baseOrder =
+        providerInstanceOrder.length > 0
+          ? [
+              ...providerInstanceOrder.filter((instanceId) => visibleIds.includes(instanceId)),
+              ...visibleIds.filter((instanceId) => !providerInstanceOrder.includes(instanceId)),
+            ]
+          : visibleIds;
+      updateSettings({
+        providerInstanceOrder: reorderProviderInstanceIds(baseOrder, fromId, toId),
+      });
+    },
+    [instanceEntries, providerInstanceOrder, updateSettings],
   );
 
   useLayoutEffect(() => {
@@ -643,6 +664,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           <ModelPickerSidebar
             selectedInstanceId={selectedInstanceId}
             onSelectInstance={handleSelectInstance}
+            onReorderInstances={handleReorderInstances}
             instanceEntries={sidebarInstanceEntries}
             showFavorites
             {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}

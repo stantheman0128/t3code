@@ -1899,6 +1899,14 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           const availableModelIds = grokSettings.useGrokbotBackend
             ? advertisedModelIds.filter(isGrokFamilyAcpModelId)
             : advertisedModelIds;
+          if (grokSettings.useGrokbotBackend && availableModelIds.length === 0) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue:
+                "Grok Bot did not advertise any Grok models. Oh My Pi is listing another provider catalog; authenticate xAI in omp or use the Grok CLI provider.",
+            });
+          }
           const advertisedStartEfforts = advertisedGrokReasoningEffortsFromSessionSetup(
             started.sessionSetupResult,
             requestedStartModelId ?? startedModelId,
@@ -2479,6 +2487,21 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               Effect.mapError((error) =>
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
+              Effect.catchDefect((defect) => {
+                const detail =
+                  defect instanceof Error
+                    ? defect.message
+                    : typeof defect === "string"
+                      ? defect
+                      : "Grok prompt request failed.";
+                return Effect.fail(
+                  new ProviderAdapterRequestError({
+                    provider: PROVIDER,
+                    method: "session/prompt",
+                    detail,
+                  }),
+                );
+              }),
             );
 
           return yield* withThreadLock(

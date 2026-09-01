@@ -374,35 +374,36 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const routeDecodedMessage = (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
   ): Effect.Effect<void, AcpError.AcpError> => {
-    switch (message._tag) {
+    const routed = rewriteJsonRpcDieAsProtocolFail(message);
+    switch (routed._tag) {
       case "Request":
-        return handleRequestEncoded(message);
+        return handleRequestEncoded(routed);
       case "Exit":
-        return handleExitEncoded(message);
+        return handleExitEncoded(routed);
       case "Chunk":
         return Ref.get(extPending).pipe(
           Effect.flatMap((pending) => {
-            const pendingRequest = pending.get(String(message.requestId));
+            const pendingRequest = pending.get(String(routed.requestId));
             return pendingRequest
               ? completeExtPendingFailure(
-                  message.requestId,
+                  routed.requestId,
                   AcpError.AcpRequestError.unsupportedStreamingResponse(
                     pendingRequest.method,
-                    message.requestId,
+                    routed.requestId,
                   ),
                 )
-              : Queue.offer(clientQueue, message).pipe(Effect.asVoid);
+              : Queue.offer(clientQueue, routed).pipe(Effect.asVoid);
           }),
         );
       case "Defect":
       case "ClientProtocolError":
       case "Pong":
-        return Queue.offer(clientQueue, message).pipe(Effect.asVoid);
+        return Queue.offer(clientQueue, routed).pipe(Effect.asVoid);
       case "Ack":
       case "Interrupt":
       case "Ping":
       case "Eof":
-        return Queue.offer(serverQueue, message).pipe(Effect.asVoid);
+        return Queue.offer(serverQueue, routed).pipe(Effect.asVoid);
     }
   };
 
@@ -571,4 +572,37 @@ function isProtocolError(
     "message" in value &&
     typeof value.message === "string"
   );
+}
+
+/**
+ * Effect's ndJsonRpc maps a standard JSON-RPC `error` object (no Effect `_tag`)
+ * onto Exit Failure + Die. Agents like Oh My Pi send `{ code, message }` that
+ * way. Rewrite those Dies into Fail so RpcClient decodes them as ACP errors
+ * instead of Schema.Defect("Internal error").
+ */
+function rewriteJsonRpcDieAsProtocolFail(
+  message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
+): RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded {
+  if (message._tag !== "Exit" || message.exit._tag !== "Failure") {
+    return message;
+  }
+  if (message.exit.cause.some((entry) => entry._tag === "Fail")) {
+    return message;
+  }
+  const die = message.exit.cause.find((entry) => entry._tag === "Die");
+  if (!die || !isProtocolError(die.defect)) {
+    return message;
+  }
+  return {
+    ...message,
+    exit: {
+      _tag: "Failure",
+      cause: [
+        {
+          _tag: "Fail",
+          error: die.defect,
+        },
+      ],
+    },
+  };
 }

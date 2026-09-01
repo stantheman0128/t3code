@@ -8,6 +8,7 @@ import {
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
   defaultEnabledForDriver,
+  GrokSettings,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
@@ -19,6 +20,38 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+const decodeGrokSettings = Schema.decodeUnknownSync(GrokSettings);
+
+describe("GrokSettings Grok Bot backend", () => {
+  it("defaults to the standalone Grok CLI", () => {
+    expect(decodeGrokSettings({})).toMatchObject({
+      useGrokbotBackend: false,
+      grokbotBinaryPath: "omp",
+    });
+  });
+
+  it("accepts the Grok Bot backend through settings and patch boundaries", () => {
+    expect(
+      decodeGrokSettings({
+        useGrokbotBackend: true,
+        grokbotBinaryPath: "C:\\tools\\omp-grokbot.exe",
+      }),
+    ).toMatchObject({
+      useGrokbotBackend: true,
+      grokbotBinaryPath: "C:\\tools\\omp-grokbot.exe",
+    });
+    expect(
+      decodeServerSettingsPatch({
+        providers: {
+          grok: {
+            useGrokbotBackend: true,
+            grokbotBinaryPath: "C:\\tools\\omp-grokbot.exe",
+          },
+        },
+      }),
+    ).toBeDefined();
+  });
+});
 
 describe("ClaudeSettings auto-compaction", () => {
   it("uses Claude's default threshold when no override is configured", () => {

@@ -123,6 +123,8 @@ const makeCursorConfig = (overrides: Partial<CursorSettings>): CursorSettings =>
 const makeGrokConfig = (overrides: Partial<GrokSettings>): GrokSettings => ({
   enabled: false,
   binaryPath: "grok",
+  useGrokbotBackend: false,
+  grokbotBinaryPath: "omp",
   customModels: [],
   ...overrides,
 });

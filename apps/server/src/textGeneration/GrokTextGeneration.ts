@@ -91,6 +91,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
         );
         yield* applyGrokAcpModelSelection({
           runtime,
+          useConfigModelOption: grokSettings.useGrokbotBackend,
           currentModelId: currentGrokModelIdFromSessionSetup(started.sessionSetupResult),
           currentReasoningEffort: currentGrokReasoningEffortFromSessionSetup(
             started.sessionSetupResult,

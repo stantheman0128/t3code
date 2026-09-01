@@ -49,6 +49,17 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
+  it("shows the Grok Bot backend controls for Grok providers", () => {
+    const grok = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("grok")];
+    expect(grok).toBeDefined();
+
+    expect(deriveProviderSettingsFields(grok!).map((field) => field.key)).toEqual([
+      "useGrokbotBackend",
+      "grokbotBinaryPath",
+      "binaryPath",
+    ]);
+  });
+
   it("preserves unknown config keys while omitting empty configurable fields", () => {
     const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
     expect(opencode).toBeDefined();

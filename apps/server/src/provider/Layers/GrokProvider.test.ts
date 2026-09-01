@@ -6,9 +6,60 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { GrokSettings } from "@t3tools/contracts";
 
-import { buildInitialGrokProviderSnapshot, checkGrokProviderStatus } from "./GrokProvider.ts";
+import {
+  buildGrokDiscoveredModelsFromSessionConfigOptions,
+  buildGrokDiscoveredModelsFromSessionModelState,
+  buildInitialGrokProviderSnapshot,
+  checkGrokProviderStatus,
+} from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
+
+describe("Grok Bot ACP model discovery", () => {
+  it("keeps only the grokbot namespace from OMP's multi-provider model list", () => {
+    const models = buildGrokDiscoveredModelsFromSessionModelState(
+      {
+        currentModelId: "grokbot/sand-default",
+        availableModels: [
+          { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus" },
+          { modelId: "grokbot/sand-default", name: "Sand Default" },
+          { modelId: "grokbot/grok-4.6", name: "Grok 4.6" },
+          { modelId: "openai/gpt-5.4", name: "GPT-5.4" },
+        ],
+      },
+      "grokbot/",
+    );
+
+    expect(models.map((model) => model.slug)).toEqual(["grokbot/sand-default", "grokbot/grok-4.6"]);
+  });
+
+  it("reads OMP's standard model config option and filters other providers", () => {
+    const models = buildGrokDiscoveredModelsFromSessionConfigOptions(
+      [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "grokbot/sand-default",
+          options: [
+            { value: "mistral/codestral-latest", name: "Codestral" },
+            { value: "grokbot/sand-default", name: "Sand Default" },
+            { value: "grokbot/sand-automation", name: "Sand Automation" },
+            { value: "grokbot/sand-cua", name: "Sand CUA" },
+          ],
+        },
+      ],
+      "grokbot/",
+    );
+
+    expect(models.map((model) => model.slug)).toEqual([
+      "grokbot/sand-default",
+      "grokbot/sand-automation",
+      "grokbot/sand-cua",
+    ]);
+  });
+});
 
 it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
   it.effect("returns a disabled snapshot when settings.enabled is false", () =>

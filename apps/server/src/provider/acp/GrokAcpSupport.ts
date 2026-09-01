@@ -31,6 +31,7 @@ const GROK_OAUTH2_REFERRER_ENV = "GROK_OAUTH2_REFERRER";
 const T3_CODE_OAUTH_REFERRER = "t3code";
 const GROK_AUTH_METHOD_API_KEY = "xai.api_key";
 const GROK_AUTH_METHOD_CACHED_TOKEN = "cached_token";
+const GROKBOT_AUTH_METHOD_AGENT = "agent";
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
 /** Composer option id for Grok reasoning effort. Same shape as Codex. */
@@ -72,7 +73,8 @@ export const FALLBACK_GROK_REASONING_EFFORTS = [
   { id: "low", label: "Low", description: "Quick implementations" },
 ] as const;
 
-type GrokAcpRuntimeGrokSettings = Pick<GrokSettings, "binaryPath">;
+type GrokAcpRuntimeGrokSettings = Pick<GrokSettings, "binaryPath"> &
+  Partial<Pick<GrokSettings, "useGrokbotBackend" | "grokbotBinaryPath">>;
 
 interface GrokAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
@@ -114,6 +116,14 @@ export function buildGrokAcpSpawnInput(
   runtimeMode?: RuntimeMode,
   reasoningEffort?: string,
 ): AcpSessionRuntime.AcpSpawnInput {
+  if (grokSettings?.useGrokbotBackend) {
+    return {
+      command: grokSettings.grokbotBinaryPath || "omp",
+      args: ["--models", "grokbot/*", "acp"],
+      cwd,
+      ...(environment ? { env: environment } : {}),
+    };
+  }
   const args = [...grokAcpSpawnArgs(runtimeMode)];
   const spawnEffort = spawnableGrokReasoningEffort(reasoningEffort);
   if (spawnEffort) {
@@ -135,7 +145,13 @@ export function buildGrokAcpSpawnInput(
   };
 }
 
-function resolveGrokAuthMethodId(environment: NodeJS.ProcessEnv | undefined): string {
+export function resolveGrokAuthMethodId(
+  environment: NodeJS.ProcessEnv | undefined,
+  useGrokbotBackend = false,
+): string {
+  if (useGrokbotBackend) {
+    return GROKBOT_AUTH_METHOD_AGENT;
+  }
   return environment?.[GROK_API_KEY_ENV]?.trim()
     ? GROK_AUTH_METHOD_API_KEY
     : GROK_AUTH_METHOD_CACHED_TOKEN;
@@ -159,7 +175,10 @@ export const makeGrokAcpRuntime = (
           input.runtimeMode,
           input.reasoningEffort,
         ),
-        authMethodId: resolveGrokAuthMethodId(input.environment),
+        authMethodId: resolveGrokAuthMethodId(
+          input.environment,
+          input.grokSettings?.useGrokbotBackend,
+        ),
       }).pipe(
         Layer.provide(
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
@@ -187,8 +206,21 @@ export function availableGrokSessionModelIds(
     | EffectAcpSchema.NewSessionResponse
     | EffectAcpSchema.ResumeSessionResponse,
 ): ReadonlyArray<string> {
-  return (sessionSetupResult.models?.availableModels ?? [])
+  const advertised = (sessionSetupResult.models?.availableModels ?? [])
     .map((model) => model.modelId.trim())
+    .filter((modelId) => modelId.length > 0);
+  if (advertised.length > 0) {
+    return advertised;
+  }
+  const modelOption = sessionSetupResult.configOptions?.find(
+    (option) => option.id === "model" && option.type === "select",
+  );
+  if (modelOption?.type !== "select") {
+    return [];
+  }
+  return modelOption.options
+    .flatMap((option) => ("value" in option ? [option] : option.options))
+    .map((option) => option.value.trim())
     .filter((modelId) => modelId.length > 0);
 }
 
@@ -228,7 +260,16 @@ export function currentGrokModelIdFromSessionSetup(
     | EffectAcpSchema.NewSessionResponse
     | EffectAcpSchema.ResumeSessionResponse,
 ): string | undefined {
-  return sessionSetupResult.models?.currentModelId?.trim() || undefined;
+  const currentModelId = sessionSetupResult.models?.currentModelId?.trim();
+  if (currentModelId) {
+    return currentModelId;
+  }
+  const modelOption = sessionSetupResult.configOptions?.find(
+    (option) => option.id === "model" && option.type === "select",
+  );
+  return modelOption?.type === "select" && typeof modelOption.currentValue === "string"
+    ? modelOption.currentValue.trim() || undefined
+    : undefined;
 }
 
 export function spawnableGrokReasoningEffort(value: string | undefined): string | undefined {
@@ -552,7 +593,9 @@ export function isGrokAcpAuthFailure(cause: Cause.Cause<unknown>): boolean {
 }
 
 export function applyGrokAcpModelSelection<E>(input: {
-  readonly runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "setSessionModel">;
+  readonly runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "setSessionModel"> &
+    Partial<Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "setModel">>;
+  readonly useConfigModelOption?: boolean;
   readonly currentModelId: string | undefined;
   readonly requestedModelId: string | undefined;
   readonly availableModelIds?: ReadonlyArray<string>;
@@ -600,7 +643,11 @@ export function applyGrokAcpModelSelection<E>(input: {
   // provided at all, we also send no meta, but we only reach this call when the model itself
   // changed - an omitted reasoning preference must not be treated as an explicit clear of the
   // CLI-advertised default (e.g. Extra High) on same-model reselections.
-  return input.runtime.setSessionModel(targetModelId, requestMeta).pipe(
+  const setModel =
+    input.useConfigModelOption && input.runtime.setModel
+      ? input.runtime.setModel(targetModelId)
+      : input.runtime.setSessionModel(targetModelId, requestMeta);
+  return setModel.pipe(
     Effect.mapError(input.mapError),
     Effect.as({
       modelId: targetModelId,

@@ -5,7 +5,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 
 import {
   applyGrokAcpModelSelection,
+  availableGrokSessionModelIds,
   buildGrokAcpSpawnInput,
+  currentGrokModelIdFromSessionSetup,
+  resolveGrokAuthMethodId,
   grokAcpSpawnArgs,
   grokDiscoveredModelCapabilities,
   isValidGrokReasoningEffortToken,
@@ -78,6 +81,64 @@ describe("buildGrokAcpSpawnInput", () => {
     );
     expect(spawn.args).toEqual(["--permission-mode", "default", "agent", "stdio"]);
   });
+
+  it("runs the Grok Bot backend as an OMP ACP server", () => {
+    const spawn = buildGrokAcpSpawnInput(
+      {
+        binaryPath: "/usr/local/bin/grok",
+        useGrokbotBackend: true,
+        grokbotBinaryPath: "/opt/omp-grokbot",
+      },
+      "/tmp/project",
+      { GROKBOT_MACHINE_ID: "present" },
+      "full-access",
+    );
+
+    expect(spawn).toEqual({
+      command: "/opt/omp-grokbot",
+      args: ["--models", "grokbot/*", "acp"],
+      cwd: "/tmp/project",
+      env: { GROKBOT_MACHINE_ID: "present" },
+    });
+  });
+});
+
+describe("resolveGrokAuthMethodId", () => {
+  it("uses OMP's local agent auth method for the Grok Bot backend", () => {
+    expect(resolveGrokAuthMethodId(undefined, true)).toBe("agent");
+  });
+
+  it("preserves the official Grok CLI auth methods", () => {
+    expect(resolveGrokAuthMethodId(undefined)).toBe("cached_token");
+    expect(resolveGrokAuthMethodId({ XAI_API_KEY: "xai-test" })).toBe("xai.api_key");
+  });
+});
+
+describe("OMP ACP model configuration", () => {
+  const sessionSetup = {
+    sessionId: "session-1",
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model" as const,
+        type: "select" as const,
+        currentValue: "grokbot/sand-default",
+        options: [
+          { value: "grokbot/sand-default", name: "Sand Default" },
+          { value: "grokbot/grok-4.6", name: "Grok 4.6" },
+        ],
+      },
+    ],
+  };
+
+  it("reads available and current models from configOptions", () => {
+    expect(availableGrokSessionModelIds(sessionSetup)).toEqual([
+      "grokbot/sand-default",
+      "grokbot/grok-4.6",
+    ]);
+    expect(currentGrokModelIdFromSessionSetup(sessionSetup)).toBe("grokbot/sand-default");
+  });
 });
 
 describe("isValidGrokReasoningEffortToken", () => {
@@ -122,6 +183,35 @@ describe("applyGrokAcpModelSelection", () => {
         reasoningEffort: undefined,
         fastMode: undefined,
       });
+    }),
+  );
+
+  it.effect("uses the model config option for the OMP backend", () =>
+    Effect.gen(function* () {
+      const sessionModelCalls: string[] = [];
+      const configModelCalls: string[] = [];
+      const runtime = {
+        setSessionModel: (modelId: string) =>
+          Effect.sync(() => {
+            sessionModelCalls.push(modelId);
+            return {};
+          }),
+        setModel: (modelId: string) =>
+          Effect.sync(() => {
+            configModelCalls.push(modelId);
+          }),
+      };
+
+      yield* applyGrokAcpModelSelection({
+        runtime,
+        useConfigModelOption: true,
+        currentModelId: "grokbot/sand-default",
+        requestedModelId: "grokbot/grok-4.6",
+        mapError: (cause) => cause.message,
+      });
+
+      expect(configModelCalls).toEqual(["grokbot/grok-4.6"]);
+      expect(sessionModelCalls).toEqual([]);
     }),
   );
 

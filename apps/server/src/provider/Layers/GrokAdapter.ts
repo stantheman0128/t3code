@@ -1867,6 +1867,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           );
           const boundSelection = yield* applyGrokAcpModelSelection({
             runtime: acp,
+            useConfigModelOption: grokSettings.useGrokbotBackend,
             currentModelId: startedModelId,
             requestedModelId: requestedStartModelId,
             availableModelIds,
@@ -2250,6 +2251,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               });
               const turnSelection = yield* applyGrokAcpModelSelection({
                 runtime: ctx.acp,
+                useConfigModelOption: grokSettings.useGrokbotBackend,
                 currentModelId: ctx.currentModelId,
                 availableModelIds: ctx.availableModelIds,
                 requestedModelId: requestedTurnModelId,

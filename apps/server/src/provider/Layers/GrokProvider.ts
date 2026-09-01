@@ -113,10 +113,14 @@ export function buildInitialGrokProviderSnapshot(
       environment: discovery?.environment ?? process.env,
       projectRoot: discovery?.projectRoot,
     };
-    const loginSnapshot = yield* readGrokAuthSnapshotFromHome(
-      grokWorkflowHomeDirFromEnvironment(resolvedDiscovery.environment),
-    ).pipe(Effect.catch(() => Effect.succeed(null)));
+    const loginSnapshot = grokSettings.useGrokbotBackend
+      ? null
+      : yield* readGrokAuthSnapshotFromHome(
+          grokWorkflowHomeDirFromEnvironment(resolvedDiscovery.environment),
+        ).pipe(Effect.catch(() => Effect.succeed(null)));
     const loginAuth = loginSnapshot?.auth ?? null;
+    const usageLimits =
+      loginSnapshot && "usageLimits" in loginSnapshot ? loginSnapshot.usageLimits : undefined;
     if (!grokSettings.enabled) {
       return yield* buildGrokServerProvider(
         {
@@ -142,7 +146,7 @@ export function buildInitialGrokProviderSnapshot(
         enabled: true,
         checkedAt,
         models,
-        ...(loginSnapshot?.usageLimits ? { usageLimits: loginSnapshot.usageLimits } : {}),
+        ...(usageLimits ? { usageLimits } : {}),
         probe: {
           installed: true,
           version: null,
@@ -163,14 +167,16 @@ function grokModelsFromSettings(
   return providerModelsFromSettings(builtInModels, customModels ?? [], FALLBACK_CAPABILITIES);
 }
 
-function buildGrokDiscoveredModelsFromSessionModelState(
+export function buildGrokDiscoveredModelsFromSessionModelState(
   modelState: EffectAcpSchema.SessionModelState | null | undefined,
+  modelIdPrefix?: string,
 ): ReadonlyArray<ServerProviderModel> {
   if (!modelState || modelState.availableModels.length === 0) {
     return [];
   }
   const seen = new Set<string>();
   return modelState.availableModels
+    .filter((model) => !modelIdPrefix || model.modelId.trim().startsWith(modelIdPrefix))
     .map((model): ServerProviderModel | undefined => {
       const slug = resolveGrokAcpBaseModelId(model.modelId);
       if (!slug || seen.has(slug)) {
@@ -183,6 +189,36 @@ function buildGrokDiscoveredModelsFromSessionModelState(
         name: model.name.trim() || slug,
         isCustom: false,
         capabilities: grokDiscoveredModelCapabilities(meta),
+      };
+    })
+    .filter((model): model is ServerProviderModel => model !== undefined);
+}
+
+export function buildGrokDiscoveredModelsFromSessionConfigOptions(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
+  modelIdPrefix?: string,
+): ReadonlyArray<ServerProviderModel> {
+  const modelOption = configOptions?.find(
+    (option) => option.id === "model" && option.type === "select",
+  );
+  if (modelOption?.type !== "select") {
+    return [];
+  }
+  const seen = new Set<string>();
+  return modelOption.options
+    .flatMap((option) => ("value" in option ? [option] : option.options))
+    .filter((option) => !modelIdPrefix || option.value.trim().startsWith(modelIdPrefix))
+    .map((option): ServerProviderModel | undefined => {
+      const slug = resolveGrokAcpBaseModelId(option.value);
+      if (!slug || seen.has(slug)) {
+        return undefined;
+      }
+      seen.add(slug);
+      return {
+        slug,
+        name: option.name.trim() || slug,
+        isCustom: false,
+        capabilities: FALLBACK_CAPABILITIES,
       };
     })
     .filter((model): model is ServerProviderModel => model !== undefined);
@@ -208,15 +244,30 @@ const discoverGrokModelsViaAcp = (
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();
-    return buildGrokDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models);
+    const modelIdPrefix = grokSettings.useGrokbotBackend ? "grokbot/" : undefined;
+    const models = buildGrokDiscoveredModelsFromSessionModelState(
+      started.sessionSetupResult.models,
+      modelIdPrefix,
+    );
+    return models.length > 0
+      ? models
+      : buildGrokDiscoveredModelsFromSessionConfigOptions(
+          started.sessionSetupResult.configOptions,
+          modelIdPrefix,
+        );
   }).pipe(Effect.scoped);
+
+const grokCommandFromSettings = (grokSettings: GrokSettings): string =>
+  grokSettings.useGrokbotBackend
+    ? grokSettings.grokbotBinaryPath || "omp"
+    : grokSettings.binaryPath || "grok";
 
 const runGrokVersionCommand = (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
 ) =>
   Effect.gen(function* () {
-    const command = grokSettings.binaryPath || "grok";
+    const command = grokCommandFromSettings(grokSettings);
     const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], {
       env: environment,
     });
@@ -241,16 +292,18 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = grokModelsFromSettings(grokSettings.customModels);
   const discovery = { environment, projectRoot };
-  const loginSnapshot = yield* readGrokAuthSnapshotFromHome(
-    grokWorkflowHomeDirFromEnvironment(environment),
-  ).pipe(Effect.catch(() => Effect.succeed(null)));
+  const loginSnapshot = grokSettings.useGrokbotBackend
+    ? null
+    : yield* readGrokAuthSnapshotFromHome(grokWorkflowHomeDirFromEnvironment(environment)).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      );
   const loginAuth = loginSnapshot?.auth ?? null;
+  const usageLimits =
+    loginSnapshot && "usageLimits" in loginSnapshot ? loginSnapshot.usageLimits : undefined;
   const providerDraft = (input: Parameters<typeof buildServerProvider>[0]) =>
     buildGrokServerProvider(
       {
-        ...(grokSettings.enabled && loginSnapshot?.usageLimits
-          ? { usageLimits: loginSnapshot.usageLimits }
-          : {}),
+        ...(grokSettings.enabled && usageLimits ? { usageLimits } : {}),
         ...input,
       },
       discovery,
@@ -362,7 +415,9 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         status: "error",
         auth: { status: authFailed ? "unauthenticated" : "unknown" },
         message: authFailed
-          ? "Grok CLI is not authenticated. Run `grok login` and try again."
+          ? grokSettings.useGrokbotBackend
+            ? "Grok Bot credentials are unavailable to Oh My Pi."
+            : "Grok CLI is not authenticated. Run `grok login` and try again."
           : "Grok CLI is installed but ACP startup failed. Check server logs for details.",
       },
     });
@@ -398,16 +453,17 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     checkedAt,
     models,
     skills,
-    ...(loginSnapshot?.usageLimits ? { usageLimits: loginSnapshot.usageLimits } : {}),
     probe: {
       installed: true,
       version,
       status: "ready",
       auth:
         loginAuth ??
-        (environment[GROK_API_KEY_ENV]?.trim()
-          ? { status: "authenticated", type: "api_key", label: "XAI_API_KEY" }
-          : { status: "authenticated", type: "session", label: "grok.com" }),
+        (grokSettings.useGrokbotBackend
+          ? { status: "authenticated", type: "session", label: "Grok Bot" }
+          : environment[GROK_API_KEY_ENV]?.trim()
+            ? { status: "authenticated", type: "api_key", label: "XAI_API_KEY" }
+            : { status: "authenticated", type: "session", label: "grok.com" }),
     },
   });
 });

@@ -566,13 +566,28 @@ export const GrokSettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "grok", clearWhenEmpty: "omit" },
       }),
     ),
+    useGrokbotBackend: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Use Grok Bot backend",
+        description: "Run Oh My Pi's Grok Bot ACP provider instead of the standalone Grok CLI.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "omit" },
+      }),
+    ),
+    grokbotBinaryPath: makeBinaryPathSetting("omp").pipe(
+      Schema.annotateKey({
+        title: "Grok Bot binary path",
+        description: "Path to an Oh My Pi build that includes the Grok Bot provider.",
+        providerSettingsForm: { placeholder: "omp", clearWhenEmpty: "omit" },
+      }),
+    ),
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath"],
+    order: ["useGrokbotBackend", "grokbotBinaryPath", "binaryPath"],
   },
 );
 export type GrokSettings = typeof GrokSettings.Type;
@@ -924,6 +939,8 @@ const CursorSettingsPatch = Schema.Struct({
 const GrokSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
+  useGrokbotBackend: Schema.optionalKey(Schema.Boolean),
+  grokbotBinaryPath: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 

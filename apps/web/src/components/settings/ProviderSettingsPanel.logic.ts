@@ -27,6 +27,25 @@ export function buildProviderEnvironmentOptions<T extends ProviderEnvironmentOpt
   });
 }
 
+/**
+ * The default instance id is the back-compat slot and cannot be deleted.
+ * When the user has moved to a custom instance and disabled that slot,
+ * keep it out of the Providers list so only the live Codex/Grok/etc. shows.
+ */
+export function shouldShowProviderInstanceInSettings(input: {
+  readonly isDefault: boolean;
+  readonly enabled: boolean;
+  readonly hasOtherEnabledInstance: boolean;
+}): boolean {
+  if (input.enabled) {
+    return true;
+  }
+  if (input.isDefault && input.hasOtherEnabledInstance) {
+    return false;
+  }
+  return true;
+}
+
 export function resolveSelectedProviderEnvironmentId(
   environments: ReadonlyArray<ProviderEnvironmentOptionLike>,
   selectedEnvironmentId: EnvironmentId | null,

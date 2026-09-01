@@ -5590,7 +5590,6 @@ function ChatViewContent(props: ChatViewProps) {
         ...systemComposerBannerItems,
         ...backgroundLivenessItems,
         ...goalItems,
-        ...calmSystemItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
@@ -5600,7 +5599,6 @@ function ChatViewContent(props: ChatViewProps) {
       ...systemComposerBannerItems,
       ...backgroundLivenessItems,
       ...goalItems,
-      ...calmSystemItems,
       ...resumeCompactionItems,
       ...wokeThreadItems,
       {
@@ -7728,10 +7726,42 @@ function ChatViewContent(props: ChatViewProps) {
     (messageId: MessageId, text: string) => {
       const localApi = readLocalApi();
       const targetTurnCount = revertTurnCountRef.current.get(messageId);
-      if (!localApi || typeof targetTurnCount !== "number") {
-        return;
-      }
+      const confirmDialog = async (message: string, variant: "destructive" | "default") => {
+        if (localApi) {
+          return localApi.dialogs.confirm(message, { variant });
+        }
+        return window.confirm(message);
+      };
       void (async () => {
+        if (typeof targetTurnCount !== "number") {
+          const confirmed = await confirmDialog(
+            [
+              "This message has no rewind checkpoint.",
+              "Send the edited text as a new message instead?",
+            ].join("\n"),
+            "default",
+          );
+          if (!confirmed) {
+            return;
+          }
+          composerRef.current?.applyQueuedItem({
+            id: `edit-${String(messageId)}`,
+            prompt: text,
+            images: [],
+          });
+          await onSendRef.current();
+          return;
+        }
+        if (!localApi) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not send edited message",
+              description: "Desktop confirm dialogs are unavailable in this session.",
+            }),
+          );
+          return;
+        }
         const confirmed = await localApi.dialogs.confirm(
           [
             "Edit this message and rewind later turns?",

@@ -119,19 +119,26 @@ export function UserMessageEditPanel({
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className={cn("min-w-0", !traits && "hidden")}>{traits}</div>
-        <div className="ml-auto flex items-center gap-1">
-          <Button type="button" size="xs" variant="ghost" disabled={isBusy} onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            disabled={!canSend || isBusy}
-            title={sendDisabledReason ?? undefined}
-            onClick={onSubmit}
-          >
-            {isBusy ? "Sending" : "Send"}
-          </Button>
+        <div className="ml-auto flex flex-col items-end gap-1">
+          {sendDisabledReason ? (
+            <p className="max-w-64 text-right text-[11px] text-muted-foreground">
+              {sendDisabledReason}
+            </p>
+          ) : null}
+          <div className="flex items-center gap-1">
+            <Button type="button" size="xs" variant="ghost" disabled={isBusy} onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              disabled={!canSend || isBusy}
+              title={sendDisabledReason ?? undefined}
+              onClick={onSubmit}
+            >
+              {isBusy ? "Sending" : "Send"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

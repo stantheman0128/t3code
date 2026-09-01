@@ -8,6 +8,7 @@ import {
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
   defaultEnabledForDriver,
+  GrokBotSettings,
   GrokSettings,
   resolveProviderInstanceEnabled,
   ServerSettings,
@@ -21,6 +22,27 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 const decodeGrokSettings = Schema.decodeUnknownSync(GrokSettings);
+const decodeGrokBotSettings = Schema.decodeUnknownSync(GrokBotSettings);
+
+describe("GrokBotSettings", () => {
+  it("defaults to Oh My Pi and stays a separate provider schema", () => {
+    expect(decodeGrokBotSettings({})).toMatchObject({
+      enabled: false,
+      binaryPath: "omp",
+    });
+    expect(
+      decodeServerSettingsPatch({
+        providers: {
+          grokbot: {
+            enabled: true,
+            binaryPath: "C:\\tools\\omp.exe",
+          },
+        },
+      }),
+    ).toBeDefined();
+    expect(defaultEnabledForDriver(ProviderDriverKind.make("grokbot"))).toBe(false);
+  });
+});
 
 describe("GrokSettings Grok Bot backend", () => {
   it("defaults to the standalone Grok CLI", () => {
@@ -331,6 +353,7 @@ describe("provider enabled defaults", () => {
     expect(decoded.providers.claudeAgent.enabled).toBe(true);
     expect(decoded.providers.cursor.enabled).toBe(false);
     expect(decoded.providers.grok.enabled).toBe(false);
+    expect(decoded.providers.grokbot.enabled).toBe(false);
     expect(decoded.providers.opencode.enabled).toBe(false);
   });
 
@@ -338,6 +361,7 @@ describe("provider enabled defaults", () => {
     expect(defaultEnabledForDriver(ProviderDriverKind.make("codex"))).toBe(true);
     expect(defaultEnabledForDriver(ProviderDriverKind.make("cursor"))).toBe(false);
     expect(defaultEnabledForDriver(ProviderDriverKind.make("grok"))).toBe(false);
+    expect(defaultEnabledForDriver(ProviderDriverKind.make("grokbot"))).toBe(false);
     // Unknown fork drivers stay enabled; their own build decides otherwise.
     expect(defaultEnabledForDriver(ProviderDriverKind.make("ollama"))).toBe(true);
   });

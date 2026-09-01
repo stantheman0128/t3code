@@ -102,6 +102,7 @@ import {
   resolvePrimaryOperateAccess,
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
+  shouldShowProviderInstanceInSettings,
 } from "./ProviderSettingsPanel.logic";
 
 function withoutProviderInstanceKey<V>(
@@ -666,7 +667,23 @@ export function EnvironmentProviderSettings({
     }
   }
 
-  const selectedRow = rows.find((row) => row.instanceId === selectedInstanceId) ?? rows[0] ?? null;
+  const enabledCountByDriver = new Map<ProviderDriverKind, number>();
+  for (const row of rows) {
+    if (!resolveProviderInstanceEnabled(row.instance)) continue;
+    enabledCountByDriver.set(row.driver, (enabledCountByDriver.get(row.driver) ?? 0) + 1);
+  }
+  const visibleRows = rows.filter((row) => {
+    const enabled = resolveProviderInstanceEnabled(row.instance);
+    const enabledCount = enabledCountByDriver.get(row.driver) ?? 0;
+    return shouldShowProviderInstanceInSettings({
+      isDefault: row.isDefault,
+      enabled,
+      hasOtherEnabledInstance: enabledCount > (enabled ? 1 : 0),
+    });
+  });
+
+  const selectedRow =
+    visibleRows.find((row) => row.instanceId === selectedInstanceId) ?? visibleRows[0] ?? null;
 
   const updateProviderInstance = (
     row: InstanceRow,
@@ -932,7 +949,7 @@ export function EnvironmentProviderSettings({
             <div className="border-b border-border/70 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
               <ScrollArea scrollFade chainVerticalScroll className="lg:min-h-0 lg:flex-1">
                 <div className="divide-y divide-border/60">
-                  {rows.map((row) => (
+                  {visibleRows.map((row) => (
                     <div key={row.instanceId} className="p-1">
                       {renderProviderInstance(row, "list")}
                     </div>

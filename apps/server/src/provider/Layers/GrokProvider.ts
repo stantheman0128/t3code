@@ -51,6 +51,16 @@ const GROK_PRESENTATION = {
   showInteractionModeToggle: true,
   requiresNewThreadForModelChange: false,
 } as const;
+const GROKBOT_PRESENTATION = {
+  displayName: "Grok Bot",
+  badgeLabel: "Early Access",
+  showInteractionModeToggle: true,
+  requiresNewThreadForModelChange: false,
+} as const;
+
+function grokPresentation(grokSettings: GrokSettings) {
+  return grokSettings.useGrokbotBackend ? GROKBOT_PRESENTATION : GROK_PRESENTATION;
+}
 const FALLBACK_CAPABILITIES: ModelCapabilities = fallbackGrokReasoningEffortCapabilities();
 
 const buildGrokServerProvider = (
@@ -124,7 +134,7 @@ export function buildInitialGrokProviderSnapshot(
     if (!grokSettings.enabled) {
       return yield* buildGrokServerProvider(
         {
-          presentation: GROK_PRESENTATION,
+          presentation: grokPresentation(grokSettings),
           enabled: false,
           checkedAt,
           models,
@@ -142,7 +152,7 @@ export function buildInitialGrokProviderSnapshot(
 
     return yield* buildGrokServerProvider(
       {
-        presentation: GROK_PRESENTATION,
+        presentation: grokPresentation(grokSettings),
         enabled: true,
         checkedAt,
         models,
@@ -245,16 +255,24 @@ const discoverGrokModelsViaAcp = (
     });
     const started = yield* acp.start();
     const modelIdPrefix = grokSettings.useGrokbotBackend ? "grokbot/" : undefined;
-    const models = buildGrokDiscoveredModelsFromSessionModelState(
+    const fromSession = buildGrokDiscoveredModelsFromSessionModelState(
       started.sessionSetupResult.models,
       modelIdPrefix,
     );
-    return models.length > 0
-      ? models
-      : buildGrokDiscoveredModelsFromSessionConfigOptions(
-          started.sessionSetupResult.configOptions,
-          modelIdPrefix,
-        );
+    const fromConfig = buildGrokDiscoveredModelsFromSessionConfigOptions(
+      started.sessionSetupResult.configOptions,
+      modelIdPrefix,
+    );
+    const prefixed = fromSession.length > 0 ? fromSession : fromConfig;
+    if (prefixed.length > 0 || !grokSettings.useGrokbotBackend) {
+      return prefixed;
+    }
+    const unprefixedSession = buildGrokDiscoveredModelsFromSessionModelState(
+      started.sessionSetupResult.models,
+    );
+    return unprefixedSession.length > 0
+      ? unprefixedSession
+      : buildGrokDiscoveredModelsFromSessionConfigOptions(started.sessionSetupResult.configOptions);
   }).pipe(Effect.scoped);
 
 const grokCommandFromSettings = (grokSettings: GrokSettings): string =>
@@ -290,7 +308,10 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const fallbackModels = grokModelsFromSettings(grokSettings.customModels);
+  const cliFallbackModels = grokModelsFromSettings(grokSettings.customModels);
+  const fallbackModels = grokSettings.useGrokbotBackend
+    ? grokModelsFromSettings(grokSettings.customModels, [])
+    : cliFallbackModels;
   const discovery = { environment, projectRoot };
   const loginSnapshot = grokSettings.useGrokbotBackend
     ? null
@@ -311,7 +332,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
 
   if (!grokSettings.enabled) {
     return yield* providerDraft({
-      presentation: GROK_PRESENTATION,
+      presentation: grokPresentation(grokSettings),
       enabled: false,
       checkedAt,
       models: fallbackModels,
@@ -336,7 +357,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       errorTag: error._tag,
     });
     return yield* providerDraft({
-      presentation: GROK_PRESENTATION,
+      presentation: grokPresentation(grokSettings),
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -354,7 +375,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
 
   if (Option.isNone(versionResult.success)) {
     return yield* providerDraft({
-      presentation: GROK_PRESENTATION,
+      presentation: grokPresentation(grokSettings),
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -377,7 +398,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       stderrLength: versionOutput.stderr.length,
     });
     return yield* providerDraft({
-      presentation: GROK_PRESENTATION,
+      presentation: grokPresentation(grokSettings),
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -404,7 +425,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       authFailed,
     });
     return yield* providerDraft({
-      presentation: GROK_PRESENTATION,
+      presentation: grokPresentation(grokSettings),
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -427,7 +448,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       `Grok ACP model discovery timed out after ${GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`,
     );
     return yield* providerDraft({
-      presentation: GROK_PRESENTATION,
+      presentation: grokPresentation(grokSettings),
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
@@ -448,7 +469,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       : fallbackModels;
 
   return yield* providerDraft({
-    presentation: GROK_PRESENTATION,
+    presentation: grokPresentation(grokSettings),
     enabled: grokSettings.enabled,
     checkedAt,
     models,

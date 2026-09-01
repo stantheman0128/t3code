@@ -571,12 +571,36 @@ export const GrokSettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "Use Grok Bot backend",
         description: "Run Oh My Pi's Grok Bot ACP provider instead of the standalone Grok CLI.",
-        providerSettingsForm: { control: "switch", clearWhenEmpty: "omit" },
+        providerSettingsForm: { hidden: true },
       }),
     ),
     grokbotBinaryPath: makeBinaryPathSetting("omp").pipe(
       Schema.annotateKey({
         title: "Grok Bot binary path",
+        description: "Path to an Oh My Pi build that includes the Grok Bot provider.",
+        providerSettingsForm: { hidden: true },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath"],
+  },
+);
+export type GrokSettings = typeof GrokSettings.Type;
+
+export const GrokBotSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("omp").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
         description: "Path to an Oh My Pi build that includes the Grok Bot provider.",
         providerSettingsForm: { placeholder: "omp", clearWhenEmpty: "omit" },
       }),
@@ -587,10 +611,10 @@ export const GrokSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["useGrokbotBackend", "grokbotBinaryPath", "binaryPath"],
+    order: ["binaryPath"],
   },
 );
-export type GrokSettings = typeof GrokSettings.Type;
+export type GrokBotSettings = typeof GrokBotSettings.Type;
 
 export const OpenCodeSettings = makeProviderSettingsSchema(
   {
@@ -796,6 +820,7 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    grokbot: GrokBotSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
@@ -944,6 +969,12 @@ const GrokSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const GrokBotSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 const OpenCodeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -992,6 +1023,7 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
+      grokbot: Schema.optionalKey(GrokBotSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
     }),
   ),

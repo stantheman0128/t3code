@@ -7,6 +7,7 @@ import {
   resolvePrimaryOperateAccess,
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
+  shouldShowProviderInstanceInSettings,
 } from "./ProviderSettingsPanel.logic";
 
 const primaryId = EnvironmentId.make("primary");
@@ -18,6 +19,45 @@ const environments = [
   { environmentId: relayId, label: "Alpha Relay" },
   { environmentId: primaryId, label: "This device" },
 ] as const;
+
+describe("shouldShowProviderInstanceInSettings", () => {
+  it("hides a disabled default slot when another instance of the driver is enabled", () => {
+    expect(
+      shouldShowProviderInstanceInSettings({
+        isDefault: true,
+        enabled: false,
+        hasOtherEnabledInstance: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the default slot when it is the live instance", () => {
+    expect(
+      shouldShowProviderInstanceInSettings({
+        isDefault: true,
+        enabled: true,
+        hasOtherEnabledInstance: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowProviderInstanceInSettings({
+        isDefault: true,
+        enabled: false,
+        hasOtherEnabledInstance: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps custom instances even when they are disabled", () => {
+    expect(
+      shouldShowProviderInstanceInSettings({
+        isDefault: false,
+        enabled: false,
+        hasOtherEnabledInstance: true,
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("provider environment selection", () => {
   it("sorts the primary environment first and the rest by label", () => {

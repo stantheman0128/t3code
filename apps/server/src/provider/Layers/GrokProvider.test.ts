@@ -59,6 +59,41 @@ describe("Grok Bot ACP model discovery", () => {
       "grokbot/sand-cua",
     ]);
   });
+
+  it("keeps advertised Grok Bot models when they omit the grokbot/ prefix", () => {
+    const models = buildGrokDiscoveredModelsFromSessionConfigOptions(
+      [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "sand-default",
+          options: [
+            { value: "sand-default", name: "Sand Default" },
+            { value: "sand-automation", name: "Sand Automation" },
+          ],
+        },
+      ],
+      "grokbot/",
+    );
+    expect(models).toEqual([]);
+
+    const unprefixed = buildGrokDiscoveredModelsFromSessionConfigOptions([
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "sand-default",
+        options: [
+          { value: "sand-default", name: "Sand Default" },
+          { value: "sand-automation", name: "Sand Automation" },
+        ],
+      },
+    ]);
+    expect(unprefixed.map((model) => model.slug)).toEqual(["sand-default", "sand-automation"]);
+  });
 });
 
 it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
@@ -245,6 +280,38 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         "grok-build",
       ]);
       expect(snapshot.message).toContain("ACP startup failed");
+    }),
+  );
+
+  it.effect("does not advertise Grok CLI models when Grok Bot ACP discovery fails", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grokbot-models-" });
+          const ompPath = path.join(dir, "omp");
+          yield* fs.writeFileString(
+            ompPath,
+            ["#!/bin/sh", 'printf "omp 0.0.1\\n"', "exit 0", ""].join("\n"),
+          );
+          yield* fs.chmod(ompPath, 0o755);
+
+          return yield* checkGrokProviderStatus(
+            decodeGrokSettings({
+              enabled: true,
+              useGrokbotBackend: true,
+              grokbotBinaryPath: ompPath,
+              binaryPath: ompPath,
+            }),
+            { HOME: dir, PATH: process.env.PATH ?? "" },
+          );
+        }),
+      );
+
+      expect(snapshot.displayName).toBe("Grok Bot");
+      expect(snapshot.models.map((model) => model.slug)).not.toContain("grok-build");
+      expect(snapshot.models.map((model) => model.slug)).not.toContain("grok-4.6");
     }),
   );
 

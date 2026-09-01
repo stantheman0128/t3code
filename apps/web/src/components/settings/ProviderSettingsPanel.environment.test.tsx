@@ -273,7 +273,15 @@ describe("EnvironmentProviderSettings routing", () => {
       },
     });
 
+    settingsState.value = {
+      ...settingsState.value,
+      providerInstances: {
+        [codexId]: settingsState.value.providerInstances?.[codexId]!,
+      },
+    };
+
     settingsState.updateSettings.mockClear();
+    panel = renderPanel();
     const defaultRow = visitElements(
       panel,
       (element) => element.props.instanceId === codexId && element.props.mode === "list",

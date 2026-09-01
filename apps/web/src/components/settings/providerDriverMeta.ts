@@ -2,6 +2,7 @@ import {
   ClaudeSettings,
   CodexSettings,
   CursorSettings,
+  GrokBotSettings,
   GrokSettings,
   OpenCodeSettings,
   ProviderDriverKind,
@@ -60,6 +61,13 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     icon: GrokIcon,
     badgeLabel: "Early Access",
     settingsSchema: GrokSettings,
+  },
+  {
+    value: ProviderDriverKind.make("grokbot"),
+    label: "Grok Bot",
+    icon: GrokIcon,
+    badgeLabel: "Early Access",
+    settingsSchema: GrokBotSettings,
   },
   {
     value: ProviderDriverKind.make("opencode"),

@@ -1095,13 +1095,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     return null;
   }
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
-  const canSendEditedMessage =
-    canRevertAgentWork && !activity.isWorking && !activity.isRevertingCheckpoint;
+  const canSendEditedMessage = !activity.isWorking && !activity.isRevertingCheckpoint;
   const sendDisabledReason = activity.isWorking
     ? "Interrupt the current turn before editing this message."
     : canRevertAgentWork
       ? null
-      : "No checkpoint to rewind from this message.";
+      : "No rewind checkpoint. Send will post this as a new message.";
 
   const beginEdit = () => {
     setDraft(editableText);

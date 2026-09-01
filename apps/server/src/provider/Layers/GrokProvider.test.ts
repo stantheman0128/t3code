@@ -11,6 +11,7 @@ import {
   buildGrokDiscoveredModelsFromSessionModelState,
   buildInitialGrokProviderSnapshot,
   checkGrokProviderStatus,
+  selectDiscoveredGrokModels,
 } from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
@@ -93,6 +94,59 @@ describe("Grok Bot ACP model discovery", () => {
       },
     ]);
     expect(unprefixed.map((model) => model.slug)).toEqual(["sand-default", "sand-automation"]);
+  });
+
+  it("does not dump OMP's other-provider catalog when grokbot/ is missing", () => {
+    const models = selectDiscoveredGrokModels({
+      useGrokbotBackend: true,
+      models: {
+        currentModelId: "anthropic/claude-opus-4-6",
+        availableModels: [
+          { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus" },
+          { modelId: "openai/gpt-5.4", name: "GPT-5.4" },
+          { modelId: "mistral/codestral-latest", name: "Codestral" },
+        ],
+      },
+    });
+
+    expect(models.map((model) => model.slug)).toEqual([]);
+  });
+
+  it("keeps unprefixed grokbot-only catalogs when OMP omits grokbot/", () => {
+    const models = selectDiscoveredGrokModels({
+      useGrokbotBackend: true,
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "sand-default",
+          options: [
+            { value: "sand-default", name: "Sand Default" },
+            { value: "sand-automation", name: "Sand Automation" },
+          ],
+        },
+      ],
+    });
+
+    expect(models.map((model) => model.slug)).toEqual(["sand-default", "sand-automation"]);
+  });
+
+  it("still keeps grokbot/ models from a mixed OMP catalog", () => {
+    const models = selectDiscoveredGrokModels({
+      useGrokbotBackend: true,
+      models: {
+        currentModelId: "grokbot/sand-default",
+        availableModels: [
+          { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus" },
+          { modelId: "grokbot/sand-default", name: "Sand Default" },
+          { modelId: "openai/gpt-5.4", name: "GPT-5.4" },
+        ],
+      },
+    });
+
+    expect(models.map((model) => model.slug)).toEqual(["grokbot/sand-default"]);
   });
 });
 

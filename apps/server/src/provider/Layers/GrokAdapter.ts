@@ -146,7 +146,6 @@ import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogg
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
-const PROVIDER = ProviderDriverKind.make("grok");
 const GROK_RESUME_VERSION = 1 as const;
 const NANOS_PER_MILLI = 1_000_000n;
 // ACP does not expose Grok's private `streaming_reasoning` phase. Once it has
@@ -168,6 +167,8 @@ export interface GrokAdapterLiveOptions {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
+  /** Grok CLI vs Grok Bot share this adapter; bind the driver that created it. */
+  readonly driverKind?: ProviderDriverKind;
   /** Override the conservative ACP turn liveness timeout in focused tests. */
   readonly turnInactivityTimeoutMs?: number;
   /** Override the longer active-tool liveness timeout in focused tests. */
@@ -423,7 +424,8 @@ export function grokPromptSettlementBelongsToContext(input: {
 
 export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapterLiveOptions) {
   return Effect.gen(function* () {
-    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("grok");
+    const PROVIDER = options?.driverKind ?? ProviderDriverKind.make("grok");
+    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make(PROVIDER);
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;

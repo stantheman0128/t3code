@@ -1081,6 +1081,52 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }),
   );
 
+  it.effect("starts a grokbot session when the adapter is bound to grokbot", () =>
+    Effect.gen(function* () {
+      const wrapperPath = yield* Effect.promise(() => makeMockGrokWrapper());
+      const grokbot = ProviderDriverKind.make("grokbot");
+      const instanceId = ProviderInstanceId.make("grokbot");
+      const adapter = yield* makeTestAdapter(wrapperPath, { driverKind: grokbot, instanceId });
+      const threadId = ThreadId.make("grokbot-start-session");
+
+      const session = yield* adapter.startSession({
+        threadId,
+        provider: grokbot,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId, model: "grok-build" },
+      });
+
+      assert.equal(session.provider, grokbot);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects grok startSession on a grokbot adapter", () =>
+    Effect.gen(function* () {
+      const wrapperPath = yield* Effect.promise(() => makeMockGrokWrapper());
+      const grokbot = ProviderDriverKind.make("grokbot");
+      const adapter = yield* makeTestAdapter(wrapperPath, { driverKind: grokbot });
+      const threadId = ThreadId.make("grokbot-rejects-grok");
+
+      const error = yield* Effect.flip(
+        adapter.startSession({
+          threadId,
+          provider: ProviderDriverKind.make("grok"),
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { instanceId: ProviderInstanceId.make("grokbot"), model: "grok-build" },
+        }),
+      );
+
+      assert.equal(error._tag, "ProviderAdapterValidationError");
+      if (error._tag === "ProviderAdapterValidationError") {
+        assert.equal(error.provider, grokbot);
+        assert.equal(error.issue, "Expected provider 'grokbot' but received 'grok'.");
+      }
+    }),
+  );
+
   it.effect("rejects sendTurn with empty input and no attachments", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-empty-turn");

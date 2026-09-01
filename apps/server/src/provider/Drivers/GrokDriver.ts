@@ -154,6 +154,7 @@ export function createGrokFamilyDriver(spec: {
           environment: processEnv,
           ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
           instanceId,
+          driverKind,
         });
         const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv);
 

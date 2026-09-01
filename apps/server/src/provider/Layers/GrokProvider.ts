@@ -234,6 +234,34 @@ export function buildGrokDiscoveredModelsFromSessionConfigOptions(
     .filter((model): model is ServerProviderModel => model !== undefined);
 }
 
+function isGrokBotSafeDiscoveredSlug(slug: string): boolean {
+  const trimmed = slug.trim();
+  return trimmed.startsWith("grokbot/") || !trimmed.includes("/");
+}
+
+export function selectDiscoveredGrokModels(input: {
+  readonly useGrokbotBackend: boolean;
+  readonly models?: EffectAcpSchema.SessionModelState | null;
+  readonly configOptions?: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null;
+}): ReadonlyArray<ServerProviderModel> {
+  const modelIdPrefix = input.useGrokbotBackend ? "grokbot/" : undefined;
+  const fromSession = buildGrokDiscoveredModelsFromSessionModelState(input.models, modelIdPrefix);
+  const fromConfig = buildGrokDiscoveredModelsFromSessionConfigOptions(
+    input.configOptions,
+    modelIdPrefix,
+  );
+  const prefixed = fromSession.length > 0 ? fromSession : fromConfig;
+  if (prefixed.length > 0 || !input.useGrokbotBackend) {
+    return prefixed;
+  }
+  const unprefixedSession = buildGrokDiscoveredModelsFromSessionModelState(input.models);
+  const unprefixed =
+    unprefixedSession.length > 0
+      ? unprefixedSession
+      : buildGrokDiscoveredModelsFromSessionConfigOptions(input.configOptions);
+  return unprefixed.filter((model) => isGrokBotSafeDiscoveredSlug(model.slug));
+}
+
 const discoverGrokModelsViaAcp = (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
@@ -254,25 +282,11 @@ const discoverGrokModelsViaAcp = (
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();
-    const modelIdPrefix = grokSettings.useGrokbotBackend ? "grokbot/" : undefined;
-    const fromSession = buildGrokDiscoveredModelsFromSessionModelState(
-      started.sessionSetupResult.models,
-      modelIdPrefix,
-    );
-    const fromConfig = buildGrokDiscoveredModelsFromSessionConfigOptions(
-      started.sessionSetupResult.configOptions,
-      modelIdPrefix,
-    );
-    const prefixed = fromSession.length > 0 ? fromSession : fromConfig;
-    if (prefixed.length > 0 || !grokSettings.useGrokbotBackend) {
-      return prefixed;
-    }
-    const unprefixedSession = buildGrokDiscoveredModelsFromSessionModelState(
-      started.sessionSetupResult.models,
-    );
-    return unprefixedSession.length > 0
-      ? unprefixedSession
-      : buildGrokDiscoveredModelsFromSessionConfigOptions(started.sessionSetupResult.configOptions);
+    return selectDiscoveredGrokModels({
+      useGrokbotBackend: grokSettings.useGrokbotBackend,
+      models: started.sessionSetupResult.models,
+      configOptions: started.sessionSetupResult.configOptions,
+    });
   }).pipe(Effect.scoped);
 
 const grokCommandFromSettings = (grokSettings: GrokSettings): string =>

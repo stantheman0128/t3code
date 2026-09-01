@@ -62,7 +62,7 @@ T3 Code now maps those updates onto the same Agents / task surface used by Claud
 - each child agent becomes a `subagent` task with `parentAgentId` + `timelineBypass` (not a parent-timeline row)
 - member tokens stay on the child `typedUsage` snapshot — they do not replace the thread context window
 - standalone Grok `subagent_spawned` / `subagent_progress` / `subagent_finished` updates use the same child-task path
-- while a Direct spawn is running, its Agents card streams that child's thinking and each tool (with path or query). Click a tool row to expand the same detail the main chat would show. Those child tools stay off the parent timeline.
+- while a Direct spawn is running, its Agents card streams that child's thinking and each tool (with path or query). Click the name or Open session to see the child's full transcript; it auto-scrolls as new steps land. Click a tool row to expand the same detail the main chat would show. Those child tools stay off the parent timeline.
 
 T3 does not reimplement the Rhai host. Picking a slash item sends that text as a prompt so the
 Grok CLI can run it. Project scripts override user scripts of the same name. If you only see

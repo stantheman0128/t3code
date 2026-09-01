@@ -421,4 +421,87 @@ describe("AgentsPanel", () => {
     const html = renderToStaticMarkup(<AgentsPanel model={model} />);
     expect(html).toContain("Watching. New events show up here as they fire.");
   });
+
+  it("offers Open session on a Direct spawn row", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "sa-history",
+          status: "completed",
+          title: "T3 Code 歷史由來",
+          error: null,
+          result: "T3 Code is an open source coding-agent control surface.",
+          lastToolName: "web_search",
+          usage: { totalTokens: 179000, toolUses: 66 },
+          recentActivity: [
+            { at: "2026-09-01T10:00:00.000Z", kind: "tool", summary: "▸ grep" },
+            { at: "2026-09-01T10:08:00.000Z", kind: "tool", summary: "▸ web_search" },
+          ],
+        }),
+      ],
+      runningCount: 0,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 1,
+      totalTokens: 179000,
+      hasAgents: true,
+      liveCount: 0,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("Open session T3 Code");
+    expect(html).toContain("Direct spawns");
+  });
+
+  it("opens a child's full session instead of the roster peek", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "sa-history",
+          status: "completed",
+          title: "T3 Code 歷史由來",
+          error: null,
+          result: "T3 Code is an open source coding-agent control surface.",
+          lastToolName: "web_search",
+          usage: { totalTokens: 179000, toolUses: 66 },
+          recentActivity: [
+            {
+              at: "2026-09-01T10:00:00.000Z",
+              kind: "thought",
+              summary: "Need the first commit and the rebrand.",
+            },
+            {
+              at: "2026-09-01T10:01:00.000Z",
+              kind: "tool",
+              summary: "Searched files · CodeThing",
+              detail: "README.md",
+            },
+            { at: "2026-09-01T10:08:00.000Z", kind: "tool", summary: "web_search" },
+          ],
+        }),
+      ],
+      runningCount: 0,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 1,
+      totalTokens: 179000,
+      hasAgents: true,
+      liveCount: 0,
+    };
+
+    const html = renderToStaticMarkup(
+      <AgentsPanel model={model} initialFocusedAgentId="sa-history" />,
+    );
+    expect(html).toContain("Back to agents");
+    expect(html).toContain("Need the first commit and the rebrand.");
+    expect(html).toContain("Searched files · CodeThing");
+    expect(html).toContain("web_search");
+    expect(html).toContain("open source coding-agent");
+    expect(html).toContain("min-h-0 flex-1");
+    expect(html).not.toContain("Direct spawns");
+  });
 });

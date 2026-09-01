@@ -7,8 +7,9 @@
  * - Live agents sort above idle, then settled. First-seen order is the
  *   tiebreaker inside a liveness band so in-flight rows do not jump.
  * - Collapsed agent rows reserve three fixed lines for identity, activity,
- *   and metrics. Expansion is user-driven and reveals the live thought/tool
- *   log first, then result, error, and output path.
+ *   and metrics. Expansion peeks the live thought/tool log. Opening a session
+ *   replaces the roster with that child's full transcript (tools, thinking,
+ *   result) and auto-scrolls while it runs.
  * - Workflow expansion is presentation state. A live run stays expanded when
  *   it settles; older collapsed runs can still be opened at run granularity.
  * - Static status dots, DOM-write elapsed timers, plain token counters.
@@ -29,8 +30,8 @@ import {
   isActiveSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { Bot, Braces, Check, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Bot, Braces, Check, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
+import { createContext, use, useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
@@ -38,6 +39,8 @@ import { Collapsible, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { Button } from "~/components/ui/button";
 
 const EMPTY_STOPPING_AGENT_IDS: ReadonlySet<string> = new Set();
+
+const OpenAgentSessionContext = createContext<((agentId: string) => void) | null>(null);
 
 /** Hover must read as a real control: pointer + fill, not only a 60% muted wash. */
 const STOP_BUTTON_CLASS =
@@ -292,6 +295,7 @@ function AgentActivityLog({
   agent,
   steps,
   live,
+  fillHeight = false,
 }: {
   agent: RuntimeSubagent;
   steps: ReadonlyArray<{
@@ -300,6 +304,7 @@ function AgentActivityLog({
     readonly detail?: string;
   }>;
   live: boolean;
+  fillHeight?: boolean;
 }) {
   const listRef = useRef<HTMLOListElement>(null);
   const stepKey = steps.map((step) => step.summary).join("\n");
@@ -326,7 +331,13 @@ function AgentActivityLog({
     liveThought === undefined ? steps : steps.filter((step) => step !== liveThought);
 
   return (
-    <ol ref={listRef} className="max-h-[28rem] space-y-1 overflow-y-auto text-[.7rem] leading-5">
+    <ol
+      ref={listRef}
+      className={cn(
+        "space-y-1 overflow-y-auto text-[.7rem] leading-5",
+        fillHeight ? "min-h-0 flex-1" : "max-h-[28rem]",
+      )}
+    >
       {visibleSteps.map((step, index) => (
         <li key={`${index}-${step.kind}-${step.summary.slice(0, 48)}`}>
           <AgentActivityStep step={step} />
@@ -341,8 +352,7 @@ function AgentActivityLog({
   );
 }
 
-function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
-  const preview = formatAgentResultPreview(agent.result);
+function agentSessionSteps(agent: RuntimeSubagent) {
   const steps = agent.recentActivity
     .map((entry) => ({
       summary: entry.summary.replace(/^▸\s+/, "").trim(),
@@ -350,12 +360,37 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
       ...(entry.detail ? { detail: entry.detail } : {}),
     }))
     .filter((entry) => isUsefulAgentStep(entry.summary));
-  const fallbackSteps =
-    steps.length > 0
-      ? steps
-      : agent.lastToolName !== null
-        ? [{ summary: agent.lastToolName, kind: "tool" as const }]
-        : [];
+  if (steps.length > 0) {
+    return steps;
+  }
+  return agent.lastToolName !== null
+    ? [{ summary: agent.lastToolName, kind: "tool" as const }]
+    : [];
+}
+
+function findPanelAgent(model: AgentPanelModel, id: string): RuntimeSubagent | null {
+  const fromDirect = model.directAgents.find((agent) => agent.id === id);
+  if (fromDirect) return fromDirect;
+  const fromBackground = model.background.find((agent) => agent.id === id);
+  if (fromBackground) return fromBackground;
+  for (const group of model.workflows) {
+    if (group.workflow.id === id) return group.workflow;
+    for (const member of workflowMembers(group)) {
+      if (member.id === id) return member;
+    }
+  }
+  return null;
+}
+
+function AgentDetail({
+  agent,
+  onOpenSession,
+}: {
+  agent: RuntimeSubagent;
+  onOpenSession?: () => void;
+}) {
+  const preview = formatAgentResultPreview(agent.result);
+  const fallbackSteps = agentSessionSteps(agent);
   const isWatch = isWatchAgent(agent);
   const toolUses = agent.usage?.toolUses ?? 0;
   const live = isActiveSubagentStatus(agent.status);
@@ -365,7 +400,8 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
     agent.outputFile !== null ||
     fallbackSteps.length > 0 ||
     toolUses > 0 ||
-    isWatch;
+    isWatch ||
+    onOpenSession !== undefined;
   if (!hasDetail) {
     return (
       <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
@@ -407,6 +443,15 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
           Log: {shortAgentOutputPath(agent.outputFile)}
         </p>
       ) : null}
+      {onOpenSession ? (
+        <button
+          type="button"
+          className="text-[.7rem] font-medium text-info-foreground hover:underline"
+          onClick={onOpenSession}
+        >
+          Open session
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -421,6 +466,8 @@ function AgentRow({
   onStop?: () => void;
   stopping?: boolean;
 }) {
+  const openSession = use(OpenAgentSessionContext);
+  const onOpenSession = openSession ? () => openSession(agent.id) : undefined;
   const live = isActiveSubagentStatus(agent.status);
   const hasProcedure =
     agent.lastToolName !== null ||
@@ -469,9 +516,20 @@ function AgentRow({
           )}
           <StatusDot status={agent.status} />
         </CollapsibleTrigger>
-        <CollapsibleTrigger className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-left">
-          <span className="min-w-0 truncate text-sm font-medium">{displayTitle}</span>
-        </CollapsibleTrigger>
+        {onOpenSession ? (
+          <button
+            type="button"
+            aria-label={`Open session ${displayTitle}`}
+            className="col-start-2 row-start-1 flex min-w-0 cursor-pointer items-baseline gap-2 text-left hover:text-foreground"
+            onClick={onOpenSession}
+          >
+            <span className="min-w-0 truncate text-sm font-medium">{displayTitle}</span>
+          </button>
+        ) : (
+          <CollapsibleTrigger className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2 text-left">
+            <span className="min-w-0 truncate text-sm font-medium">{displayTitle}</span>
+          </CollapsibleTrigger>
+        )}
         <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
           <span className="inline-flex items-center gap-1">
             <StatusChip agent={agent} />
@@ -511,7 +569,7 @@ function AgentRow({
         </span>
         <span className="sr-only">{STATUS_VISUALS[agent.status].label}</span>
       </div>
-      {open ? <AgentDetail agent={agent} /> : null}
+      {open ? <AgentDetail agent={agent} {...(onOpenSession ? { onOpenSession } : {})} /> : null}
     </Collapsible>
   );
 }
@@ -886,6 +944,90 @@ function WorkflowSection({
   );
 }
 
+function AgentSessionView({
+  agent,
+  onBack,
+  onStop,
+  stopping = false,
+}: {
+  agent: RuntimeSubagent;
+  onBack: () => void;
+  onStop?: () => void;
+  stopping?: boolean;
+}) {
+  const live = isActiveSubagentStatus(agent.status);
+  const displayTitle = formatAgentDisplayTitle(agent);
+  const activity = formatAgentActivityLine(agent);
+  const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
+  const preview = formatAgentResultPreview(agent.result);
+  const steps = agentSessionSteps(agent);
+  const metadata = [
+    agent.role ? agent.role.replace(/[_-]+/g, " ") : null,
+    modelLabel,
+    agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : null,
+    agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
+  ].filter((value): value is string => value !== null);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-border/60 px-2 py-1.5">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Back to agents"
+            className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 text-[.7rem] text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={onBack}
+          >
+            <ArrowLeft aria-hidden className="size-3.5" />
+            Back
+          </button>
+          <StatusDot status={agent.status} />
+          <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{displayTitle}</h2>
+          <span className="flex shrink-0 items-center gap-1 font-mono text-[.7rem] text-muted-foreground">
+            <StatusChip agent={agent} />
+            {onStop ? (
+              <button
+                type="button"
+                aria-label={`Stop ${displayTitle}`}
+                aria-busy={stopping}
+                disabled={stopping}
+                className={cn(
+                  STOP_BUTTON_CLASS,
+                  stopping ? "border-info/70 bg-info/15 text-info-foreground" : "border-border/70",
+                )}
+                onClick={onStop}
+              >
+                {stopping ? <Loader2 aria-hidden className="size-3 animate-spin" /> : null}
+                {stopping ? "Stopping" : "Stop"}
+              </button>
+            ) : null}
+            <AgentElapsed agent={agent} />
+          </span>
+        </div>
+        <p className="mt-1 truncate pl-7 text-xs text-muted-foreground">{activity}</p>
+        {metadata.length > 0 ? (
+          <p className="truncate pl-7 font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
+            {metadata.join(" · ")}
+          </p>
+        ) : null}
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
+        {agent.error ? (
+          <p className="whitespace-pre-wrap break-words text-[.7rem] text-destructive-foreground">
+            {agent.error}
+          </p>
+        ) : null}
+        <AgentActivityLog agent={agent} steps={steps} live={live} fillHeight />
+        {!live && preview ? (
+          <p className="max-h-32 shrink-0 overflow-y-auto whitespace-pre-wrap break-words border-t border-border/40 pt-1.5 text-[.7rem] text-foreground/90">
+            {preview}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function AgentsPanel({
   model,
   environmentId = null,
@@ -895,6 +1037,7 @@ export function AgentsPanel({
   canStopAgent = false,
   isStopping = false,
   stoppingAgentIds = EMPTY_STOPPING_AGENT_IDS,
+  initialFocusedAgentId = null,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
@@ -906,7 +1049,11 @@ export function AgentsPanel({
   canStopAgent?: boolean;
   isStopping?: boolean;
   stoppingAgentIds?: ReadonlySet<string>;
+  /** Test hook: open a child's full session on first render. */
+  initialFocusedAgentId?: string | null;
 }) {
+  const [focusedAgentId, setFocusedAgentId] = useState<string | null>(initialFocusedAgentId);
+  const focusedAgent = focusedAgentId ? findPanelAgent(model, focusedAgentId) : null;
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -920,119 +1067,135 @@ export function AgentsPanel({
     );
   }
 
+  if (focusedAgent) {
+    return (
+      <AgentSessionView
+        agent={focusedAgent}
+        onBack={() => setFocusedAgentId(null)}
+        {...agentRowStopProps(focusedAgent, onStopAgent, canStopAgent, stoppingAgentIds)}
+      />
+    );
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="flex flex-col gap-2 p-2">
-          {model.workflows.map((group) => (
-            <WorkflowSection
-              key={group.workflow.id}
-              group={group}
-              environmentId={environmentId}
-              threadId={threadId}
-              {...(onStopAgent ? { onStopAgent } : {})}
-              canStopAgent={canStopAgent}
-              stoppingAgentIds={stoppingAgentIds}
-            />
-          ))}
-          {model.background.length > 0 ? (
-            <section>
-              <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                Scheduled / Monitoring
-              </div>
-              {model.background.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  {...agentRowStopProps(agent, onStopAgent, canStopAgent, stoppingAgentIds)}
-                />
-              ))}
-            </section>
-          ) : null}
-          {model.directAgents.length > 0 ? (
-            <section>
-              <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                Direct spawns
-              </div>
-              {(() => {
-                const working = model.directAgents.filter((agent) =>
-                  isActiveSubagentStatus(agent.status),
-                );
-                const settled = model.directAgents.filter(
-                  (agent) => !isActiveSubagentStatus(agent.status),
-                );
-                return (
-                  <>
-                    {working.length > 0 ? (
-                      <div>
-                        <div className="px-1.5 pt-1 text-[.65rem] text-info-foreground">
-                          Working
+    <OpenAgentSessionContext.Provider value={setFocusedAgentId}>
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex flex-col gap-2 p-2">
+            {model.workflows.map((group) => (
+              <WorkflowSection
+                key={group.workflow.id}
+                group={group}
+                environmentId={environmentId}
+                threadId={threadId}
+                {...(onStopAgent ? { onStopAgent } : {})}
+                canStopAgent={canStopAgent}
+                stoppingAgentIds={stoppingAgentIds}
+              />
+            ))}
+            {model.background.length > 0 ? (
+              <section>
+                <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                  Scheduled / Monitoring
+                </div>
+                {model.background.map((agent) => (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    {...agentRowStopProps(agent, onStopAgent, canStopAgent, stoppingAgentIds)}
+                  />
+                ))}
+              </section>
+            ) : null}
+            {model.directAgents.length > 0 ? (
+              <section>
+                <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                  Direct spawns
+                </div>
+                {(() => {
+                  const working = model.directAgents.filter((agent) =>
+                    isActiveSubagentStatus(agent.status),
+                  );
+                  const settled = model.directAgents.filter(
+                    (agent) => !isActiveSubagentStatus(agent.status),
+                  );
+                  return (
+                    <>
+                      {working.length > 0 ? (
+                        <div>
+                          <div className="px-1.5 pt-1 text-[.65rem] text-info-foreground">
+                            Working
+                          </div>
+                          {working.map((agent) => (
+                            <AgentRow
+                              key={agent.id}
+                              agent={agent}
+                              {...agentRowStopProps(
+                                agent,
+                                onStopAgent,
+                                canStopAgent,
+                                stoppingAgentIds,
+                              )}
+                            />
+                          ))}
                         </div>
-                        {working.map((agent) => (
-                          <AgentRow
-                            key={agent.id}
-                            agent={agent}
-                            {...agentRowStopProps(
-                              agent,
-                              onStopAgent,
-                              canStopAgent,
-                              stoppingAgentIds,
-                            )}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {working.length > 0 && settled.length > 0 ? (
-                      <div className="mx-1.5 my-1 border-t border-border/60" />
-                    ) : null}
-                    {settled.length > 0 ? (
-                      <div>
-                        <div className="px-1.5 pt-1 text-[.65rem] text-muted-foreground">Done</div>
-                        {settled.map((agent) => (
-                          <AgentRow
-                            key={agent.id}
-                            agent={agent}
-                            {...agentRowStopProps(
-                              agent,
-                              onStopAgent,
-                              canStopAgent,
-                              stoppingAgentIds,
-                            )}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
-                );
-              })()}
-            </section>
-          ) : null}
+                      ) : null}
+                      {working.length > 0 && settled.length > 0 ? (
+                        <div className="mx-1.5 my-1 border-t border-border/60" />
+                      ) : null}
+                      {settled.length > 0 ? (
+                        <div>
+                          <div className="px-1.5 pt-1 text-[.65rem] text-muted-foreground">
+                            Done
+                          </div>
+                          {settled.map((agent) => (
+                            <AgentRow
+                              key={agent.id}
+                              agent={agent}
+                              {...agentRowStopProps(
+                                agent,
+                                onStopAgent,
+                                canStopAgent,
+                                stoppingAgentIds,
+                              )}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </section>
+            ) : null}
+          </div>
         </div>
-      </div>
-      <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
-        <span className="flex items-center gap-2">
-          {model.runningCount + model.waitingCount > 0 ? (
-            <span className="text-info-foreground">
-              ● {model.runningCount + model.waitingCount} working
+        <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
+          <span className="flex items-center gap-2">
+            {model.runningCount + model.waitingCount > 0 ? (
+              <span className="text-info-foreground">
+                ● {model.runningCount + model.waitingCount} working
+              </span>
+            ) : null}
+            {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
+            {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
+          </span>
+          <span className="flex items-center gap-2">
+            {onStopAll && model.runningCount + model.waitingCount + model.idleCount > 0 ? (
+              <button
+                type="button"
+                className={cn(STOP_BUTTON_CLASS, "border-border/70 px-1.5")}
+                disabled={isStopping}
+                onClick={onStopAll}
+              >
+                {isStopping ? "Stopping…" : "Stop all"}
+              </button>
+            ) : null}
+            <span className="tabular-nums">
+              Σ {formatSubagentTokenCount(model.totalTokens)} tok
             </span>
-          ) : null}
-          {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
-          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
-        </span>
-        <span className="flex items-center gap-2">
-          {onStopAll && model.runningCount + model.waitingCount + model.idleCount > 0 ? (
-            <button
-              type="button"
-              className={cn(STOP_BUTTON_CLASS, "border-border/70 px-1.5")}
-              disabled={isStopping}
-              onClick={onStopAll}
-            >
-              {isStopping ? "Stopping…" : "Stop all"}
-            </button>
-          ) : null}
-          <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
-        </span>
-      </footer>
-    </div>
+          </span>
+        </footer>
+      </div>
+    </OpenAgentSessionContext.Provider>
   );
 }

@@ -123,13 +123,35 @@ function elapsedBetween(startedAt: string, endIso: string | null): string {
  * Elapsed time for the current activation. Live agents self-tick via DOM
  * writes (zero React commits per tick); settled agents freeze at completedAt.
  */
+function isWatchAgent(agent: RuntimeSubagent): boolean {
+  return agent.kind === "monitor" || agent.kind === "scheduled";
+}
+
+function watchStatusText(agent: RuntimeSubagent, live: boolean, eventCount: number): string {
+  if (live) {
+    return eventCount > 0
+      ? "Watching. Newer events append above."
+      : "Watching. New events show up here as they fire.";
+  }
+  const parts: string[] = [];
+  const schedule = agent.progress?.trim();
+  if (schedule) parts.push(`Schedule: ${schedule}.`);
+  if (agent.activationCount > 0) {
+    parts.push(`Completed ${agent.activationCount} run${agent.activationCount === 1 ? "" : "s"}.`);
+  }
+  parts.push(eventCount > 0 ? "Last events are listed above." : "No log from previous runs.");
+  parts.push("Waiting for the next run.");
+  return parts.join(" ");
+}
+
 function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   const textRef = useRef<HTMLSpanElement>(null);
   const live = agent.status === "running" || agent.status === "waiting";
   const startedAt = agent.startedAt;
+  const hideElapsed = !startedAt || (isWatchAgent(agent) && !live);
 
   useEffect(() => {
-    if (!live || !startedAt) {
+    if (hideElapsed || !live || !startedAt) {
       return;
     }
     const update = () => {
@@ -140,9 +162,9 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
     update();
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
-  }, [live, startedAt]);
+  }, [hideElapsed, live, startedAt]);
 
-  if (!startedAt) {
+  if (hideElapsed) {
     return null;
   }
   return (
@@ -270,7 +292,7 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
       : agent.lastToolName !== null
         ? [{ summary: agent.lastToolName, kind: "tool" as const }]
         : [];
-  const isWatch = agent.kind === "monitor" || agent.kind === "scheduled";
+  const isWatch = isWatchAgent(agent);
   const toolUses = agent.usage?.toolUses ?? 0;
   const live = isActiveSubagentStatus(agent.status);
   const hasDetail =
@@ -279,7 +301,7 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
     agent.outputFile !== null ||
     fallbackSteps.length > 0 ||
     toolUses > 0 ||
-    (isWatch && live);
+    isWatch;
   if (!hasDetail) {
     return (
       <p className="px-1.5 pb-2 pl-7 text-[.7rem] text-muted-foreground">
@@ -302,9 +324,10 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
             ? `${toolUses} tools so far. Step names were not recorded for this run.`
             : `${toolUses} tools. Step names were not recorded for this run.`}
         </p>
-      ) : isWatch && live ? (
+      ) : null}
+      {isWatch ? (
         <p className="text-[.7rem] text-muted-foreground">
-          Watching. New events show up here as they fire.
+          {watchStatusText(agent, live, fallbackSteps.length)}
         </p>
       ) : null}
       {!live && preview ? (
@@ -338,7 +361,7 @@ function AgentRow({
   const hasProcedure =
     agent.lastToolName !== null ||
     agent.recentActivity.some((entry) => isUsefulAgentStep(entry.summary));
-  const [open, setOpen] = useState(live || hasProcedure);
+  const [open, setOpen] = useState(live || hasProcedure || isWatchAgent(agent));
   const didAutoOpen = useRef(live || hasProcedure);
   useEffect(() => {
     if (live && !didAutoOpen.current) {

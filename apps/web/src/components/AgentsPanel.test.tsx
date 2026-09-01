@@ -97,6 +97,10 @@ describe("AgentsPanel", () => {
     expect(html).toContain("Scheduled / Monitoring");
     expect(html).toContain("Daily T3 fork sync.");
     expect(html).toContain("every 1 day");
+    expect(html).toContain("Schedule: every 1 day.");
+    expect(html).toContain("No log from previous runs.");
+    expect(html).toContain("Waiting for the next run.");
+    expect(html).not.toContain("No result recorded.");
     expect(html).toContain("Stop");
     expect(html).not.toContain("Direct spawns");
   });

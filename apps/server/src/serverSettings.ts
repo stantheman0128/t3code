@@ -18,6 +18,7 @@ import {
   type ModelSelection,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
+  defaultInstanceIdForDriver,
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
@@ -297,6 +298,58 @@ function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings
     ? settings
     : fallbackTextGenerationProvider(settings);
 }
+
+function collectRemovedProviderInstanceRemaps(
+  previous: ServerSettings,
+  next: ServerSettings,
+): ReadonlyArray<{ readonly from: string; readonly to: string }> {
+  const remaps: Array<{ from: string; to: string }> = [];
+  for (const [instanceId, instance] of Object.entries(previous.providerInstances ?? {})) {
+    if (next.providerInstances[instanceId]) continue;
+    const defaultInstanceId = String(defaultInstanceIdForDriver(instance.driver));
+    if (defaultInstanceId === instanceId) continue;
+    if (next.providerInstances[defaultInstanceId]) {
+      remaps.push({ from: instanceId, to: defaultInstanceId });
+    }
+  }
+  return remaps;
+}
+
+const remapProviderInstanceIdInProjections = (
+  sql: SqlClient.SqlClient["Service"],
+  from: string,
+  to: string,
+) =>
+  Effect.gen(function* () {
+    yield* sql`
+      UPDATE projection_threads
+      SET model_selection_json = json_set(model_selection_json, '$.instanceId', ${to})
+      WHERE json_extract(model_selection_json, '$.instanceId') = ${from}
+    `;
+    yield* sql`
+      UPDATE projection_projects
+      SET default_model_selection_json = json_set(default_model_selection_json, '$.instanceId', ${to})
+      WHERE json_extract(default_model_selection_json, '$.instanceId') = ${from}
+    `;
+    yield* sql`
+      UPDATE projection_thread_sessions
+      SET provider_instance_id = ${to}
+      WHERE provider_instance_id = ${from}
+    `;
+    yield* sql`
+      UPDATE provider_session_runtime
+      SET provider_instance_id = ${to}
+      WHERE provider_instance_id = ${from}
+    `;
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("failed to remap deleted provider instance onto the default slot", {
+        from,
+        to,
+        cause,
+      }),
+    ),
+  );
 
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
   const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
@@ -746,6 +799,9 @@ const make = Effect.gen(function* () {
           const next = yield* normalizeServerSettings(nextPersisted);
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);
+          for (const remap of collectRemovedProviderInstanceRemaps(current, next)) {
+            yield* remapProviderInstanceIdInProjections(sql, remap.from, remap.to);
+          }
           yield* emitChange(next);
           const materialized = yield* materializeProviderEnvironmentSecrets(next);
           return resolveTextGenerationProvider(materialized);

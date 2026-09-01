@@ -81,6 +81,7 @@ import { providerSettingsTabClassName } from "./providerSettingsTabs";
 import { searchableSetting } from "./settingsSearch";
 import {
   backgroundActivityOverrideSettings,
+  buildPromoteCustomInstanceToDefaultPatch,
   buildProviderInstanceUpdatePatch,
   durationToSeconds,
   normalizeIntervalSeconds,
@@ -756,6 +757,14 @@ export function EnvironmentProviderSettings({
     });
   };
 
+  const promoteCustomInstanceToDefault = (id: ProviderInstanceId) => {
+    const patch = buildPromoteCustomInstanceToDefaultPatch({
+      settings,
+      customInstanceId: id,
+    });
+    if (patch) updateSettings(patch);
+  };
+
   const resetDefaultInstance = (driverKind: ProviderDriverKind) => {
     type LegacyProviderSettings = (typeof settings.providers)[keyof typeof settings.providers];
     const defaultLegacyProviders = DEFAULT_UNIFIED_SETTINGS.providers as Record<
@@ -842,6 +851,15 @@ export function EnvironmentProviderSettings({
               label={`${resetLabel} provider settings`}
               onClick={() => resetDefaultInstance(row.driver)}
             />
+          ) : mode === "editor" && !row.isDefault && !readOnly ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() => promoteCustomInstanceToDefault(row.instanceId)}
+            >
+              Use as default
+            </Button>
           ) : null
         }
         hiddenModels={modelPreferences.hiddenModels}

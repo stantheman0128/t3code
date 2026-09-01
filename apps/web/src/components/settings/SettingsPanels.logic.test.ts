@@ -10,6 +10,7 @@ import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
 import {
   backgroundActivitySharedPolicySettings,
+  buildPromoteCustomInstanceToDefaultPatch,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
   getChangedBrowserSettingLabels,
@@ -242,6 +243,64 @@ describe("buildProviderInstanceUpdatePatch", () => {
 
     expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
     expect(patch.providers).toBeUndefined();
+  });
+});
+
+describe("buildPromoteCustomInstanceToDefaultPatch", () => {
+  it("copies the custom Codex onto the default slot as Codex A and drops the custom id", () => {
+    const customId = ProviderInstanceId.make("codex_codex_b");
+    const defaultId = ProviderInstanceId.make("codex");
+    const customInstance = {
+      driver: ProviderDriverKind.make("codex"),
+      displayName: "Codex",
+      enabled: true,
+      config: {
+        binaryPath: "C:\\Codex\\codex.exe",
+        homePath: "C:\\Users\\stan\\.codex",
+        shadowHomePath: "C:\\Users\\stan\\.codex-account-b",
+      },
+    } satisfies ProviderInstanceConfig;
+
+    const patch = buildPromoteCustomInstanceToDefaultPatch({
+      settings: {
+        ...DEFAULT_UNIFIED_SETTINGS,
+        providerInstances: {
+          [defaultId]: {
+            driver: ProviderDriverKind.make("codex"),
+            displayName: "Codex A",
+            enabled: false,
+            config: { binaryPath: "codex" },
+          },
+          [customId]: customInstance,
+        },
+        favorites: [{ provider: customId, model: "gpt-5.4" }],
+        textGenerationModelSelection: { instanceId: customId, model: "gpt-5.4" },
+      },
+      customInstanceId: customId,
+    });
+
+    expect(patch).not.toBeNull();
+    expect(patch?.providerInstances?.[customId]).toBeUndefined();
+    expect(patch?.providerInstances?.[defaultId]).toEqual({
+      ...customInstance,
+      displayName: "Codex A",
+      enabled: true,
+    });
+    expect(patch?.favorites).toEqual([{ provider: defaultId, model: "gpt-5.4" }]);
+    expect(patch?.textGenerationModelSelection).toEqual({
+      instanceId: defaultId,
+      model: "gpt-5.4",
+    });
+    expect(patch?.providers?.codex.enabled).toBe(true);
+  });
+
+  it("returns null when the instance is already the default slot", () => {
+    expect(
+      buildPromoteCustomInstanceToDefaultPatch({
+        settings: DEFAULT_UNIFIED_SETTINGS,
+        customInstanceId: ProviderInstanceId.make("codex"),
+      }),
+    ).toBeNull();
   });
 });
 

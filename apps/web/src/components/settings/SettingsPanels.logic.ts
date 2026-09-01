@@ -9,6 +9,7 @@ import type {
   SidebarProjectGroupingMode,
   UnifiedSettings,
 } from "@t3tools/contracts";
+import { defaultInstanceIdForDriver, PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import {
   getBackgroundActivityBaseProfile,
@@ -278,6 +279,90 @@ export function buildProviderInstanceUpdatePatch(input: {
     ...(input.textGenerationModelSelection !== undefined
       ? { textGenerationModelSelection: input.textGenerationModelSelection }
       : {}),
+  };
+}
+
+function withoutRecordKey<V>(
+  record: Readonly<Record<string, V>> | undefined,
+  key: string,
+): Record<string, V> {
+  const next = { ...(record ?? {}) };
+  delete next[key];
+  return next;
+}
+
+/**
+ * Copy a custom instance onto the undeletable default slot and drop the
+ * custom id. Threads that still name the custom id fall back or get remapped
+ * server-side; the default slot keeps the user's live account.
+ */
+export function buildPromoteCustomInstanceToDefaultPatch(input: {
+  readonly settings: Pick<
+    UnifiedSettings,
+    | "providers"
+    | "providerInstances"
+    | "favorites"
+    | "providerModelPreferences"
+    | "textGenerationModelSelection"
+  >;
+  readonly customInstanceId: ProviderInstanceId;
+}): Partial<UnifiedSettings> | null {
+  const custom = input.settings.providerInstances?.[input.customInstanceId];
+  if (!custom) return null;
+  const defaultInstanceId = defaultInstanceIdForDriver(custom.driver);
+  if (defaultInstanceId === input.customInstanceId) return null;
+
+  const kindLabel = PROVIDER_DISPLAY_NAMES[custom.driver] ?? String(custom.driver);
+  const promoted: ProviderInstanceConfig = {
+    ...custom,
+    displayName: `${kindLabel} A`,
+    enabled: true,
+  };
+  const providerInstances = withoutRecordKey(
+    {
+      ...input.settings.providerInstances,
+      [defaultInstanceId]: promoted,
+    },
+    input.customInstanceId,
+  );
+
+  const favorites = (input.settings.favorites ?? []).map((favorite) =>
+    favorite.provider === input.customInstanceId
+      ? { ...favorite, provider: defaultInstanceId }
+      : favorite,
+  );
+  const customPreferences = input.settings.providerModelPreferences?.[input.customInstanceId];
+  const providerModelPreferences = withoutRecordKey(
+    customPreferences
+      ? {
+          ...input.settings.providerModelPreferences,
+          [defaultInstanceId]: customPreferences,
+        }
+      : input.settings.providerModelPreferences,
+    input.customInstanceId,
+  );
+  const textGenerationModelSelection =
+    input.settings.textGenerationModelSelection?.instanceId === input.customInstanceId
+      ? { ...input.settings.textGenerationModelSelection, instanceId: defaultInstanceId }
+      : input.settings.textGenerationModelSelection;
+
+  type LegacyProviderSettings = ServerSettings["providers"][keyof ServerSettings["providers"]];
+  const legacyProviders = input.settings.providers as Record<string, LegacyProviderSettings>;
+  const currentLegacy = legacyProviders[custom.driver];
+
+  return {
+    ...(currentLegacy !== undefined
+      ? {
+          providers: {
+            ...input.settings.providers,
+            [custom.driver]: { ...currentLegacy, enabled: true },
+          } as ServerSettings["providers"],
+        }
+      : {}),
+    providerInstances,
+    favorites,
+    providerModelPreferences,
+    textGenerationModelSelection,
   };
 }
 

@@ -275,6 +275,51 @@ describe("AgentsPanel", () => {
     expect(html).toContain("whitespace-pre-wrap");
   });
 
+  it("lets the user expand a child tool step to see the path", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [],
+      directAgents: [
+        agent({
+          id: "exec-expand",
+          status: "running",
+          title: "Verify grokbot adapter fix",
+          error: null,
+          result: null,
+          lastToolName: "read_file",
+          usage: { totalTokens: 29300, toolUses: 15 },
+          recentActivity: [
+            {
+              at: "2026-09-01T10:00:00.000Z",
+              kind: "thought",
+              summary: "Need to inspect AgentsPanel next.",
+            },
+            {
+              at: "2026-09-01T10:00:04.000Z",
+              kind: "tool",
+              summary: "Read file · apps/web/src/components/AgentsPanel.tsx",
+              detail: "apps/web/src/components/AgentsPanel.tsx",
+              toolCallId: "sa-tool-1",
+            },
+          ],
+        }),
+      ],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 29300,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(<AgentsPanel model={model} />);
+    expect(html).toContain("Need to inspect AgentsPanel next.");
+    expect(html).toContain("Read file · apps/web/src/components/AgentsPanel.tsx");
+    expect(html).toContain("aria-expanded");
+    expect(html).not.toContain("Now:");
+  });
+
   it("shows the live grep pattern instead of only the tool name", () => {
     const model: AgentPanelModel = {
       workflows: [],

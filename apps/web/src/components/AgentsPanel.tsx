@@ -39,6 +39,10 @@ import { Button } from "~/components/ui/button";
 
 const EMPTY_STOPPING_AGENT_IDS: ReadonlySet<string> = new Set();
 
+/** Hover must read as a real control: pointer + fill, not only a 60% muted wash. */
+const STOP_BUTTON_CLASS =
+  "inline-flex cursor-pointer items-center gap-1 rounded-sm border px-1 py-0.5 text-[.65rem] transition-[transform,background-color,border-color,color] duration-150 ease-out hover:border-foreground/40 hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-80";
+
 /**
  * In-flight states all present as Working (one steady state, per the
  * monitoring-pill design: detail belongs in the activity sub-line, and a
@@ -234,13 +238,67 @@ function activityEntryKind(
   return "event";
 }
 
+function AgentActivityStep({
+  step,
+}: {
+  step: {
+    readonly summary: string;
+    readonly kind: "thought" | "tool" | "event";
+    readonly detail?: string;
+  };
+}) {
+  const expandBody = step.detail?.trim() ? step.detail : null;
+  const canExpand = step.kind === "tool" && expandBody !== null;
+  const [expanded, setExpanded] = useState(false);
+  if (!canExpand) {
+    return (
+      <div
+        className={cn(
+          "whitespace-pre-wrap break-words",
+          step.kind === "thought" ? "text-muted-foreground italic" : "text-foreground/85",
+        )}
+      >
+        {step.summary}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex w-full items-start gap-1 rounded-sm text-left text-foreground/85 hover:bg-accent/30"
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "mt-0.5 size-3 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-90",
+          )}
+        />
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{step.summary}</span>
+      </button>
+      {expanded ? (
+        <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words border-s border-border/45 ps-2 font-mono text-[.65rem] leading-relaxed text-muted-foreground">
+          {expandBody}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
 function AgentActivityLog({
   agent,
   steps,
   live,
 }: {
   agent: RuntimeSubagent;
-  steps: ReadonlyArray<{ readonly summary: string; readonly kind: "thought" | "tool" | "event" }>;
+  steps: ReadonlyArray<{
+    readonly summary: string;
+    readonly kind: "thought" | "tool" | "event";
+    readonly detail?: string;
+  }>;
   live: boolean;
 }) {
   const listRef = useRef<HTMLOListElement>(null);
@@ -261,19 +319,24 @@ function AgentActivityLog({
     return null;
   }
 
+  const liveThought = live
+    ? [...steps].reverse().find((step) => step.kind === "thought")
+    : undefined;
+  const visibleSteps =
+    liveThought === undefined ? steps : steps.filter((step) => step !== liveThought);
+
   return (
-    <ol ref={listRef} className="max-h-64 space-y-1 overflow-y-auto text-[.7rem] leading-5">
-      {steps.map((step, index) => (
-        <li
-          key={`${index}-${step.kind}-${step.summary.slice(0, 48)}`}
-          className={cn(
-            "whitespace-pre-wrap break-words",
-            step.kind === "thought" ? "text-muted-foreground italic" : "text-foreground/85",
-          )}
-        >
-          {step.summary}
+    <ol ref={listRef} className="max-h-[28rem] space-y-1 overflow-y-auto text-[.7rem] leading-5">
+      {visibleSteps.map((step, index) => (
+        <li key={`${index}-${step.kind}-${step.summary.slice(0, 48)}`}>
+          <AgentActivityStep step={step} />
         </li>
       ))}
+      {liveThought ? (
+        <li key="live-thought">
+          <AgentActivityStep step={liveThought} />
+        </li>
+      ) : null}
     </ol>
   );
 }
@@ -284,6 +347,7 @@ function AgentDetail({ agent }: { agent: RuntimeSubagent }) {
     .map((entry) => ({
       summary: entry.summary.replace(/^▸\s+/, "").trim(),
       kind: activityEntryKind(entry, agent),
+      ...(entry.detail ? { detail: entry.detail } : {}),
     }))
     .filter((entry) => isUsefulAgentStep(entry.summary));
   const fallbackSteps =
@@ -414,13 +478,12 @@ function AgentRow({
             {onStop ? (
               <button
                 type="button"
+                aria-label={`Stop ${displayTitle}`}
                 aria-busy={stopping}
                 disabled={stopping}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-sm border px-1 py-0.5 text-[.65rem] transition-[transform,background-color,border-color,opacity] duration-150 active:scale-95 disabled:opacity-80",
-                  stopping
-                    ? "border-info/70 bg-info/15 text-info-foreground"
-                    : "border-border/70 hover:bg-muted/60",
+                  STOP_BUTTON_CLASS,
+                  stopping ? "border-info/70 bg-info/15 text-info-foreground" : "border-border/70",
                 )}
                 onClick={(event) => {
                   event.preventDefault();
@@ -960,7 +1023,7 @@ export function AgentsPanel({
           {onStopAll && model.runningCount + model.waitingCount + model.idleCount > 0 ? (
             <button
               type="button"
-              className="rounded-sm border border-border/70 px-1.5 py-0.5 text-[.65rem] hover:bg-muted/60 disabled:opacity-50"
+              className={cn(STOP_BUTTON_CLASS, "border-border/70 px-1.5")}
               disabled={isStopping}
               onClick={onStopAll}
             >

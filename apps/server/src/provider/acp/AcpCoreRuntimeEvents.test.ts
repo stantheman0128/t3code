@@ -157,6 +157,32 @@ describe("AcpCoreRuntimeEvents", () => {
     });
 
     expect(
+      makeAcpToolCallEvent({
+        stamp,
+        provider: ProviderDriverKind.make("grok"),
+        threadId: "thread-1" as never,
+        turnId,
+        toolCall: {
+          toolCallId: "child-tool-1",
+          kind: "read",
+          status: "inProgress",
+          title: "Read file",
+          detail: "apps/web/src/components/AgentsPanel.tsx",
+          data: { rawInput: { path: "apps/web/src/components/AgentsPanel.tsx" } },
+        },
+        rawPayload: { sessionId: "child-1" },
+        agentId: "sa_explore_1",
+      }),
+    ).toMatchObject({
+      type: "item.updated",
+      payload: {
+        itemType: "dynamic_tool_call",
+        agentId: "sa_explore_1",
+        detail: "apps/web/src/components/AgentsPanel.tsx",
+      },
+    });
+
+    expect(
       makeAcpContentDeltaEvent({
         stamp,
         provider: ProviderDriverKind.make("cursor"),

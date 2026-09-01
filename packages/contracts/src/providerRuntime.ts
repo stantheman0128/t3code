@@ -637,6 +637,13 @@ const TaskProgressPayload = Schema.Struct({
   usage: Schema.optional(Schema.Unknown),
   typedUsage: Schema.optional(RuntimeTaskUsage),
   lastToolName: Schema.optional(TrimmedNonEmptyStringSchema),
+  /**
+   * Distinguishes a live thought tick from a tool tick so ingestion can keep
+   * them on separate latest-state rows. Without this, a tool name clobbers
+   * the child's thinking (and vice versa) because task.progress ids are
+   * stable per task.
+   */
+  activityKind: Schema.optional(Schema.Literals(["thought", "tool"])),
   /** Present on synthesized member/child progress rows that carry state. */
   status: Schema.optional(RuntimeTaskStatus),
   error: Schema.optional(TrimmedNonEmptyStringSchema),

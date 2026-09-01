@@ -581,16 +581,18 @@ export function runtimeEventToActivities(
       delete identityLinkage.typedUsage;
       delete identityLinkage.status;
       delete identityLinkage.error;
+      const description = event.payload.description ?? event.payload.summary ?? "";
       const title =
-        event.payload.description.trim().length > 0
-          ? { title: truncateDetail(event.payload.description, 120) }
-          : {};
+        description.trim().length > 0 ? { title: truncateDetail(description, 120) } : {};
       const hasProgressState =
         event.payload.typedUsage === undefined ||
         event.payload.summary !== undefined ||
         event.payload.lastToolName !== undefined ||
         event.payload.status !== undefined ||
-        event.payload.error !== undefined;
+        event.payload.error !== undefined ||
+        event.payload.activityKind !== undefined;
+      const progressSlot =
+        event.payload.activityKind === "thought" ? "task-thought" : "task-progress";
       return [
         ...(hasProgressState
           ? [
@@ -598,23 +600,28 @@ export function runtimeEventToActivities(
                 // Stable per-task id: activity is "latest state", not
                 // history, so each meaningful tick replaces the last. This
                 // bounds a large fleet to one activity row per task.
-                id: EventId.make(`task-progress:${event.threadId}:${event.payload.taskId}`),
+                // Thoughts use a sibling slot so a tool name cannot wipe the
+                // live thinking block (Grok Direct spawn cards).
+                id: EventId.make(`${progressSlot}:${event.threadId}:${event.payload.taskId}`),
                 createdAt: event.createdAt,
                 tone: "info" as const,
                 kind: "task.progress" as const,
                 summary:
-                  event.payload.description.trim().length > 0
-                    ? truncateDetail(event.payload.description, 120)
+                  description.trim().length > 0
+                    ? truncateDetail(description, 120)
                     : "Reasoning update",
                 payload: {
                   taskId: event.payload.taskId,
                   ...title,
-                  detail: truncateDetail(event.payload.summary ?? event.payload.description),
+                  detail: truncateDetail(event.payload.summary ?? description),
                   ...(event.payload.summary
                     ? { summary: truncateDetail(event.payload.summary) }
                     : {}),
                   ...(event.payload.lastToolName
                     ? { lastToolName: event.payload.lastToolName }
+                    : {}),
+                  ...(event.payload.activityKind
+                    ? { activityKind: event.payload.activityKind }
                     : {}),
                   ...(event.payload.status ? { status: event.payload.status } : {}),
                   ...(event.payload.error ? { error: event.payload.error } : {}),

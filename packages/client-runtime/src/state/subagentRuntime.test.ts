@@ -263,8 +263,80 @@ describe("foldSubagentActivities", () => {
         typedUsage: { totalTokens: 100, toolUses: 2 },
       }),
     ]);
-    expect(agents[0]!.recentActivity.map((entry) => entry.summary)).toEqual(["▸ Read", "▸ Grep"]);
+    expect(agents[0]!.recentActivity.map((entry) => entry.summary)).toEqual(["Read file", "Grep"]);
     expect(agents[0]!.lastToolName).toBe("Grep");
+  });
+
+  it("keeps each child tool path and updates the same toolCallId in place", () => {
+    const agents = fold([
+      activity("task.started", { taskId: "sa-1", title: "Verify grokbot adapter fix" }),
+      activity("task.progress", {
+        taskId: "sa-1",
+        status: "running",
+        activityKind: "thought",
+        summary: "Need to inspect AgentsPanel next.",
+      }),
+      activity("tool.updated", {
+        agentId: "sa-1",
+        toolCallId: "sa-tool-1",
+        title: "Read file",
+        detail: "apps/web/src/components/AgentsPanel.tsx",
+        data: { rawInput: { path: "apps/web/src/components/AgentsPanel.tsx" } },
+      }),
+      activity("tool.completed", {
+        agentId: "sa-1",
+        toolCallId: "sa-tool-1",
+        title: "Read file",
+        detail: "apps/web/src/components/AgentsPanel.tsx",
+        data: { rawInput: { path: "apps/web/src/components/AgentsPanel.tsx" } },
+      }),
+      activity("tool.completed", {
+        agentId: "sa-1",
+        toolCallId: "sa-tool-2",
+        title: "Searched files",
+        detail: "DIRECT SPAWNS",
+        data: { rawInput: { pattern: "DIRECT SPAWNS", path: "apps/web/src" } },
+      }),
+    ]);
+    expect(agents[0]!.recentActivity.map((entry) => entry.summary)).toEqual([
+      "Need to inspect AgentsPanel next.",
+      "Read file · apps/web/src/components/AgentsPanel.tsx",
+      "Searched files · DIRECT SPAWNS",
+    ]);
+    expect(agents[0]!.recentActivity.map((entry) => entry.kind)).toEqual([
+      "thought",
+      "tool",
+      "tool",
+    ]);
+    expect(agents[0]!.recentActivity[1]?.toolCallId).toBe("sa-tool-1");
+    expect(agents[0]!.recentActivity[1]?.detail).toContain("AgentsPanel.tsx");
+    expect(agents[0]!.lastToolName).toBe("Searched files");
+  });
+
+  it("merges a Grok lastToolName tick into the matching child tool item", () => {
+    const agents = fold([
+      activity("task.started", { taskId: "sa-merge", title: "Verify grokbot adapter fix" }),
+      activity("task.progress", {
+        taskId: "sa-merge",
+        status: "running",
+        activityKind: "tool",
+        lastToolName: "read_file",
+        summary: "Read file · apps/web/src/components/AgentsPanel.tsx",
+      }),
+      activity("tool.updated", {
+        agentId: "sa-merge",
+        toolCallId: "sa-tool-1",
+        title: "Read file",
+        detail: "apps/web/src/components/AgentsPanel.tsx",
+      }),
+    ]);
+    expect(agents[0]!.recentActivity).toHaveLength(1);
+    expect(agents[0]!.recentActivity[0]).toMatchObject({
+      kind: "tool",
+      summary: "Read file · apps/web/src/components/AgentsPanel.tsx",
+      toolCallId: "sa-tool-1",
+      detail: "apps/web/src/components/AgentsPanel.tsx",
+    });
   });
 
   it("bounds repeated strings at 180 chars and the activity ring at 24 deduped entries", () => {

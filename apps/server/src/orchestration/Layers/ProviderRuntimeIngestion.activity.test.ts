@@ -81,6 +81,45 @@ describe("runtimeEventToActivities task progress", () => {
     expect(usagePayload.usageSnapshot).toBe(true);
     expect(usagePayload).not.toHaveProperty("status");
   });
+
+  it("keeps Grok child thoughts on a sibling latest-state id", () => {
+    const taskId = RuntimeTaskId.make("sa_explore_1");
+    const thought = {
+      ...base,
+      type: "task.progress",
+      eventId: EventId.make("evt-thought"),
+      payload: {
+        taskId,
+        description: "Investigate T3 UI bugs",
+        summary: "Need to inspect AgentsPanel next.",
+        activityKind: "thought",
+        status: "running",
+      },
+    } satisfies ProviderRuntimeEvent;
+    const tool = {
+      ...base,
+      type: "task.progress",
+      eventId: EventId.make("evt-tool"),
+      payload: {
+        taskId,
+        description: "Investigate T3 UI bugs",
+        summary: "Read file · apps/web/src/components/AgentsPanel.tsx",
+        lastToolName: "read_file",
+        activityKind: "tool",
+        status: "running",
+      },
+    } satisfies ProviderRuntimeEvent;
+
+    expect(runtimeEventToActivities(thought).map((activity) => activity.id)).toEqual([
+      "task-thought:thread-1:sa_explore_1",
+    ]);
+    expect(runtimeEventToActivities(tool).map((activity) => activity.id)).toEqual([
+      "task-progress:thread-1:sa_explore_1",
+    ]);
+    const thoughtPayload = runtimeEventToActivities(thought)[0]?.payload as Record<string, unknown>;
+    expect(thoughtPayload.activityKind).toBe("thought");
+    expect(thoughtPayload.summary).toBe("Need to inspect AgentsPanel next.");
+  });
 });
 describe("runtimeEventToActivities tool streaming persistence", () => {
   const accumulatedStdout = [

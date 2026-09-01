@@ -60,7 +60,7 @@ import {
   makeAcpRequestResolvedEvent,
   makeAcpToolCallEvent,
 } from "../acp/AcpCoreRuntimeEvents.ts";
-import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
+import { parsePermissionRequest, type AcpToolCallState } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import {
   advertisedGrokReasoningEffortsForModel,
@@ -115,7 +115,6 @@ import {
   grokSessionIdFromRaw,
   parseXAiSubagentUpdate,
   parseXAiWorkflowUpdated,
-  type GrokToolActivityInput,
   type GrokWorkflowTrackState,
 } from "../acp/GrokAcpWorkflow.ts";
 import {
@@ -243,7 +242,7 @@ interface GrokSessionContext {
   readonly pendingChildToolsBySessionId: Map<
     string,
     Array<{
-      readonly toolCall: GrokToolActivityInput;
+      readonly toolCall: AcpToolCallState;
       readonly rawPayload: unknown;
     }>
   >;
@@ -611,7 +610,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
       readonly ctx: GrokSessionContext;
       readonly turnId: TurnId | undefined;
       readonly sessionId: string | undefined;
-      readonly toolCall: GrokToolActivityInput;
+      readonly toolCall: AcpToolCallState;
       readonly rawPayload: unknown;
     }) =>
       Effect.gen(function* () {
@@ -645,17 +644,50 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           subagentId: childTaskId,
           rawPayload: input.rawPayload,
         });
-        if (input.ctx.lastChildToolNameBySubagentId.get(childTaskId) === childSummary) {
+        if (input.ctx.lastChildToolNameBySubagentId.get(childTaskId) !== childSummary) {
+          input.ctx.lastChildToolNameBySubagentId.set(childTaskId, childSummary);
+          yield* emitGrokTaskSpecs({
+            threadId: input.ctx.threadId,
+            turnId: input.turnId,
+            method: "session/update",
+            payload: input.rawPayload,
+            specs: [childProgress],
+          });
+        }
+        const fromChildSession =
+          input.sessionId !== undefined && input.sessionId !== input.ctx.acpSessionId;
+        if (!fromChildSession) {
           return;
         }
-        input.ctx.lastChildToolNameBySubagentId.set(childTaskId, childSummary);
-        yield* emitGrokTaskSpecs({
-          threadId: input.ctx.threadId,
-          turnId: input.turnId,
-          method: "session/update",
-          payload: input.rawPayload,
-          specs: [childProgress],
+        const nowMs = yield* Clock.currentTimeMillis;
+        if (
+          !shouldEmitGrokToolUpdate({
+            toolCall: input.toolCall,
+            previous: input.ctx.toolUpdateGates.get(input.toolCall.toolCallId),
+            nowMs,
+          })
+        ) {
+          return;
+        }
+        input.ctx.toolUpdateGates.set(input.toolCall.toolCallId, {
+          fingerprint: grokToolCallFingerprint(input.toolCall),
+          lastEmittedAt: nowMs,
         });
+        const bounded = boundGrokToolCallForEvent({
+          toolCall: input.toolCall,
+          rawPayload: input.rawPayload,
+        });
+        yield* offerRuntimeEvent(
+          makeAcpToolCallEvent({
+            stamp: yield* makeEventStamp(),
+            provider: PROVIDER,
+            threadId: input.ctx.threadId,
+            turnId: input.turnId,
+            toolCall: bounded.toolCall,
+            rawPayload: bounded.rawPayload,
+            agentId: childTaskId,
+          }),
+        );
       });
 
     const flushPendingChildTools = (

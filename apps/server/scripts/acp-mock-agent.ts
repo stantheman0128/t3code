@@ -1101,12 +1101,31 @@ const program = Effect.gen(function* () {
         writeJsonRpcNotification("session/update", {
           sessionId: "child-explore-1",
           update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "Need to inspect AgentsPanel next." },
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: "child-explore-1",
+          update: {
             sessionUpdate: "tool_call",
             toolCallId: "sa-tool-1",
             title: "read_file",
             kind: "read",
             status: "in_progress",
-            rawInput: {},
+            rawInput: { path: "apps/web/src/components/AgentsPanel.tsx" },
+            locations: [{ path: "apps/web/src/components/AgentsPanel.tsx" }],
+          },
+        });
+        writeJsonRpcNotification("session/update", {
+          sessionId: "child-explore-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "sa-tool-2",
+            title: "grep",
+            kind: "search",
+            status: "completed",
+            rawInput: { pattern: "DIRECT SPAWNS", path: "apps/web/src" },
           },
         });
       }

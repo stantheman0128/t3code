@@ -45,6 +45,9 @@ export interface SubagentActivityEntry {
   readonly at: string;
   readonly summary: string;
   readonly kind?: SubagentActivityKind;
+  /** Path, command, or output preview — shown when the user expands a tool step. */
+  readonly detail?: string;
+  readonly toolCallId?: string;
 }
 
 export interface SubagentWorkflowPhase {
@@ -172,22 +175,88 @@ function trimActivityRing(
   return entries.length > RECENT_ACTIVITY_LIMIT ? entries.slice(-RECENT_ACTIVITY_LIMIT) : entries;
 }
 
+function activityLine(title: string, detail: string | undefined): string {
+  if (!detail || title.includes(detail)) {
+    return title;
+  }
+  return `${title} · ${detail}`;
+}
+
+function toolDetailFromPayload(payload: Record<string, unknown>): string | undefined {
+  const explicit = asString(payload.detail);
+  if (explicit) {
+    return bounded(explicit, THOUGHT_CHAR_LIMIT);
+  }
+  const data =
+    payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+      ? (payload.data as Record<string, unknown>)
+      : undefined;
+  const rawInput =
+    data?.rawInput && typeof data.rawInput === "object" && !Array.isArray(data.rawInput)
+      ? (data.rawInput as Record<string, unknown>)
+      : undefined;
+  return (
+    asString(rawInput?.path) ??
+    asString(rawInput?.target_file) ??
+    asString(rawInput?.file_path) ??
+    asString(rawInput?.command) ??
+    asString(rawInput?.pattern)
+  );
+}
+
 /** Appends to the ring buffer, deduping consecutive identical summaries. */
 function appendActivity(
   entries: ReadonlyArray<SubagentActivityEntry>,
   at: string,
   summary: string,
   kind?: SubagentActivityKind,
+  extra?: { readonly detail?: string; readonly toolCallId?: string },
 ): ReadonlyArray<SubagentActivityEntry> {
   const boundedSummary = bounded(
     summary,
     kind === "thought" ? THOUGHT_CHAR_LIMIT : SUMMARY_CHAR_LIMIT,
   );
+  const detail = extra?.detail ? bounded(extra.detail, THOUGHT_CHAR_LIMIT) : undefined;
+  const toolCallId = extra?.toolCallId;
+  if (toolCallId) {
+    const index = entries.findIndex((entry) => entry.toolCallId === toolCallId);
+    if (index >= 0) {
+      const next = entries.slice();
+      next[index] = {
+        at,
+        summary: boundedSummary,
+        ...(kind ? { kind } : {}),
+        ...(detail ? { detail } : {}),
+        toolCallId,
+      };
+      return next;
+    }
+  }
   const last = entries[entries.length - 1];
   if (last?.summary === boundedSummary && last.kind === kind) {
-    return entries;
+    if (!toolCallId && !detail) {
+      return entries;
+    }
+    const next = entries.slice();
+    next[next.length - 1] = {
+      at,
+      summary: boundedSummary,
+      ...(kind ? { kind } : {}),
+      ...((detail ?? last.detail) ? { detail: detail ?? last.detail } : {}),
+      ...((toolCallId ?? last.toolCallId) ? { toolCallId: toolCallId ?? last.toolCallId } : {}),
+    };
+    return next;
   }
-  return trimActivityRing([...entries, { at, summary: boundedSummary, ...(kind ? { kind } : {}) }]);
+  return trimActivityRing([
+    ...entries,
+    {
+      at,
+      summary: boundedSummary,
+      ...(kind ? { kind } : {}),
+      ...(detail ? { detail } : {}),
+      ...(toolCallId ? { toolCallId } : {}),
+    },
+  ]);
 }
 
 /** Grows the current thought line in place, like the parent session thinking block. */
@@ -852,7 +921,19 @@ export function foldSubagentActivities(
           asString(payload.toolName) ?? asString(payload.title) ?? asString(payload.summary);
         if (toolName && toolName !== activity.kind) {
           agent.lastToolName = toolName;
-          agent.recentActivity = appendActivity(agent.recentActivity, at, `▸ ${toolName}`);
+          const detail = toolDetailFromPayload(payload);
+          const title = asString(payload.title) ?? toolName;
+          const toolCallId = asString(payload.toolCallId);
+          agent.recentActivity = appendActivity(
+            agent.recentActivity,
+            at,
+            activityLine(title, detail),
+            "tool",
+            {
+              ...(detail ? { detail } : {}),
+              ...(toolCallId ? { toolCallId } : {}),
+            },
+          );
         }
         agent.updatedAt = at;
         break;

@@ -1781,6 +1781,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const adapter = yield* makeTestAdapter(wrapperPath);
       const started = yield* Deferred.make<ProviderRuntimeEvent>();
       const progressed = yield* Deferred.make<ProviderRuntimeEvent>();
+      const childItem = yield* Deferred.make<ProviderRuntimeEvent>();
       const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
         Effect.gen(function* () {
           if (event.type === "task.started" && event.payload.timelineBypass === true) {
@@ -1788,6 +1789,12 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           }
           if (event.type === "task.progress" && event.payload.lastToolName !== undefined) {
             yield* Deferred.succeed(progressed, event).pipe(Effect.ignore);
+          }
+          if (
+            (event.type === "item.updated" || event.type === "item.completed") &&
+            event.payload.agentId === "sa_explore_1"
+          ) {
+            yield* Deferred.succeed(childItem, event).pipe(Effect.ignore);
           }
         }),
       ).pipe(Effect.forkChild);
@@ -1813,6 +1820,15 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       assert.equal(progressEvent.type, "task.progress");
       if (progressEvent.type === "task.progress") {
         assert.equal(progressEvent.payload.lastToolName, "Read file");
+      }
+      const childToolEvent = yield* Deferred.await(childItem).pipe(
+        Effect.timeout(Duration.seconds(8)),
+      );
+      assert.include(["item.updated", "item.completed"], childToolEvent.type);
+      if (childToolEvent.type === "item.updated" || childToolEvent.type === "item.completed") {
+        assert.equal(childToolEvent.payload.agentId, "sa_explore_1");
+        const detail = `${childToolEvent.payload.detail ?? ""} ${JSON.stringify(childToolEvent.payload.data ?? {})}`;
+        assert.include(detail, "AgentsPanel.tsx");
       }
 
       yield* Fiber.interrupt(eventsFiber);

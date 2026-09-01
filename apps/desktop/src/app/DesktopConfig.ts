@@ -54,6 +54,7 @@ export const DesktopConfig = Config.all({
   mockUpdateServerPort: Config.port("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(
     Config.withDefault(3000),
   ),
+  localUpdateFeedDir: trimmedString("T3CODE_LOCAL_UPDATE_FEED_DIR"),
 });
 
 export const layerTest = (env: Readonly<Record<string, string | undefined>>) =>

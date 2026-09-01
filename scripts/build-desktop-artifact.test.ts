@@ -78,6 +78,7 @@ import {
   wslRuntimeArchiveTarTarget,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
+import { LOCAL_UPDATE_FEED_URL } from "./lib/local-update-feed.ts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 // A minimal stand-in for the staged sidecar roots packed into the WSL archive.
@@ -351,6 +352,27 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ),
       ),
     ),
+  );
+
+  it.effect("uses a loopback generic feed when no GitHub publish repo is configured", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.0.87",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.deepStrictEqual(config.publish, [
+        {
+          provider: "generic",
+          url: LOCAL_UPDATE_FEED_URL,
+        },
+      ]);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
   it("omits bundled workspace packages from staged desktop dependencies", () => {

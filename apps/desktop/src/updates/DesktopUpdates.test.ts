@@ -1,3 +1,7 @@
+import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
+
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@t3tools/contracts";
@@ -265,6 +269,30 @@ describe("DesktopUpdates", () => {
       unexpectedActionError.message,
       "Desktop update install action failed unexpectedly.",
     );
+  });
+
+  it.effect("serves a local generic feed when latest.yml is staged", () => {
+    const feedDir = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "desktop-local-feed-"));
+    NodeFs.writeFileSync(NodePath.join(feedDir, "latest.yml"), "version: 0.0.87\n");
+    const harness = makeHarness({
+      env: {
+        T3CODE_DESKTOP_MOCK_UPDATES: "false",
+        T3CODE_LOCAL_UPDATE_FEED_DIR: feedDir,
+      },
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        const state = yield* updates.getState;
+        assert.equal(state.enabled, true);
+        const feed = harness.feedUrls()[0] as { provider?: string; url?: string } | undefined;
+        assert.equal(feed?.provider, "generic");
+        assert.match(feed?.url ?? "", /^http:\/\/127\.0\.0\.1:\d+$/);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
   it.effect("configures the updater and runs startup checks on the test clock", () => {

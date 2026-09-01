@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
-import { spawn as spawnNodeProcess } from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
+import { homedir as osHomedir } from "node:os";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 
@@ -35,6 +35,16 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  bootstrapLocalWindowsNsisInstall,
+  resolveLocalGenericPublishConfig,
+  resolveLocalUpdateFeedDirectory,
+  resolveWindowsT3AppExecutablePath,
+  resolveWindowsT3AppUpdateYmlPath,
+  shouldBootstrapLocalNsisInstall,
+  stageWindowsLocalUpdateFeed,
+  windowsLocalNsisBootstrapDeps,
+} from "./lib/local-update-feed.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -517,6 +527,17 @@ export class DesktopBuildNoArtifactsProducedError extends Schema.TaggedErrorClas
 ) {
   override get message(): string {
     return `Build completed but no files were produced in ${this.distPath}`;
+  }
+}
+
+export class DesktopLocalNsisInstallError extends Schema.TaggedErrorClass<DesktopLocalNsisInstallError>()(
+  "DesktopLocalNsisInstallError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Failed to silently install the local Windows desktop artifact.";
   }
 }
 
@@ -2172,6 +2193,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           url: resolveMockUpdateServerUrl(mockUpdateServerPort),
         },
       ];
+    } else {
+      // Local unsigned packs have no GitHub release feed. Bake a loopback
+      // generic provider so app-update.yml exists; the running app serves
+      // %LOCALAPPDATA%/t3code-local-updates and overrides the URL at runtime.
+      buildConfig.publish = [resolveLocalGenericPublishConfig()];
     }
   }
 
@@ -3391,24 +3417,57 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     Effect.annotateLogs({ artifacts: copiedArtifacts }),
   );
 
-  if (
-    options.platform === "win" &&
-    options.target === "nsis" &&
-    process.env.GITHUB_ACTIONS !== "true" &&
-    process.env.T3CODE_SKIP_INSTALL !== "1"
-  ) {
+  if (options.platform === "win" && options.target === "nsis") {
+    const feedDir = resolveLocalUpdateFeedDirectory({
+      env: process.env,
+      homedir: osHomedir(),
+      pathJoin: path.join,
+    });
+    const staged = yield* stageWindowsLocalUpdateFeed(copiedArtifacts, feedDir);
+    yield* Effect.log("[desktop-artifact] Staged local update feed.").pipe(
+      Effect.annotateLogs({ feedDir, staged }),
+    );
+    if (!staged.some((artifact) => artifact.endsWith("latest.yml"))) {
+      yield* Effect.log(
+        "[desktop-artifact] Warning: latest.yml was not produced; Check for Updates needs it.",
+      );
+    }
+
+    const localAppData = process.env.LOCALAPPDATA?.trim();
+    const installedAppUpdateYmlExists = localAppData
+      ? yield* fs.exists(resolveWindowsT3AppUpdateYmlPath(localAppData, path.join))
+      : false;
     const installer = copiedArtifacts.find(
       (artifact) => artifact.endsWith(".exe") && !artifact.includes(".blockmap"),
     );
-    if (installer) {
+    if (
+      installer &&
+      localAppData &&
+      shouldBootstrapLocalNsisInstall({
+        githubActions: process.env.GITHUB_ACTIONS === "true",
+        skipInstall: process.env.T3CODE_SKIP_INSTALL === "1",
+        forceInstall: process.env.T3CODE_FORCE_INSTALL === "1",
+        platform: options.platform,
+        target: options.target,
+        installedAppUpdateYmlExists,
+      })
+    ) {
       yield* Effect.log(
-        "[desktop-artifact] Opening the installer so Start Menu T3 Code is replaced.",
+        "[desktop-artifact] Closing T3 Code and installing silently. Later packs use Check for Updates.",
       );
-      spawnNodeProcess(installer, [], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      }).unref();
+      yield* Effect.tryPromise({
+        try: () =>
+          bootstrapLocalWindowsNsisInstall({
+            installerPath: installer,
+            appExePath: resolveWindowsT3AppExecutablePath(localAppData, path.join),
+            deps: windowsLocalNsisBootstrapDeps,
+          }),
+        catch: (cause) => new DesktopLocalNsisInstallError({ cause }),
+      });
+    } else if (process.env.GITHUB_ACTIONS !== "true" && process.env.T3CODE_SKIP_INSTALL !== "1") {
+      yield* Effect.log(
+        "[desktop-artifact] Local update feed is ready. Use Check for Updates, then Install.",
+      );
     }
   }
 });

@@ -30,6 +30,12 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
+  LOCAL_UPDATE_FEED_MANIFEST_NAME,
+  resolveLocalUpdateFeedDirectory,
+  shouldBindLocalUpdateFeed,
+  startLocalUpdateFeedServer,
+} from "./localUpdateFeed.ts";
+import {
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
@@ -257,6 +263,7 @@ export const make = Effect.gen(function* () {
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
+  const localFeedEnabledRef = yield* Ref.make(false);
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
   const updaterConfiguredRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
@@ -295,9 +302,11 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  const hasUpdateFeedConfig = Ref.get(appUpdateYmlConfigRef).pipe(
-    Effect.map((appUpdateYmlConfig) => Option.isSome(appUpdateYmlConfig) || config.mockUpdates),
-  );
+  const hasUpdateFeedConfig = Effect.gen(function* () {
+    const appUpdateYmlConfig = yield* Ref.get(appUpdateYmlConfigRef);
+    const localFeedEnabled = yield* Ref.get(localFeedEnabledRef);
+    return Option.isSome(appUpdateYmlConfig) || config.mockUpdates || localFeedEnabled;
+  });
 
   const resolveDisabledReason = Effect.gen(function* () {
     const hasFeedConfig = yield* hasUpdateFeedConfig;
@@ -739,6 +748,46 @@ export const make = Effect.gen(function* () {
           provider: "generic",
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
+      } else {
+        const localFeedDir = Option.getOrElse(config.localUpdateFeedDir, () =>
+          resolveLocalUpdateFeedDirectory({
+            env: process.env,
+            homedir: environment.homeDirectory,
+            pathJoin: environment.path.join,
+          }),
+        );
+        const localFeedHasManifest = yield* fileSystem.exists(
+          environment.path.join(localFeedDir, LOCAL_UPDATE_FEED_MANIFEST_NAME),
+        );
+        if (
+          shouldBindLocalUpdateFeed({
+            mockUpdates: false,
+            appUpdateYml: appUpdateYmlConfig,
+            localFeedHasManifest,
+          })
+        ) {
+          yield* startLocalUpdateFeedServer(localFeedDir).pipe(
+            Effect.flatMap((url) =>
+              Effect.gen(function* () {
+                yield* electronUpdater.setFeedURL({
+                  provider: "generic",
+                  url,
+                } as ElectronUpdater.ElectronUpdaterFeedUrl);
+                yield* Ref.set(localFeedEnabledRef, true);
+                yield* logUpdaterInfo("serving local update feed", {
+                  url,
+                  feedDir: localFeedDir,
+                });
+              }),
+            ),
+            Effect.catchTag("LocalUpdateFeedListenError", (error) =>
+              logUpdaterWarning(error.message, {
+                errorTag: error._tag,
+                feedDir: localFeedDir,
+              }),
+            ),
+          );
+        }
       }
 
       const settings = yield* desktopSettings.get;

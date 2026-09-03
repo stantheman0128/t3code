@@ -148,6 +148,7 @@ function resetComposerDraftStore() {
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
     stickyModelSelectionByProvider: {},
     stickyActiveProvider: null,
+    lastModelSelectionByLogicalProjectKey: {},
   });
 }
 
@@ -2029,7 +2030,7 @@ describe("composerDraftStore modelSelection", () => {
 
     expect(
       draftFor(threadId, TEST_ENVIRONMENT_ID)?.modelSelectionByProvider[GROK_INSTANCE],
-    ).toEqual(modelSelection(GROK_DRIVER, "grok-build", { reasoningEffort: "xhigh" }));
+    ).toEqual(modelSelection(GROK_DRIVER, "grok-4.6", { reasoningEffort: "xhigh" }));
   });
 
   it("keeps Grok Fast Mode when set through the traits picker API", () => {
@@ -2219,6 +2220,20 @@ describe("composerDraftStore sticky composer settings", () => {
       }),
     );
     expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("codex");
+  });
+
+  it("remembers the last model used for a logical project", () => {
+    const store = useComposerDraftStore.getState();
+    const selection = modelSelection(GROK_DRIVER, "grok-4.6");
+
+    store.setStickyModelSelection(selection, "project:repo");
+
+    expect(
+      useComposerDraftStore.getState().getLastModelSelectionForLogicalProject("project:repo"),
+    ).toEqual(selection);
+    expect(
+      useComposerDraftStore.getState().getLastModelSelectionForLogicalProject("project:other"),
+    ).toBeNull();
   });
 
   it("normalizes empty sticky model options by dropping selection options", () => {

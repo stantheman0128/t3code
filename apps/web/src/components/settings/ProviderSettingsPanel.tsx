@@ -26,6 +26,7 @@ import * as Result from "effect/Result";
 import {
   ChevronDownIcon,
   CloudIcon,
+  GripVerticalIcon,
   LaptopIcon,
   LoaderIcon,
   MonitorIcon,
@@ -34,12 +35,26 @@ import {
   TerminalIcon,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentSettings,
+  useUpdateClientSettings,
+  useUpdateEnvironmentSettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import { reorderProviderInstanceIds, resolveProviderInstanceOrder } from "../../providerInstances";
+import {
+  SortableProviderInstanceItem,
+  providerInstanceIdsFromDragEnd,
+  useProviderInstanceDndSensors,
+} from "../providerInstanceSortable";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
   useEnvironments,
@@ -419,6 +434,9 @@ export function EnvironmentProviderSettings({
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const providerInstanceOrder = useClientSettings((client) => client.providerInstanceOrder ?? []);
+  const updateClientSettings = useUpdateClientSettings();
+  const providerListDndSensors = useProviderInstanceDndSensors();
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -682,9 +700,22 @@ export function EnvironmentProviderSettings({
       hasOtherEnabledInstance: enabledCount > (enabled ? 1 : 0),
     });
   });
+  const orderedVisibleIds = resolveProviderInstanceOrder(
+    visibleRows.map((row) => row.instanceId),
+    providerInstanceOrder,
+  );
+  const visibleRowRank = new Map(orderedVisibleIds.map((instanceId, index) => [instanceId, index]));
+  const orderedVisibleRows = [...visibleRows].sort((left, right) => {
+    return (
+      (visibleRowRank.get(left.instanceId) ?? orderedVisibleIds.length) -
+      (visibleRowRank.get(right.instanceId) ?? orderedVisibleIds.length)
+    );
+  });
 
   const selectedRow =
-    visibleRows.find((row) => row.instanceId === selectedInstanceId) ?? visibleRows[0] ?? null;
+    orderedVisibleRows.find((row) => row.instanceId === selectedInstanceId) ??
+    orderedVisibleRows[0] ??
+    null;
 
   const updateProviderInstance = (
     row: InstanceRow,
@@ -967,11 +998,56 @@ export function EnvironmentProviderSettings({
             <div className="border-b border-border/70 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
               <ScrollArea scrollFade chainVerticalScroll className="lg:min-h-0 lg:flex-1">
                 <div className="divide-y divide-border/60">
-                  {visibleRows.map((row) => (
-                    <div key={row.instanceId} className="p-1">
-                      {renderProviderInstance(row, "list")}
-                    </div>
-                  ))}
+                  <DndContext
+                    sensors={providerListDndSensors}
+                    collisionDetection={closestCenter}
+                    modifiers={[restrictToVerticalAxis]}
+                    onDragEnd={(event) => {
+                      if (readOnly) {
+                        return;
+                      }
+                      const moved = providerInstanceIdsFromDragEnd(event);
+                      if (!moved) {
+                        return;
+                      }
+                      updateClientSettings({
+                        providerInstanceOrder: reorderProviderInstanceIds(
+                          orderedVisibleIds,
+                          moved.fromId,
+                          moved.toId,
+                        ),
+                      });
+                    }}
+                  >
+                    <SortableContext
+                      items={orderedVisibleIds}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {orderedVisibleRows.map((row) => (
+                        <SortableProviderInstanceItem
+                          key={row.instanceId}
+                          id={row.instanceId}
+                          disabled={readOnly}
+                          className="flex items-stretch p-1"
+                        >
+                          <span
+                            className={cn(
+                              "flex w-5 shrink-0 items-center justify-center text-muted-foreground/50 transition-colors",
+                              readOnly
+                                ? "opacity-0"
+                                : "cursor-grab hover:text-muted-foreground active:cursor-grabbing",
+                            )}
+                            aria-hidden
+                          >
+                            <GripVerticalIcon className="size-3.5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            {renderProviderInstance(row, "list")}
+                          </div>
+                        </SortableProviderInstanceItem>
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               </ScrollArea>
             </div>

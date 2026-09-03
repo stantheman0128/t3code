@@ -24,12 +24,18 @@ import {
 } from "../logicalProject";
 import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThread } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import {
+  buildSidebarProjectSnapshots,
+  remapNewThreadProjectRefToPrimary,
+} from "../sidebarProjectGrouping";
 import {
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
+import { resolvePickerFirstModelSelection } from "../providerInstances";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
-import { primaryServerSettingsAtom } from "../state/server";
+import { primaryServerProvidersAtom, primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
@@ -62,7 +68,12 @@ export function useNewThreadHandler() {
   // the decoded defaults ("local" mode, current branch), since nothing can
   // set those values on a remote server.
   const primaryServerSettings = useAtomValue(primaryServerSettingsAtom);
+  const primaryServerProviders = useAtomValue(primaryServerProvidersAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const providerInstanceOrder = useClientSettings(
+    (settings) => settings.providerInstanceOrder ?? [],
+  );
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const router = useRouter();
   const getCurrentRouteTarget = useCallback(() => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
@@ -91,12 +102,21 @@ export function useNewThreadHandler() {
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+      projectRef = remapNewThreadProjectRefToPrimary({
+        projectRef,
+        groups: buildSidebarProjectSnapshots({
+          projects,
+          settings: projectGroupingSettings,
+          primaryEnvironmentId,
+          resolveEnvironmentLabel: () => null,
+        }),
+        primaryEnvironmentId,
+      });
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
         getDraftSession,
         getDraftThread,
-        applyStickyState,
         moveComposerPromptAndImages,
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
@@ -176,14 +196,44 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
+      const logicalProjectKey = project
+        ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
+        : scopedProjectKey(projectRef);
+      const lastUsedSelection = useComposerDraftStore
+        .getState()
+        .getLastModelSelectionForLogicalProject(logicalProjectKey);
+      const pickerFirstSelection = resolvePickerFirstModelSelection(
+        primaryServerProviders,
+        primaryServerSettings,
+        providerInstanceOrder,
+      );
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({
           projectDefaultSelection: project?.defaultModelSelection ?? null,
+          lastUsedSelection,
+          pickerFirstSelection,
           carrySelection: carryModelSelection,
           carrySourceDraftId:
             currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
           destinationDraftId,
         });
+      const applyModelUnlessExplicit = (destinationDraftId: DraftId) => {
+        const storedDraft = getComposerDraft(destinationDraftId);
+        const storedActiveSelection = storedDraft?.activeProvider
+          ? storedDraft.modelSelectionByProvider[storedDraft.activeProvider]
+          : undefined;
+        const storedDraftHasExplicitModelPick =
+          Boolean(storedActiveSelection) && storedDraft?.modelSelectionExplicit === true;
+        if (storedDraftHasExplicitModelPick) {
+          return;
+        }
+        const modelSelectionOverride = resolveModelSelectionOverride(destinationDraftId);
+        if (modelSelectionOverride) {
+          setModelSelection(destinationDraftId, modelSelectionOverride, {
+            replaceOptions: true,
+          });
+        }
+      };
       // The shared resolver owns the priority order. The t3.json read is
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
@@ -200,9 +250,6 @@ export function useNewThreadHandler() {
           globalDefault: primaryServerSettings.defaultThreadEnvMode,
         });
       };
-      const logicalProjectKey = project
-        ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
-        : scopedProjectKey(projectRef);
       const hasBranchOption = options?.branch !== undefined;
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
@@ -309,25 +356,7 @@ export function useNewThreadHandler() {
           // without it, a changed pin could never reach the draft the user
           // is looking at, because explicit picks are the only thing the
           // flag protects.
-          const storedDraft = getComposerDraft(emptyStoredDraftThread.draftId);
-          const storedActiveSelection = storedDraft?.activeProvider
-            ? storedDraft.modelSelectionByProvider[storedDraft.activeProvider]
-            : undefined;
-          const storedDraftHasExplicitModelPick =
-            Boolean(storedActiveSelection) && storedDraft?.modelSelectionExplicit === true;
-          if (!storedDraftHasExplicitModelPick) {
-            applyStickyState(emptyStoredDraftThread.draftId);
-            const modelSelectionOverride = resolveModelSelectionOverride(
-              emptyStoredDraftThread.draftId,
-            );
-            if (modelSelectionOverride) {
-              // This is a complete snapshot: absent options mean "no options",
-              // not "keep the stale draft's options".
-              setModelSelection(emptyStoredDraftThread.draftId, modelSelectionOverride, {
-                replaceOptions: true,
-              });
-            }
-          }
+          applyModelUnlessExplicit(emptyStoredDraftThread.draftId);
           // The workspace context must also ride along here: when projectRef
           // targets a different physical member of the logical project,
           // createDraftThreadState treats the remap as a project change and
@@ -391,6 +420,7 @@ export function useNewThreadHandler() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
+        applyModelUnlessExplicit(currentRouteTarget.draftId);
         return Promise.resolve({
           draftId: currentRouteTarget.draftId,
           threadId: latestActiveDraftThread.threadId,
@@ -454,13 +484,7 @@ export function useNewThreadHandler() {
           runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });
-        applyStickyState(draftId);
-        const modelSelectionOverride = resolveModelSelectionOverride(draftId);
-        if (modelSelectionOverride) {
-          // Project defaults and carried selections both outrank global sticky
-          // state. The project default wins when both are present.
-          setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
-        }
+        applyModelUnlessExplicit(draftId);
         carryComposerContentTo(draftId);
 
         await router.navigate({
@@ -471,7 +495,16 @@ export function useNewThreadHandler() {
         return { draftId, threadId };
       })();
     },
-    [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+    [
+      getCurrentRouteTarget,
+      primaryEnvironmentId,
+      primaryServerProviders,
+      primaryServerSettings,
+      projectGroupingSettings,
+      providerInstanceOrder,
+      projects,
+      router,
+    ],
   );
 }
 

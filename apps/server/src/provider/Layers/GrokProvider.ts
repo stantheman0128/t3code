@@ -34,7 +34,8 @@ import {
   fallbackGrokReasoningEffortCapabilities,
   grokDiscoveredModelCapabilities,
   isGrokAcpAuthFailure,
-  isGrokFamilyAcpModelId,
+  isGrokBotPickerModelId,
+  isGrokCliPickerModelId,
   makeGrokAcpRuntime,
   parseGrokAcpModelMeta,
   resolveGrokAcpBaseModelId,
@@ -101,9 +102,30 @@ const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     isCustom: false,
     capabilities: FALLBACK_CAPABILITIES,
   },
+];
+
+const GROKBOT_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
-    slug: "grok-build",
-    name: "Grok Build",
+    slug: "grokbot/grok-4.6",
+    name: "Grok 4.6",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
+    slug: "grokbot/grok-4.5",
+    name: "Grok 4.5",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
+    slug: "grokbot/sand-default",
+    name: "Sand Default",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
+    slug: "grokbot/sand-automation",
+    name: "Sand Automation",
     isCustom: false,
     capabilities: FALLBACK_CAPABILITIES,
   },
@@ -118,7 +140,11 @@ export function buildInitialGrokProviderSnapshot(
 ): Effect.Effect<ServerProviderDraft, never, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
-    const models = grokModelsFromSettings(grokSettings.customModels);
+    const models = grokModelsFromSettings(
+      grokSettings.customModels,
+      grokSettings.useGrokbotBackend ? GROKBOT_BUILT_IN_MODELS : GROK_BUILT_IN_MODELS,
+      grokSettings.useGrokbotBackend,
+    );
 
     const resolvedDiscovery = {
       environment: discovery?.environment ?? process.env,
@@ -174,8 +200,16 @@ export function buildInitialGrokProviderSnapshot(
 function grokModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = GROK_BUILT_IN_MODELS,
+  useGrokbotBackend = false,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(builtInModels, customModels ?? [], FALLBACK_CAPABILITIES);
+  const models = providerModelsFromSettings(
+    builtInModels,
+    customModels ?? [],
+    FALLBACK_CAPABILITIES,
+  );
+  return models.filter((model) =>
+    useGrokbotBackend ? isGrokBotPickerModelId(model.slug) : isGrokCliPickerModelId(model.slug),
+  );
 }
 
 export function buildGrokDiscoveredModelsFromSessionModelState(
@@ -235,10 +269,6 @@ export function buildGrokDiscoveredModelsFromSessionConfigOptions(
     .filter((model): model is ServerProviderModel => model !== undefined);
 }
 
-function isGrokBotSafeDiscoveredSlug(slug: string): boolean {
-  return isGrokFamilyAcpModelId(slug);
-}
-
 export function selectDiscoveredGrokModels(input: {
   readonly useGrokbotBackend: boolean;
   readonly models?: EffectAcpSchema.SessionModelState | null;
@@ -251,15 +281,16 @@ export function selectDiscoveredGrokModels(input: {
     modelIdPrefix,
   );
   const prefixed = fromSession.length > 0 ? fromSession : fromConfig;
-  if (prefixed.length > 0 || !input.useGrokbotBackend) {
-    return prefixed;
+  if (!input.useGrokbotBackend) {
+    return prefixed.filter((model) => isGrokCliPickerModelId(model.slug));
   }
   const unprefixedSession = buildGrokDiscoveredModelsFromSessionModelState(input.models);
   const unprefixed =
     unprefixedSession.length > 0
       ? unprefixedSession
       : buildGrokDiscoveredModelsFromSessionConfigOptions(input.configOptions);
-  return unprefixed.filter((model) => isGrokBotSafeDiscoveredSlug(model.slug));
+  const candidates = prefixed.length > 0 ? prefixed : unprefixed;
+  return candidates.filter((model) => isGrokBotPickerModelId(model.slug));
 }
 
 const discoverGrokModelsViaAcp = (
@@ -322,9 +353,9 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const cliFallbackModels = grokModelsFromSettings(grokSettings.customModels);
+  const cliFallbackModels = grokModelsFromSettings(grokSettings.customModels, GROK_BUILT_IN_MODELS);
   const fallbackModels = grokSettings.useGrokbotBackend
-    ? grokModelsFromSettings(grokSettings.customModels, [])
+    ? grokModelsFromSettings(grokSettings.customModels, GROKBOT_BUILT_IN_MODELS, true)
     : cliFallbackModels;
   const discovery = { environment, projectRoot };
   const loginSnapshot = grokSettings.useGrokbotBackend
@@ -479,7 +510,11 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   const discoveredModels = discoveryExit.value.value;
   const models =
     discoveredModels.length > 0
-      ? grokModelsFromSettings(grokSettings.customModels, discoveredModels)
+      ? grokModelsFromSettings(
+          grokSettings.customModels,
+          discoveredModels,
+          grokSettings.useGrokbotBackend,
+        )
       : fallbackModels;
 
   return yield* providerDraft({

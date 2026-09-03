@@ -12,6 +12,8 @@ import {
   buildPhysicalToLogicalProjectKeyMap,
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
+  preferredMemberForNewThread,
+  remapNewThreadProjectRefToPrimary,
 } from "./sidebarProjectGrouping";
 import { orderItemsByPreferredIds } from "./components/Sidebar.logic";
 import { legacyProjectCwdPreferenceKey } from "./uiStateStore";
@@ -79,6 +81,32 @@ describe("environment grouping", () => {
     }).length;
 
     expect(projectGroupCount).toBe(1);
+  });
+
+  it("remaps a Cloud project ref onto the local copy of the same repo", () => {
+    const primary = makeProject({ repositoryIdentity });
+    const remote = makeProject({
+      id: ProjectId.make("project-remote"),
+      environmentId: remoteEnvironmentId,
+      repositoryIdentity,
+    });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [primary, remote],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+    const group = groups[0]!;
+    expect(preferredMemberForNewThread(group, primaryEnvironmentId)?.environmentId).toBe(
+      primaryEnvironmentId,
+    );
+    expect(
+      remapNewThreadProjectRefToPrimary({
+        projectRef: { environmentId: remote.environmentId, projectId: remote.id },
+        groups,
+        primaryEnvironmentId,
+      }),
+    ).toEqual({ environmentId: primary.environmentId, projectId: primary.id });
   });
 
   it("keeps projects without repository identity physically scoped", () => {
@@ -286,7 +314,7 @@ describe("environment grouping", () => {
     ).not.toBe(repositoryIdentity.canonicalKey);
   });
 
-  it("builds one picker entry per logical project and targets the preferred environment", () => {
+  it("builds one picker entry per logical project and targets the local copy for new threads", () => {
     const primary = makeProject({ repositoryIdentity });
     const remote = makeProject({
       id: ProjectId.make("project-remote"),
@@ -311,16 +339,46 @@ describe("environment grouping", () => {
         environmentId: remoteEnvironmentId,
         projectId: remote.id,
       },
+      primaryEnvironmentId,
     });
 
     expect(entries).toHaveLength(2);
     expect(entries[0]?.group.projectKey).toBe(repositoryIdentity.canonicalKey);
     expect(entries[0]?.targetProject).toMatchObject({
-      environmentId: remoteEnvironmentId,
-      id: remote.id,
+      environmentId: primaryEnvironmentId,
+      id: primary.id,
     });
     expect(entries[0]?.isPreferred).toBe(true);
     expect(entries[1]?.group.displayName).toBe("separate");
+  });
+
+  it("keeps Cloud as the new-thread target when a repo has no local copy", () => {
+    const remote = makeProject({
+      id: ProjectId.make("project-remote"),
+      environmentId: remoteEnvironmentId,
+      repositoryIdentity,
+    });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [remote],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+
+    const entries = buildSidebarProjectPickerEntries({
+      groups,
+      preferredProjectRef: {
+        environmentId: remoteEnvironmentId,
+        projectId: remote.id,
+      },
+      primaryEnvironmentId,
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.targetProject).toMatchObject({
+      environmentId: remoteEnvironmentId,
+      id: remote.id,
+    });
   });
 
   it("keeps manual project order when building grouped sidebar entries", () => {

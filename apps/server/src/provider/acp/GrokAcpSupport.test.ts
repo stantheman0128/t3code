@@ -11,16 +11,43 @@ import {
   resolveGrokAuthMethodId,
   grokAcpSpawnArgs,
   grokDiscoveredModelCapabilities,
+  isGrokBotPickerModelId,
+  isGrokCliPickerModelId,
   isValidGrokReasoningEffortToken,
   parseGrokAcpModelMeta,
   requestedGrokFastMode,
   resolveGrokAcpBaseModelId,
 } from "./GrokAcpSupport.ts";
 
+describe("isGrokBotPickerModelId", () => {
+  it("keeps the T3-usable Grok Bot ids and drops the rest", () => {
+    expect(isGrokBotPickerModelId("grokbot/sand-default")).toBe(true);
+    expect(isGrokBotPickerModelId("sand-automation")).toBe(true);
+    expect(isGrokBotPickerModelId("grokbot/grok-4.5")).toBe(true);
+    expect(isGrokBotPickerModelId("grokbot/grok-4.6")).toBe(true);
+    expect(isGrokBotPickerModelId("grokbot/sand-cua")).toBe(false);
+    expect(isGrokBotPickerModelId("grokbot/codestral-latest")).toBe(false);
+    expect(isGrokBotPickerModelId("codestral-latest")).toBe(false);
+  });
+});
+
+describe("isGrokCliPickerModelId", () => {
+  it("keeps Grok 4.6 and 4.5 and drops build, fill, and OCX ids", () => {
+    expect(isGrokCliPickerModelId("grok-4.6")).toBe(true);
+    expect(isGrokCliPickerModelId("grok-4.5")).toBe(true);
+    expect(isGrokCliPickerModelId("xai/grok-4.6")).toBe(true);
+    expect(isGrokCliPickerModelId("grok-build")).toBe(false);
+    expect(isGrokCliPickerModelId("grok-fill")).toBe(false);
+    expect(isGrokCliPickerModelId("grok-code-fast-1")).toBe(false);
+    expect(isGrokCliPickerModelId("ocx-gpt-5.5")).toBe(false);
+    expect(isGrokCliPickerModelId("ocx-gpt-5-6-sol")).toBe(false);
+  });
+});
+
 describe("resolveGrokAcpBaseModelId", () => {
   it("normalizes empty and custom Grok model ids", () => {
-    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-build");
-    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-build");
+    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-4.6");
+    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-4.6");
     expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
   });
 });

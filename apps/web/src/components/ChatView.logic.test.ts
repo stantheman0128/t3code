@@ -49,6 +49,8 @@ import {
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
   shouldWriteThreadErrorToCurrentServerThread,
+  countCheckpointRevertFailures,
+  resolveCheckpointRevertOutcome,
 } from "./ChatView.logic";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
@@ -1290,5 +1292,57 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
+  });
+});
+
+describe("resolveCheckpointRevertOutcome", () => {
+  it("stays pending while later checkpoints still exist", () => {
+    expect(
+      resolveCheckpointRevertOutcome({
+        checkpoints: [{ checkpointTurnCount: 1 }, { checkpointTurnCount: 2 }],
+        failedRevertCount: 0,
+        failedRevertCountAtRequest: 0,
+        targetTurnCount: 1,
+      }),
+    ).toBe("pending");
+  });
+
+  it("treats trimmed checkpoints as reverted only after the session is idle", () => {
+    expect(
+      resolveCheckpointRevertOutcome({
+        checkpoints: [{ checkpointTurnCount: 1 }],
+        failedRevertCount: 0,
+        failedRevertCountAtRequest: 0,
+        targetTurnCount: 1,
+        sessionStatus: "running",
+      }),
+    ).toBe("pending");
+    expect(
+      resolveCheckpointRevertOutcome({
+        checkpoints: [{ checkpointTurnCount: 1 }],
+        failedRevertCount: 0,
+        failedRevertCountAtRequest: 0,
+        targetTurnCount: 1,
+        sessionStatus: "ready",
+      }),
+    ).toBe("reverted");
+  });
+
+  it("fails when a new revert-failed activity arrives", () => {
+    expect(countCheckpointRevertFailures([{ kind: "tool.started" }])).toBe(0);
+    expect(
+      countCheckpointRevertFailures([
+        { kind: "checkpoint.revert.failed" },
+        { kind: "checkpoint.revert.failed" },
+      ]),
+    ).toBe(2);
+    expect(
+      resolveCheckpointRevertOutcome({
+        checkpoints: [{ checkpointTurnCount: 1 }, { checkpointTurnCount: 2 }],
+        failedRevertCount: 1,
+        failedRevertCountAtRequest: 0,
+        targetTurnCount: 1,
+      }),
+    ).toBe("failed");
   });
 });

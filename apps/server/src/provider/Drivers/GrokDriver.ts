@@ -57,6 +57,26 @@ export function grokSettingsFromGrokBotConfig(input: {
   });
 }
 
+/**
+ * Grok Bot's settings form stores the binary in `binaryPath`. Decoding that
+ * blob as `GrokSettings` fills `grokbotBinaryPath` with the schema default
+ * `"omp"`, which must not hide an explicit instance path.
+ */
+export function resolveGrokBotBinaryPath(config: {
+  readonly binaryPath?: string | undefined;
+  readonly grokbotBinaryPath?: string | undefined;
+}): string {
+  const instancePath = config.binaryPath?.trim() ?? "";
+  const grokbotPath = config.grokbotBinaryPath?.trim() ?? "";
+  if (instancePath.length > 0 && instancePath !== "grok") {
+    return instancePath;
+  }
+  if (grokbotPath.length > 0) {
+    return grokbotPath;
+  }
+  return "omp";
+}
+
 const UPDATE_FOR = (driverKind: ProviderDriverKind) =>
   makeStaticProviderMaintenanceResolver(
     makeManualOnlyProviderMaintenanceCapabilities({
@@ -135,7 +155,7 @@ export function createGrokFamilyDriver(spec: {
           spec.forceGrokbot
             ? grokSettingsFromGrokBotConfig({
                 enabled,
-                binaryPath: config.grokbotBinaryPath || config.binaryPath,
+                binaryPath: resolveGrokBotBinaryPath(config),
                 customModels: config.customModels,
               })
             : { ...config, enabled, useGrokbotBackend: false }

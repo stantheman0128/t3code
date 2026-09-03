@@ -101,6 +101,7 @@ import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import {
   buildSidebarProjectSnapshots,
+  preferredMemberForNewThread,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
@@ -3487,6 +3488,16 @@ export default function Sidebar() {
   // for multi-project setups.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
+      // A scoped project folder in the sidebar is an explicit "new thread
+      // here" choice — don't ignore it for Cloud/current-thread context.
+      if (scopedProjectGroup) {
+        const target = preferredMemberForNewThread(scopedProjectGroup, primaryEnvironmentId);
+        if (target) {
+          if (isMobile) setOpenMobile(false);
+          void newThreadContext.handleNewThread(scopeProjectRef(target.environmentId, target.id));
+          return;
+        }
+      }
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.
@@ -3503,7 +3514,14 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [
+      isMobile,
+      newThreadContext,
+      primaryEnvironmentId,
+      projectGroups.length,
+      scopedProjectGroup,
+      setOpenMobile,
+    ],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through

@@ -77,8 +77,9 @@ export function DraftHeroHeadline({
       buildSidebarProjectPickerEntries({
         groups: projectGroups,
         preferredProjectRef: activeProjectRef,
+        primaryEnvironmentId,
       }),
-    [activeProjectRef, projectGroups],
+    [activeProjectRef, primaryEnvironmentId, projectGroups],
   );
   const projectEntryByKey = useMemo(
     () => new Map(projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const)),

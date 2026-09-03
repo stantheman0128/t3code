@@ -299,6 +299,9 @@ const PersistedComposerDraftStoreState = Schema.Struct({
     Schema.Record(ProviderInstanceId, ModelSelection),
   ),
   stickyActiveProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
+  lastModelSelectionByLogicalProjectKey: Schema.optionalKey(
+    Schema.Record(Schema.String, ModelSelection),
+  ),
 });
 type PersistedComposerDraftStoreState = typeof PersistedComposerDraftStoreState.Type;
 
@@ -428,6 +431,8 @@ interface ComposerDraftStoreState {
   backgroundSubmissionThreadKeys: Record<string, true>;
   stickyModelSelectionByProvider: Partial<Record<ProviderInstanceId, ModelSelection>>;
   stickyActiveProvider: ProviderInstanceId | null;
+  lastModelSelectionByLogicalProjectKey: Partial<Record<string, ModelSelection>>;
+  getLastModelSelectionForLogicalProject: (logicalProjectKey: string) => ModelSelection | null;
   /** Returns the editable composer content for a draft session or server thread. */
   getComposerDraft: (target: ComposerThreadTarget) => ComposerThreadDraftState | null;
   /** Looks up the active draft session for a logical project identity. */
@@ -498,7 +503,10 @@ interface ComposerDraftStoreState {
   /** Removes draft-session metadata after promotion is complete. */
   finalizePromotedDraftThread: (threadRef: ComposerThreadTarget) => void;
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
-  setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
+  setStickyModelSelection: (
+    modelSelection: ModelSelection | null | undefined,
+    logicalProjectKey?: string | null,
+  ) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
@@ -686,6 +694,7 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE = Object.freeze<PersistedComposerDraftSt
   logicalProjectDraftThreadKeyByLogicalProjectKey: {},
   stickyModelSelectionByProvider: {},
   stickyActiveProvider: null,
+  lastModelSelectionByLogicalProjectKey: {},
 });
 
 const EMPTY_IMAGES: ComposerImageAttachment[] = [];
@@ -2137,6 +2146,9 @@ function partializeComposerDraftStoreState(
       state.stickyModelSelectionByProvider,
     ),
     stickyActiveProvider: state.stickyActiveProvider,
+    lastModelSelectionByLogicalProjectKey: compactModelSelectionByProvider(
+      state.lastModelSelectionByLogicalProjectKey,
+    ),
   };
 }
 
@@ -2207,6 +2219,11 @@ function normalizeCurrentPersistedComposerDraftStoreState(
     logicalProjectDraftThreadKeyByLogicalProjectKey,
     stickyModelSelectionByProvider: compactModelSelectionByProvider(stickyModelSelectionByProvider),
     stickyActiveProvider,
+    lastModelSelectionByLogicalProjectKey: compactModelSelectionByProvider(
+      (normalizedPersistedState.lastModelSelectionByLogicalProjectKey ?? {}) as Partial<
+        Record<ProviderInstanceId, ModelSelection>
+      >,
+    ),
   };
 }
 
@@ -2424,6 +2441,14 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         backgroundSubmissionThreadKeys: {},
         stickyModelSelectionByProvider: {},
         stickyActiveProvider: null,
+        lastModelSelectionByLogicalProjectKey: {},
+        getLastModelSelectionForLogicalProject: (logicalProjectKey) => {
+          const key = logicalProjectKey.trim();
+          if (key.length === 0) {
+            return null;
+          }
+          return get().lastModelSelectionByLogicalProjectKey[key] ?? null;
+        },
         getComposerDraft: (target) => getComposerDraftState(get(), target),
         getDraftThreadByLogicalProjectKey: (logicalProjectKey) => {
           return get().getDraftSessionByLogicalProjectKey(logicalProjectKey);
@@ -2764,8 +2789,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return removeDraftThreadReferences(state, threadKey);
           });
         },
-        setStickyModelSelection: (modelSelection) => {
+        setStickyModelSelection: (modelSelection, logicalProjectKey) => {
           const normalized = normalizeModelSelection(modelSelection);
+          const projectKey = logicalProjectKey?.trim() ?? "";
           set((state) => {
             if (!normalized) {
               return state;
@@ -2774,7 +2800,19 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               ...state.stickyModelSelectionByProvider,
               [normalized.instanceId]: normalized,
             };
-            if (Equal.equals(state.stickyModelSelectionByProvider, nextMap)) {
+            const nextLastUsed =
+              projectKey.length === 0
+                ? state.lastModelSelectionByLogicalProjectKey
+                : {
+                    ...state.lastModelSelectionByLogicalProjectKey,
+                    [projectKey]: normalized,
+                  };
+            const stickyUnchanged = Equal.equals(state.stickyModelSelectionByProvider, nextMap);
+            const lastUsedUnchanged = Equal.equals(
+              state.lastModelSelectionByLogicalProjectKey,
+              nextLastUsed,
+            );
+            if (stickyUnchanged && lastUsedUnchanged) {
               return state.stickyActiveProvider === normalized.instanceId
                 ? state
                 : { stickyActiveProvider: normalized.instanceId };
@@ -2782,6 +2820,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return {
               stickyModelSelectionByProvider: nextMap,
               stickyActiveProvider: normalized.instanceId,
+              lastModelSelectionByLogicalProjectKey: nextLastUsed,
             };
           });
         },
@@ -3990,6 +4029,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             normalizedPersisted.logicalProjectDraftThreadKeyByLogicalProjectKey,
           stickyModelSelectionByProvider: normalizedPersisted.stickyModelSelectionByProvider ?? {},
           stickyActiveProvider: normalizedPersisted.stickyActiveProvider ?? null,
+          lastModelSelectionByLogicalProjectKey:
+            normalizedPersisted.lastModelSelectionByLogicalProjectKey ?? {},
         };
       },
     },

@@ -9,6 +9,8 @@ import {
   isProviderInstancePickerVisible,
   reorderProviderInstanceIds,
   resolveDefaultProviderModelSelection,
+  resolvePickerFirstModelSelection,
+  resolveProviderInstanceOrder,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
   sortProviderInstanceEntries,
@@ -582,6 +584,17 @@ describe("resolveDefaultProviderModelSelection", () => {
 });
 
 describe("provider instance order", () => {
+  it("fills stored order with any visible ids that were not saved yet", () => {
+    const grok = ProviderInstanceId.make("grok");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const codex = ProviderInstanceId.make("codex");
+    expect(resolveProviderInstanceOrder([codex, claude, grok], [grok, claude])).toEqual([
+      grok,
+      claude,
+      codex,
+    ]);
+  });
+
   it("reorders ids and sorts Grok before Claude when asked", () => {
     const grok = ProviderInstanceId.make("grok");
     const claude = ProviderInstanceId.make("claudeAgent");
@@ -600,5 +613,28 @@ describe("provider instance order", () => {
     expect(
       sortProviderInstanceEntries(entries, [grok, claude, codex]).map((entry) => entry.instanceId),
     ).toEqual([grok, claude, codex]);
+  });
+
+  it("picks the first ready instance in picker order for a new project", () => {
+    const grok = ProviderInstanceId.make("grok");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [model("claude-opus-4-6", false, true)],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("grok"),
+        instanceId: "grok",
+        models: [model("grok-4.6", false, true)],
+      }),
+    ];
+    expect(
+      resolvePickerFirstModelSelection(providers, { providerInstances: {}, providers: {} }, [
+        grok,
+        claude,
+      ]),
+    ).toEqual({ instanceId: grok, model: "grok-4.6" });
   });
 });

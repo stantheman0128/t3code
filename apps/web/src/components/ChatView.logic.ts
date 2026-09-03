@@ -798,6 +798,103 @@ export async function waitForStartedServerThread(
   });
 }
 
+export const CHECKPOINT_REVERT_FAILED_KIND = "checkpoint.revert.failed";
+export const CHECKPOINT_REVERT_WAIT_MS = 30_000;
+
+export function countCheckpointRevertFailures(
+  activities: ReadonlyArray<{ readonly kind: string }>,
+): number {
+  return activities.reduce(
+    (count, activity) => count + (activity.kind === CHECKPOINT_REVERT_FAILED_KIND ? 1 : 0),
+    0,
+  );
+}
+
+export function resolveCheckpointRevertOutcome(input: {
+  readonly checkpoints: ReadonlyArray<{ readonly checkpointTurnCount: number }>;
+  readonly failedRevertCount: number;
+  readonly failedRevertCountAtRequest: number;
+  readonly targetTurnCount: number;
+  readonly sessionStatus?: string | null;
+}): "pending" | "reverted" | "failed" {
+  if (input.failedRevertCount > input.failedRevertCountAtRequest) {
+    return "failed";
+  }
+  const hasNewerCheckpoint = input.checkpoints.some(
+    (checkpoint) => checkpoint.checkpointTurnCount > input.targetTurnCount,
+  );
+  if (hasNewerCheckpoint) {
+    return "pending";
+  }
+  if (input.sessionStatus === "starting" || input.sessionStatus === "running") {
+    return "pending";
+  }
+  return "reverted";
+}
+
+export async function waitForCheckpointRevert(
+  threadRef: ScopedThreadRef,
+  input: {
+    readonly targetTurnCount: number;
+    readonly failedRevertCountAtRequest: number;
+  },
+  timeoutMs = CHECKPOINT_REVERT_WAIT_MS,
+): Promise<"reverted" | "failed" | "timeout"> {
+  const threadAtom = environmentThreadDetails.detailAtom(threadRef);
+  const readOutcome = () => {
+    const thread = appAtomRegistry.get(threadAtom);
+    if (!thread) {
+      return "pending" as const;
+    }
+    return resolveCheckpointRevertOutcome({
+      checkpoints: thread.checkpoints,
+      failedRevertCount: countCheckpointRevertFailures(thread.activities),
+      failedRevertCountAtRequest: input.failedRevertCountAtRequest,
+      targetTurnCount: input.targetTurnCount,
+      sessionStatus: thread.session?.status ?? null,
+    });
+  };
+
+  const initial = readOutcome();
+  if (initial === "reverted" || initial === "failed") {
+    return initial;
+  }
+
+  return await new Promise<"reverted" | "failed" | "timeout">((resolve) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const finish = (result: "reverted" | "failed" | "timeout") => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      unsubscribe();
+      resolve(result);
+    };
+
+    const unsubscribe = appAtomRegistry.subscribe(threadAtom, () => {
+      const outcome = readOutcome();
+      if (outcome === "pending") {
+        return;
+      }
+      finish(outcome);
+    });
+
+    const outcomeNow = readOutcome();
+    if (outcomeNow !== "pending") {
+      finish(outcomeNow);
+      return;
+    }
+
+    timeoutId = globalThis.setTimeout(() => {
+      finish("timeout");
+    }, timeoutMs);
+  });
+}
+
 export interface LocalDispatchSnapshot {
   startedAt: string;
   preparingWorktree: boolean;

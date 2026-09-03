@@ -193,8 +193,8 @@ export const makeGrokAcpRuntime = (
 
 export function resolveGrokAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
-  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-build";
-  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-build";
+  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-4.6";
+  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-4.6";
 }
 
 /** T3 product slugs that Grok ACP `session/set_model` does not accept. */
@@ -213,6 +213,44 @@ const GROK_FAMILY_ACP_PREFIXES = [
   "xai-grok-build/",
   "grok-cli/",
 ] as const;
+
+/**
+ * Grok Bot ids T3 will put in the picker. Live omp catalogs are huge and mix
+ * unusable rows (Mistral, sand-cua, cursor-grok-*).
+ */
+const GROKBOT_PICKER_BARE_IDS = new Set([
+  "sand-default",
+  "sand-automation",
+  "grok-4.6",
+  "grok-4.5",
+]);
+
+export function grokBotPickerBareId(modelId: string): string {
+  const slug = modelId.trim().toLowerCase();
+  return slug.startsWith("grokbot/") ? slug.slice("grokbot/".length) : slug;
+}
+
+export function isGrokBotPickerModelId(modelId: string): boolean {
+  return GROKBOT_PICKER_BARE_IDS.has(grokBotPickerBareId(modelId));
+}
+
+const GROK_CLI_PICKER_BARE_IDS = new Set(["grok-4.6", "grok-4.5"]);
+const GROK_CLI_PICKER_PREFIXES = ["grok-cli/", "xai/", "xai-oauth/", "xai-grok-build/"] as const;
+
+export function grokCliPickerBareId(modelId: string): string {
+  const slug = modelId.trim().toLowerCase();
+  for (const prefix of GROK_CLI_PICKER_PREFIXES) {
+    if (slug.startsWith(prefix)) {
+      return slug.slice(prefix.length);
+    }
+  }
+  return slug;
+}
+
+/** Official Grok CLI picker: only 4.6 and 4.5. Drops grok-build, OCX, and other aliases. */
+export function isGrokCliPickerModelId(modelId: string): boolean {
+  return GROK_CLI_PICKER_BARE_IDS.has(grokCliPickerBareId(modelId));
+}
 
 /** True for Grok / Grok Bot ids. False for OMP's other providers (mistral/, anthropic/, ...). */
 export function isGrokFamilyAcpModelId(modelId: string): boolean {

@@ -41,14 +41,22 @@ export function resolveNewDraftStartFromOrigin(input: {
 
 export function resolveNewThreadModelSelectionOverride(input: {
   readonly projectDefaultSelection: ModelSelection | null;
+  readonly lastUsedSelection: ModelSelection | null;
+  readonly pickerFirstSelection: ModelSelection | null;
   readonly carrySelection: ModelSelection | null;
   readonly carrySourceDraftId: string | null;
   readonly destinationDraftId: string;
 }): ModelSelection | null {
-  return (
-    input.projectDefaultSelection ??
-    (input.carrySourceDraftId === input.destinationDraftId ? null : input.carrySelection)
-  );
+  if (input.projectDefaultSelection) {
+    return input.projectDefaultSelection;
+  }
+  if (input.lastUsedSelection) {
+    return input.lastUsedSelection;
+  }
+  if (input.pickerFirstSelection) {
+    return input.pickerFirstSelection;
+  }
+  return input.carrySourceDraftId === input.destinationDraftId ? null : input.carrySelection;
 }
 
 export function resolveThreadActionProjectRef(

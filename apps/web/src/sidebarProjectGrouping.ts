@@ -1,4 +1,5 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { buildProjectGroups, type ProjectGroupingSettings } from "./logicalProject";
 import type { Project } from "./types";
 
@@ -114,9 +115,51 @@ export function buildSidebarProjectSnapshots(input: {
   });
 }
 
+export function preferredMemberForNewThread(
+  group: Pick<SidebarProjectSnapshot, "memberProjects" | "environmentId" | "id">,
+  primaryEnvironmentId: EnvironmentId | null,
+): SidebarProjectGroupMember | undefined {
+  if (primaryEnvironmentId) {
+    const localMember = group.memberProjects.find(
+      (member) => member.environmentId === primaryEnvironmentId,
+    );
+    if (localMember) {
+      return localMember;
+    }
+  }
+  return (
+    group.memberProjects.find(
+      (member) => member.environmentId === group.environmentId && member.id === group.id,
+    ) ?? group.memberProjects[0]
+  );
+}
+
+export function remapNewThreadProjectRefToPrimary(input: {
+  readonly projectRef: ScopedProjectRef;
+  readonly groups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+}): ScopedProjectRef {
+  const group = input.groups.find((candidate) =>
+    candidate.memberProjectRefs.some(
+      (memberRef) =>
+        memberRef.environmentId === input.projectRef.environmentId &&
+        memberRef.projectId === input.projectRef.projectId,
+    ),
+  );
+  if (!group) {
+    return input.projectRef;
+  }
+  const preferred = preferredMemberForNewThread(group, input.primaryEnvironmentId);
+  if (!preferred) {
+    return input.projectRef;
+  }
+  return scopeProjectRef(preferred.environmentId, preferred.id);
+}
+
 export function buildSidebarProjectPickerEntries(input: {
   groups: ReadonlyArray<SidebarProjectSnapshot>;
   preferredProjectRef: ScopedProjectRef | null;
+  primaryEnvironmentId?: EnvironmentId | null;
 }) {
   const entries = input.groups.flatMap((group): SidebarProjectPickerEntry[] => {
     const isPreferred = input.preferredProjectRef
@@ -137,10 +180,8 @@ export function buildSidebarProjectPickerEntries(input: {
         ))
       : null;
     const targetProject =
+      preferredMemberForNewThread(group, input.primaryEnvironmentId ?? null) ??
       preferredProject ??
-      group.memberProjects.find(
-        (project) => project.environmentId === group.environmentId && project.id === group.id,
-      ) ??
       group.memberProjects[0];
     if (!targetProject) return [];
 

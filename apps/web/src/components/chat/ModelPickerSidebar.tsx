@@ -1,6 +1,9 @@
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { SparklesIcon, StarIcon } from "lucide-react";
+import { DndContext, closestCenter } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -9,6 +12,11 @@ import {
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
+import {
+  SortableProviderInstanceItem,
+  providerInstanceIdsFromDragEnd,
+  useProviderInstanceDndSensors,
+} from "../providerInstanceSortable";
 
 /**
  * Build the hover tooltip for an instance button. Mirrors the old
@@ -70,6 +78,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   };
   const showFavorites = props.showFavorites ?? true;
   const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
+  const dndSensors = useProviderInstanceDndSensors();
+  const sortableIds = props.instanceEntries.map((entry) => entry.instanceId);
   const sidebarContentRef = useRef<HTMLDivElement>(null);
   const [selectedIndicatorTop, setSelectedIndicatorTop] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -135,124 +145,127 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           ) : null}
 
           {/* Instance buttons (one per configured instance — built-in + custom) */}
-          {props.instanceEntries.map((entry) => {
-            const isUnavailable = !isProviderInstancePickerReady(entry);
-            const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
-            const unavailableSelectionIsReachable =
-              props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
-            const isDisabled =
-              (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
-            const isSelected = props.selectedInstanceId === entry.instanceId;
-            const isHovered = hoveredInstanceId === entry.instanceId;
-            const showNewBadge = props.newBadgeInstanceIds?.has(entry.instanceId) ?? false;
-            const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={(event) => {
+              const moved = providerInstanceIdsFromDragEnd(event);
+              if (!moved || !props.onReorderInstances) {
+                return;
+              }
+              props.onReorderInstances(moved.fromId, moved.toId);
+            }}
+          >
+            <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+              {props.instanceEntries.map((entry) => {
+                const isUnavailable = !isProviderInstancePickerReady(entry);
+                const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
+                const unavailableSelectionIsReachable =
+                  props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
+                const isDisabled =
+                  (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
+                const isSelected = props.selectedInstanceId === entry.instanceId;
+                const isHovered = hoveredInstanceId === entry.instanceId;
+                const showNewBadge = props.newBadgeInstanceIds?.has(entry.instanceId) ?? false;
+                const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+                const canReorder = !isDisabled && props.onReorderInstances !== undefined;
 
-            const tooltip = isUnavailable
-              ? describeUnavailableInstance(entry)
-              : isContextDisabled
-                ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-                : showNewBadge
-                  ? `${entry.displayName} — New`
-                  : entry.displayName;
-
-            const button = (
-              <button
-                className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] focus-visible:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] focus-visible:outline-none",
-                  isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
-                )}
-                data-provider-accent-color={entry.accentColor}
-                onClick={() => !isDisabled && handleSelect(entry.instanceId)}
-                onMouseEnter={() => setHoveredInstanceId(entry.instanceId)}
-                onMouseLeave={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
-                onFocus={() => setHoveredInstanceId(entry.instanceId)}
-                onBlur={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
-                disabled={isDisabled}
-                type="button"
-                aria-label={
-                  isUnavailable || isContextDisabled
-                    ? tooltip
+                const tooltip = isUnavailable
+                  ? describeUnavailableInstance(entry)
+                  : isContextDisabled
+                    ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                     : showNewBadge
-                      ? `${entry.displayName}, new`
-                      : entry.displayName
-                }
-              >
-                <ProviderInstanceIcon
-                  driverKind={entry.driverKind}
-                  displayName={entry.displayName}
-                  accentColor={entry.accentColor}
-                  showBadge={showInstanceBadge}
-                  className="size-6"
-                  iconClassName="size-5"
-                  indicatorBackground={
-                    isHovered && !isDisabled
-                      ? "var(--muted)"
-                      : isSelected
-                        ? "var(--background)"
-                        : "color-mix(in oklab, var(--muted) 30%, transparent)"
-                  }
-                  {...(entry.accentColor
-                    ? { badgeClassName: "h-3 min-w-3 px-0.5 text-[7px]" }
-                    : {})}
-                />
-                {showNewBadge ? (
-                  <span className={NEW_BADGE_CLASS} aria-hidden>
-                    <SparklesIcon className="size-2" />
-                  </span>
-                ) : null}
-              </button>
-            );
+                      ? `${entry.displayName} — New`
+                      : entry.displayName;
 
-            const trigger = isDisabled ? (
-              <span className="relative block w-full">{button}</span>
-            ) : (
-              button
-            );
-
-            return (
-              <div
-                key={entry.instanceId}
-                className="relative w-full"
-                data-model-picker-provider={entry.instanceId}
-                draggable={!isDisabled && props.onReorderInstances !== undefined}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData("text/plain", entry.instanceId);
-                  event.dataTransfer.effectAllowed = "move";
-                }}
-                onDragOver={(event) => {
-                  if (!props.onReorderInstances) {
-                    return;
-                  }
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const fromId = event.dataTransfer.getData("text/plain");
-                  if (!fromId || fromId === entry.instanceId) {
-                    return;
-                  }
-                  props.onReorderInstances?.(fromId as ProviderInstanceId, entry.instanceId);
-                }}
-              >
-                <Tooltip>
-                  <TooltipTrigger render={trigger} />
-                  <TooltipPopup
-                    side={PICKER_TOOLTIP_SIDE}
-                    sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
-                    align="center"
-                    className={PICKER_TOOLTIP_CLASS}
+                const button = (
+                  <button
+                    className={cn(
+                      "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] focus-visible:bg-[color-mix(in_srgb,var(--popover)_90%,var(--contrast-foreground))] focus-visible:outline-none",
+                      isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                      canReorder && "cursor-grab active:cursor-grabbing",
+                    )}
+                    data-provider-accent-color={entry.accentColor}
+                    onClick={() => !isDisabled && handleSelect(entry.instanceId)}
+                    onMouseEnter={() => setHoveredInstanceId(entry.instanceId)}
+                    onMouseLeave={() =>
+                      setHoveredInstanceId((current) =>
+                        current === entry.instanceId ? null : current,
+                      )
+                    }
+                    onFocus={() => setHoveredInstanceId(entry.instanceId)}
+                    onBlur={() =>
+                      setHoveredInstanceId((current) =>
+                        current === entry.instanceId ? null : current,
+                      )
+                    }
+                    disabled={isDisabled}
+                    type="button"
+                    aria-label={
+                      isUnavailable || isContextDisabled
+                        ? tooltip
+                        : showNewBadge
+                          ? `${entry.displayName}, new`
+                          : entry.displayName
+                    }
                   >
-                    {tooltip}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-            );
-          })}
+                    <ProviderInstanceIcon
+                      driverKind={entry.driverKind}
+                      displayName={entry.displayName}
+                      accentColor={entry.accentColor}
+                      showBadge={showInstanceBadge}
+                      className="size-6"
+                      iconClassName="size-5"
+                      indicatorBackground={
+                        isHovered && !isDisabled
+                          ? "var(--muted)"
+                          : isSelected
+                            ? "var(--background)"
+                            : "color-mix(in oklab, var(--muted) 30%, transparent)"
+                      }
+                      {...(entry.accentColor
+                        ? { badgeClassName: "h-3 min-w-3 px-0.5 text-[7px]" }
+                        : {})}
+                    />
+                    {showNewBadge ? (
+                      <span className={NEW_BADGE_CLASS} aria-hidden>
+                        <SparklesIcon className="size-2" />
+                      </span>
+                    ) : null}
+                  </button>
+                );
+
+                const trigger = isDisabled ? (
+                  <span className="relative block w-full">{button}</span>
+                ) : (
+                  button
+                );
+
+                return (
+                  <SortableProviderInstanceItem
+                    key={entry.instanceId}
+                    id={entry.instanceId}
+                    disabled={!canReorder}
+                    className="relative w-full"
+                    data-model-picker-provider={entry.instanceId}
+                  >
+                    <Tooltip>
+                      <TooltipTrigger render={trigger} />
+                      <TooltipPopup
+                        side={PICKER_TOOLTIP_SIDE}
+                        sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+                        align="center"
+                        className={PICKER_TOOLTIP_CLASS}
+                      >
+                        {tooltip}
+                      </TooltipPopup>
+                    </Tooltip>
+                  </SortableProviderInstanceItem>
+                );
+              })}
+            </SortableContext>
+          </DndContext>
         </div>
       </div>
     </div>

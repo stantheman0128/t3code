@@ -39,6 +39,7 @@ import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   reorderProviderInstanceIds,
+  resolveProviderInstanceOrder,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
@@ -185,15 +186,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       const visibleIds = instanceEntries
         .filter(isProviderInstancePickerVisible)
         .map((entry) => entry.instanceId);
-      const baseOrder =
-        providerInstanceOrder.length > 0
-          ? [
-              ...providerInstanceOrder.filter((instanceId) => visibleIds.includes(instanceId)),
-              ...visibleIds.filter((instanceId) => !providerInstanceOrder.includes(instanceId)),
-            ]
-          : visibleIds;
       updateSettings({
-        providerInstanceOrder: reorderProviderInstanceIds(baseOrder, fromId, toId),
+        providerInstanceOrder: reorderProviderInstanceIds(
+          resolveProviderInstanceOrder(visibleIds, providerInstanceOrder),
+          fromId,
+          toId,
+        ),
       });
     },
     [instanceEntries, providerInstanceOrder, updateSettings],

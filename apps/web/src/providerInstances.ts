@@ -295,6 +295,19 @@ export function applyProviderInstanceSettings(
  * emits them). Stable across kinds: entries retain the server's
  * cross-driver ordering.
  */
+export function resolveProviderInstanceOrder(
+  visibleIds: ReadonlyArray<ProviderInstanceId>,
+  storedOrder: ReadonlyArray<ProviderInstanceId> | undefined,
+): ProviderInstanceId[] {
+  if (!storedOrder || storedOrder.length === 0) {
+    return [...visibleIds];
+  }
+  return [
+    ...storedOrder.filter((instanceId) => visibleIds.includes(instanceId)),
+    ...visibleIds.filter((instanceId) => !storedOrder.includes(instanceId)),
+  ];
+}
+
 export function reorderProviderInstanceIds(
   currentOrder: ReadonlyArray<ProviderInstanceId>,
   fromId: ProviderInstanceId,
@@ -443,6 +456,27 @@ export function resolveDefaultProviderModelSelection(
   if (selection?.instanceId === instanceId) return selection;
   const model = getDefaultProviderInstanceModel(providers, instanceId);
   return model ? { instanceId, model } : null;
+}
+
+/**
+ * First ready instance in the user's picker order, with that instance's own
+ * default model. Used when a new project/folder has no last-used selection.
+ */
+export function resolvePickerFirstModelSelection(
+  providers: ReadonlyArray<ServerProvider>,
+  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  instanceOrder?: ReadonlyArray<ProviderInstanceId>,
+): ModelSelection | null {
+  const entries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+    instanceOrder,
+  );
+  const firstReady = entries.find(isProviderInstancePickerReady);
+  if (!firstReady) {
+    return resolveDefaultProviderModelSelection(providers, null);
+  }
+  const model = getDefaultProviderInstanceModel(providers, firstReady.instanceId);
+  return model ? { instanceId: firstReady.instanceId, model } : null;
 }
 
 /**

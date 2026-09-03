@@ -757,8 +757,9 @@ function OpenCommandPaletteDialog(props: {
       buildSidebarProjectPickerEntries({
         groups: projectGroups,
         preferredProjectRef: contextualProjectRef,
+        primaryEnvironmentId,
       }),
-    [contextualProjectRef, projectGroups],
+    [contextualProjectRef, primaryEnvironmentId, projectGroups],
   );
   const pickerProjects = useMemo(
     () =>
@@ -1084,29 +1085,11 @@ function OpenCommandPaletteDialog(props: {
           },
           icon: projectFavicon,
           runProject: async (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            const contextualRefBelongsToGroup =
-              contextualProjectRef !== null &&
-              group?.memberProjectRefs.some(
-                (projectRef) =>
-                  projectRef.environmentId === contextualProjectRef.environmentId &&
-                  projectRef.projectId === contextualProjectRef.projectId,
-              );
-            await handleNewThread(
-              contextualRefBelongsToGroup
-                ? contextualProjectRef
-                : scopeProjectRef(project.environmentId, project.id),
-            );
+            await handleNewThread(scopeProjectRef(project.environmentId, project.id));
           },
         }),
       ),
-    [
-      contextualProjectRef,
-      handleNewThread,
-      pickerProjects,
-      projectEnvironmentLocationById,
-      projectGroupByTargetKey,
-    ],
+    [handleNewThread, pickerProjects, projectEnvironmentLocationById, projectGroupByTargetKey],
   );
 
   const allThreadItems = useMemo(

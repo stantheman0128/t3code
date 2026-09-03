@@ -79,7 +79,7 @@ import {
   requestedGrokReasoningEffort,
   resolveGrokAcpBaseModelId,
   availableGrokSessionModelIds,
-  isGrokFamilyAcpModelId,
+  isGrokBotPickerModelId,
 } from "../acp/GrokAcpSupport.ts";
 import {
   boundGrokToolCallForEvent,
@@ -1897,7 +1897,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           const startedModelId = currentGrokModelIdFromSessionSetup(started.sessionSetupResult);
           const advertisedModelIds = availableGrokSessionModelIds(started.sessionSetupResult);
           const availableModelIds = grokSettings.useGrokbotBackend
-            ? advertisedModelIds.filter(isGrokFamilyAcpModelId)
+            ? advertisedModelIds.filter(isGrokBotPickerModelId)
             : advertisedModelIds;
           if (grokSettings.useGrokbotBackend && availableModelIds.length === 0) {
             return yield* new ProviderAdapterValidationError({

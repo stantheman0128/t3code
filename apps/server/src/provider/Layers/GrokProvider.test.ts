@@ -164,6 +164,51 @@ describe("Grok Bot ACP model discovery", () => {
 
     expect(models.map((model) => model.slug)).toEqual(["grokbot/sand-default"]);
   });
+
+  it("drops OCX and grok-build from the Grok CLI picker", () => {
+    const models = selectDiscoveredGrokModels({
+      useGrokbotBackend: false,
+      models: {
+        currentModelId: "grok-4.6",
+        availableModels: [
+          { modelId: "grok-4.6", name: "Grok 4.6" },
+          { modelId: "grok-4.5", name: "Grok 4.5" },
+          { modelId: "grok-build", name: "Grok Build" },
+          { modelId: "grok-fill", name: "Grok Fill" },
+          { modelId: "ocx-gpt-5.5", name: "GPT-5.5" },
+          { modelId: "ocx-gpt-5-6-sol", name: "GPT-5.6 Sol" },
+          { modelId: "grok-code-fast-1", name: "Grok Code Fast" },
+        ],
+      },
+    });
+
+    expect(models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-4.5"]);
+  });
+
+  it("hides grokbot catalog rows that cannot run T3 tool turns", () => {
+    const models = selectDiscoveredGrokModels({
+      useGrokbotBackend: true,
+      models: {
+        currentModelId: "grokbot/sand-default",
+        availableModels: [
+          { modelId: "grokbot/sand-default", name: "Sand Default" },
+          { modelId: "grokbot/sand-cua", name: "Sand CUA" },
+          { modelId: "grokbot/grok-4.6", name: "Grok 4.6" },
+          { modelId: "grokbot/claude-opus-5", name: "Claude Opus 5" },
+          { modelId: "grokbot/codestral-latest", name: "Codestral" },
+          { modelId: "grokbot/grok-4.5", name: "Grok 4.5" },
+          { modelId: "grokbot/sand-automation", name: "Sand Automation" },
+        ],
+      },
+    });
+
+    expect(models.map((model) => model.slug)).toEqual([
+      "grokbot/sand-default",
+      "grokbot/grok-4.6",
+      "grokbot/grok-4.5",
+      "grokbot/sand-automation",
+    ]);
+  });
 });
 
 it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
@@ -217,6 +262,18 @@ it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
         "reasoningEffort",
         "fastMode",
       ]);
+    }),
+  );
+
+  it.effect("drops custom OCX, Fill, and Build slugs from the Grok CLI snapshot", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* buildInitialGrokProviderSnapshot(
+        decodeGrokSettings({
+          enabled: true,
+          customModels: ["ocx-gpt-5.5", "grok-fill", "grok-build", "grok-4.6"],
+        }),
+      );
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-4.5"]);
     }),
   );
 });
@@ -300,12 +357,17 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
           const fs = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-version-" });
-          const grokPath = path.join(dir, "grok");
+          const grokPath =
+            process.platform === "win32" ? path.join(dir, "grok.cmd") : path.join(dir, "grok");
           yield* fs.writeFileString(
             grokPath,
-            ["#!/bin/sh", `printf "%s\\n" "${secretStderr}" >&2`, "exit 2", ""].join("\n"),
+            process.platform === "win32"
+              ? ["@echo off", `echo ${secretStderr} 1>&2`, "exit /b 2", ""].join("\n")
+              : ["#!/bin/sh", `printf "%s\\n" "${secretStderr}" >&2`, "exit 2", ""].join("\n"),
           );
-          yield* fs.chmod(grokPath, 0o755);
+          if (process.platform !== "win32") {
+            yield* fs.chmod(grokPath, 0o755);
+          }
 
           return yield* checkGrokProviderStatus(
             decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
@@ -328,12 +390,17 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
           const fs = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-success-" });
-          const grokPath = path.join(dir, "grok");
+          const grokPath =
+            process.platform === "win32" ? path.join(dir, "grok.cmd") : path.join(dir, "grok");
           yield* fs.writeFileString(
             grokPath,
-            ["#!/bin/sh", 'printf "grok-cli 0.0.99\\n"', "exit 0", ""].join("\n"),
+            process.platform === "win32"
+              ? ["@echo off", "echo grok-cli 0.0.99", "exit /b 0", ""].join("\n")
+              : ["#!/bin/sh", 'printf "grok-cli 0.0.99\\n"', "exit 0", ""].join("\n"),
           );
-          yield* fs.chmod(grokPath, 0o755);
+          if (process.platform !== "win32") {
+            yield* fs.chmod(grokPath, 0o755);
+          }
 
           return yield* checkGrokProviderStatus(
             decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
@@ -344,11 +411,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
       expect(snapshot.status).toBe("error");
       expect(snapshot.installed).toBe(true);
-      expect(snapshot.models.map((model) => model.slug)).toEqual([
-        "grok-4.6",
-        "grok-4.5",
-        "grok-build",
-      ]);
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-4.5"]);
       expect(snapshot.message).toContain("ACP startup failed");
     }),
   );
@@ -380,8 +443,13 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       );
 
       expect(snapshot.displayName).toBe("Grok Bot");
+      expect(snapshot.models.map((model) => model.slug)).toEqual([
+        "grokbot/grok-4.6",
+        "grokbot/grok-4.5",
+        "grokbot/sand-default",
+        "grokbot/sand-automation",
+      ]);
       expect(snapshot.models.map((model) => model.slug)).not.toContain("grok-build");
-      expect(snapshot.models.map((model) => model.slug)).not.toContain("grok-4.6");
     }),
   );
 

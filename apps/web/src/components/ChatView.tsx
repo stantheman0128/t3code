@@ -290,7 +290,12 @@ import {
   serverEnvironment,
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
-import { threadEnvironment, useCodexGoal, useEnvironmentThread } from "../state/threads";
+import {
+  environmentThreadDetails,
+  threadEnvironment,
+  useCodexGoal,
+  useEnvironmentThread,
+} from "../state/threads";
 import {
   derivePromptGoalFromUserTexts,
   formatCodexGoalDescription,
@@ -413,6 +418,8 @@ import {
   startNewThreadForProject,
   codexArtifactTemplatePromptToAppend,
   waitForStartedServerThread,
+  waitForCheckpointRevert,
+  countCheckpointRevertFailures,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -5952,7 +5959,10 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number, options?: { skipConfirm?: boolean }): Promise<boolean> => {
+    async (
+      turnCount: number,
+      options?: { skipConfirm?: boolean; deferBusyReset?: boolean },
+    ): Promise<boolean> => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return false;
 
@@ -5983,6 +5993,10 @@ function ChatViewContent(props: ChatViewProps) {
 
       setIsRevertingCheckpoint(true);
       setThreadError(activeThread.id, null);
+      const threadRef = scopeThreadRef(environmentId, activeThread.id);
+      const failedRevertCountAtRequest = countCheckpointRevertFailures(
+        appAtomRegistry.get(environmentThreadDetails.detailAtom(threadRef))?.activities ?? [],
+      );
       const result = await revertThreadCheckpoint({
         environmentId,
         input: {
@@ -5990,17 +6004,35 @@ function ChatViewContent(props: ChatViewProps) {
           turnCount,
         },
       });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            activeThread.id,
+            error instanceof Error ? error.message : "Failed to revert thread state.",
+          );
+        }
+        setIsRevertingCheckpoint(false);
+        return false;
+      }
+      const revertOutcome = await waitForCheckpointRevert(threadRef, {
+        targetTurnCount: turnCount,
+        failedRevertCountAtRequest,
+      });
+      if (revertOutcome !== "reverted") {
         setThreadError(
           activeThread.id,
-          error instanceof Error ? error.message : "Failed to revert thread state.",
+          revertOutcome === "failed"
+            ? "Failed to revert thread state."
+            : "Timed out waiting for the thread to finish reverting.",
         );
         setIsRevertingCheckpoint(false);
         return false;
       }
-      setIsRevertingCheckpoint(false);
-      return result._tag !== "Failure";
+      if (!options?.deferBusyReset) {
+        setIsRevertingCheckpoint(false);
+      }
+      return true;
     },
     [
       activeThread,
@@ -6473,6 +6505,12 @@ function ChatViewContent(props: ChatViewProps) {
     };
 
     sendInFlightRef.current = true;
+    setStickyComposerModelSelection(
+      ctxSelectedModelSelection,
+      activeProject
+        ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
+        : null,
+    );
     const attachmentCapabilitiesBeforeUpload = readLiveAttachmentCapabilities();
     if (attachmentCapabilitiesBeforeUpload.fileBlockReason !== null) {
       sendInFlightRef.current = false;
@@ -7628,7 +7666,12 @@ function ChatViewContent(props: ChatViewProps) {
         nextModelSelection,
         { explicit: true },
       );
-      setStickyComposerModelSelection(nextModelSelection);
+      setStickyComposerModelSelection(
+        nextModelSelection,
+        activeProject
+          ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
+          : null,
+      );
       scheduleComposerFocus();
     },
     [
@@ -7637,6 +7680,8 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
+      activeProject,
+      projectGroupingSettings,
       providerStatuses,
       settings,
     ],
@@ -7783,6 +7828,7 @@ function ChatViewContent(props: ChatViewProps) {
         suppressQueueDrainRef.current = true;
         const reverted = await onRevertToTurnCountRef.current(targetTurnCount, {
           skipConfirm: true,
+          deferBusyReset: true,
         });
         if (!reverted) {
           suppressQueueDrainRef.current = false;
@@ -7814,7 +7860,11 @@ function ChatViewContent(props: ChatViewProps) {
           })),
         });
         suppressQueueDrainRef.current = false;
-        await onSendRef.current();
+        try {
+          await onSendRef.current();
+        } finally {
+          setIsRevertingCheckpoint(false);
+        }
       })();
     },
     [composerDraftTarget, routeThreadKey],

@@ -37,10 +37,21 @@ function createContext(overrides: Partial<ChatThreadActionContext> = {}): ChatTh
 }
 
 describe("chatThreadActions", () => {
+  const lastUsedSelection: ModelSelection = {
+    instanceId: ProviderInstanceId.make("grok"),
+    model: "last-used",
+  };
+  const pickerFirstSelection: ModelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "picker-first",
+  };
+
   it("does not carry a non-explicit model from the destination draft back into itself", () => {
     expect(
       resolveNewThreadModelSelectionOverride({
         projectDefaultSelection: null,
+        lastUsedSelection: null,
+        pickerFirstSelection: null,
         carrySelection: CARRIED_SELECTION,
         carrySourceDraftId: "draft-a",
         destinationDraftId: "draft-a",
@@ -48,26 +59,56 @@ describe("chatThreadActions", () => {
     ).toBeNull();
   });
 
-  it("still carries models between different threads when the project has no default", () => {
+  it("uses last-used for an existing project before picker order or carry", () => {
     expect(
       resolveNewThreadModelSelectionOverride({
         projectDefaultSelection: null,
+        lastUsedSelection,
+        pickerFirstSelection,
         carrySelection: CARRIED_SELECTION,
         carrySourceDraftId: "draft-a",
         destinationDraftId: "draft-b",
       }),
-    ).toEqual(CARRIED_SELECTION);
+    ).toEqual(lastUsedSelection);
   });
 
-  it("keeps the project default above any carried selection", () => {
+  it("uses the top picker model for a new project with no last-used selection", () => {
+    expect(
+      resolveNewThreadModelSelectionOverride({
+        projectDefaultSelection: null,
+        lastUsedSelection: null,
+        pickerFirstSelection,
+        carrySelection: CARRIED_SELECTION,
+        carrySourceDraftId: "draft-a",
+        destinationDraftId: "draft-b",
+      }),
+    ).toEqual(pickerFirstSelection);
+  });
+
+  it("keeps an explicit project pin above last-used and picker order", () => {
     expect(
       resolveNewThreadModelSelectionOverride({
         projectDefaultSelection: PROJECT_DEFAULT_SELECTION,
+        lastUsedSelection,
+        pickerFirstSelection,
         carrySelection: CARRIED_SELECTION,
         carrySourceDraftId: "draft-a",
         destinationDraftId: "draft-b",
       }),
     ).toEqual(PROJECT_DEFAULT_SELECTION);
+  });
+
+  it("still carries models between different threads when nothing else is set", () => {
+    expect(
+      resolveNewThreadModelSelectionOverride({
+        projectDefaultSelection: null,
+        lastUsedSelection: null,
+        pickerFirstSelection: null,
+        carrySelection: CARRIED_SELECTION,
+        carrySourceDraftId: "draft-a",
+        destinationDraftId: "draft-b",
+      }),
+    ).toEqual(CARRIED_SELECTION);
   });
 
   it("only applies the start-from-origin default to new worktree drafts", () => {

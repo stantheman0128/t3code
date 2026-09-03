@@ -75,6 +75,15 @@ vi.mock("../../hooks/useSettings", () => ({
     settingsState.updateEnvironmentIds.push(environmentId);
     return settingsState.updateSettings;
   },
+  useClientSettings: (select?: (settings: { providerInstanceOrder: never[] }) => unknown) =>
+    select ? select({ providerInstanceOrder: [] }) : { providerInstanceOrder: [] },
+  useUpdateClientSettings: () => vi.fn(),
+}));
+
+vi.mock("../providerInstanceSortable", () => ({
+  useProviderInstanceDndSensors: () => [],
+  providerInstanceIdsFromDragEnd: () => null,
+  SortableProviderInstanceItem: ({ children }: { children?: unknown }) => children ?? null,
 }));
 
 vi.mock("../../environments/primary", () => ({

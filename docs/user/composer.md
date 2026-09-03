@@ -42,6 +42,11 @@ On mobile, the model picker shows each OpenCode model's upstream provider, such 
 GitHub Copilot, or OpenCode Zen, beneath its name. Search by that provider name to narrow the list
 when starting a thread or changing an existing thread's model.
 
+On web and desktop, drag the provider icons in the model picker to change their order. The same
+order is used in **Settings** → **Providers**. New threads in a project you have already used keep
+that project's last model. A brand-new project starts on the provider at the top of the list,
+unless the project has an explicit default model in its settings.
+
 ## Notices above the composer
 
 On web and desktop, loading and syncing statuses fill the available banner width beside the

@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
   MessageId,
@@ -7,7 +8,6 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
-import { composeProviderSlashMessage, replaceTextRange } from "@t3tools/shared/composerTrigger";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import {
@@ -21,7 +21,11 @@ import {
   type RefObject,
 } from "react";
 import { ActivityIndicator, Platform, Pressable, View, type ViewStyle } from "react-native";
-import ImageViewing from "react-native-image-viewing";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import {
+  composerAttachmentUploadBlockReason,
+  composerAttachmentUploadsAtom,
+} from "../../state/composer-attachment-uploads";
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -38,14 +42,12 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { scopedThreadKey } from "../../lib/scopedEntities";
 
 import { AppText as Text } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumbnail,
 } from "../../components/ComposerAttachmentStrip";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
-import { cn } from "../../lib/cn";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
 import {
@@ -58,11 +60,15 @@ import type {
   DraftComposerAttachment,
   DraftComposerFileAttachment,
 } from "../../lib/composerImages";
-import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
+import {
+  buildModelOptions,
+  groupByProvider,
+  isModelSelectionUnavailable,
+} from "../../lib/modelOptions";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
-import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
 import {
   ComposerDictationCancelAction,
@@ -104,12 +110,6 @@ export interface ThreadComposerProps {
   readonly connectionState: RemoteClientConnectionState;
   readonly connectionError: string | null;
   readonly environmentLabel: string | null;
-  /**
-   * Message sync phase for the selected thread (drives the status pill):
-   * "loading" = first fetch, nothing to show yet; "syncing" = cached messages
-   * are on screen while they reconcile with the server.
-   */
-  readonly threadSyncPhase?: "loading" | "syncing" | null;
   readonly selectedThread: OrchestrationThreadShell;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
@@ -148,6 +148,11 @@ export const COMPOSER_LAYOUT_TRANSITION =
   Platform.OS === "android"
     ? undefined
     : LinearTransition.duration(COMPOSER_TRANSITION_DURATION_MS).reduceMotion(ReduceMotion.System);
+
+const COMPOSER_ATTACHMENT_ENTERING =
+  Platform.OS === "android"
+    ? FadeIn.duration(160)
+    : FadeIn.delay(COMPOSER_TRANSITION_DURATION_MS).duration(160).reduceMotion(ReduceMotion.System);
 
 const AnimatedGlassSurface = Animated.createAnimatedComponent(GlassSurface);
 
@@ -214,7 +219,7 @@ export function ComposerSurface(props: {
 }
 
 type ComposerStatusPillState = {
-  readonly kind: "unavailable" | "reconnecting" | "syncing";
+  readonly kind: "unavailable" | "reconnecting";
   readonly label: string;
 };
 
@@ -222,7 +227,6 @@ function composerConnectionStatus(input: {
   readonly connectionError: string | null;
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
-  readonly threadSyncPhase?: "loading" | "syncing" | null;
 }): ComposerStatusPillState | null {
   const environmentLabel = input.environmentLabel ?? "Environment";
 
@@ -248,38 +252,15 @@ function composerConnectionStatus(input: {
     case "available":
       return { kind: "unavailable", label: `${environmentLabel} is not connected` };
     case "connected":
-      break;
-  }
-
-  // Connected: the pill is the single loading/sync indicator. One stable
-  // label per open — "Loading" when starting from scratch, "Syncing" when
-  // cached messages are already visible.
-  switch (input.threadSyncPhase) {
-    case "loading":
-      return { kind: "syncing", label: "Loading messages..." };
-    case "syncing":
-      return { kind: "syncing", label: "Syncing messages..." };
-    default:
       return null;
   }
-}
-
-function PendingSlashCommandChip(props: { readonly name: string; readonly onRemove: () => void }) {
-  return (
-    <View className="flex-row items-center gap-1 rounded-md border border-border bg-subtle px-1.5 py-0.5">
-      <Text className="text-xs font-t3-medium text-foreground">/{props.name}</Text>
-      <Pressable accessibilityLabel={`Remove /${props.name}`} hitSlop={8} onPress={props.onRemove}>
-        <SymbolView name="xmark" size={9} tintColorClassName={"accent-icon"} type="monochrome" />
-      </Pressable>
-    </View>
-  );
 }
 
 const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(props: {
   readonly onPress: () => void;
   readonly status: ComposerStatusPillState;
 }) {
-  const isReconnecting = props.status.kind !== "unavailable";
+  const isReconnecting = props.status.kind === "reconnecting";
   return (
     <Animated.View
       className="absolute inset-x-0 bottom-full items-center pb-2"
@@ -325,19 +306,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const inFlightThreadIdsRef = useRef(new Set<string>());
   const { onExpandedChange } = props;
 
-  const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
-  const [pendingSlashCommand, setPendingSlashCommand] = useState<{
-    readonly name: string;
-    readonly hint: string | null;
-  } | null>(null);
+  const [previewFile, setPreviewFile] = useState<FilePreviewSource | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
-  useEffect(() => {
-    setPendingSlashCommand(null);
-  }, [props.selectedThread.id]);
-  const hasContent =
-    props.draftMessage.trim().length > 0 ||
-    props.draftAttachments.length > 0 ||
-    pendingSlashCommand !== null;
+  const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
   const showStopAction =
     !hasContent &&
     (props.selectedThread.session?.status === "running" ||
@@ -347,11 +318,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
+  const modelUnavailable =
+    props.connectionState === "connected" &&
+    isModelSelectionUnavailable(props.serverConfig, currentModelSelection);
   const connectionStatus = composerConnectionStatus({
     connectionError: props.connectionError,
     connectionState: props.connectionState,
     environmentLabel: props.environmentLabel,
-    threadSyncPhase: props.threadSyncPhase,
   });
   const selectedProviderStatus = useMemo(() => {
     if (!props.serverConfig) return null;
@@ -371,7 +344,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     selectedProviderStatus,
     hasThread: true,
     onChangeDraftMessage: props.onChangeDraftMessage,
-    onUpdateInteractionMode: props.onUpdateInteractionMode,
+    onUpdateInteractionMode:
+      selectedProviderStatus?.showInteractionModeToggle === false
+        ? undefined
+        : props.onUpdateInteractionMode,
   });
   const voiceInput = useVoiceInputController({
     ownerKey: composerOwnerKey,
@@ -385,27 +361,40 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     voiceInput.elapsedSeconds,
   );
   const isVoiceInputPresented = voicePresentation.statusLabel !== null;
+  // An open draft stays visible; only a collapsed composer becomes a voice strip.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const showsCompactDictation = isVoiceInputPresented && !isExpanded;
   const isToolbarVisible = isExpanded || isVoiceInputPresented;
-  const canSend = hasContent && !voiceInput.blocksSubmission;
+  const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
+  const attachmentBlockReason = composerAttachmentUploadBlockReason({
+    environmentId: props.environmentId,
+    attachments: props.draftAttachments,
+    connected: props.connectionState === "connected",
+    serverConfig: props.serverConfig,
+    states: uploadStates,
+  });
+  const canSend =
+    hasContent &&
+    !voiceInput.blocksSubmission &&
+    attachmentBlockReason === null &&
+    !modelUnavailable;
 
   // Keep the feed inset aligned with the card or compact dictation strip.
   useEffect(() => {
     onExpandedChange?.(isExpanded);
   }, [isExpanded, onExpandedChange]);
 
-  const onPressImage = useCallback(
-    (uri: string) => {
+  const onPressPreview = useCallback(
+    (source: FilePreviewSource) => {
       wasExpandedBeforePreviewRef.current = isFocused;
       setPreviewVideo(null);
-      setPreviewImageUri(uri);
+      setPreviewFile((current) => current ?? source);
     },
     [isFocused],
   );
 
   const closePreview = useCallback(() => {
-    setPreviewImageUri(null);
+    setPreviewFile(null);
     setPreviewVideo(null);
     if (wasExpandedBeforePreviewRef.current) {
       setTimeout(() => {
@@ -417,7 +406,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const onPressVideo = useCallback(
     (attachment: DraftComposerFileAttachment, sourceIdentifier: string) => {
       wasExpandedBeforePreviewRef.current = isFocused;
-      setPreviewImageUri(null);
+      setPreviewFile(null);
       setPreviewVideo((current) => current ?? { type: "local", attachment, sourceIdentifier });
     },
     [isFocused],
@@ -445,12 +434,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
     try {
-      if (pendingSlashCommand) {
-        props.onChangeDraftMessage(
-          composeProviderSlashMessage(pendingSlashCommand.name, props.draftMessage),
-        );
-        setPendingSlashCommand(null);
-      }
       const messageId = await onSendMessage();
       if (messageId === null) {
         return;
@@ -469,33 +452,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
   }, [
     onSendMessage,
-    pendingSlashCommand,
     props.environmentId,
     props.environmentLabel,
     props.selectedThread.id,
     props.selectedThread.title,
     voiceInput.blocksSubmission,
   ]);
-  const handleCommandSelect = useCallback(
-    (item: ComposerCommandItem) => {
-      if (item.type === "provider-slash-command" && composerMenu.trigger) {
-        const result = replaceTextRange(
-          props.draftMessage,
-          composerMenu.trigger.rangeStart,
-          composerMenu.trigger.rangeEnd,
-          "",
-        );
-        props.onChangeDraftMessage(result.text);
-        setPendingSlashCommand({
-          name: item.command.name,
-          hint: item.command.input?.hint ?? null,
-        });
-        return;
-      }
-      composerMenu.onSelect(item);
-    },
-    [composerMenu, props],
-  );
 
   // ── Model menu ───────────────────────────────────────────
   const modelOptions = useMemo(
@@ -528,6 +490,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     () => ({
       ownerId: settingsOwnerId,
       environmentId: props.environmentId,
+      providerInstanceId: currentModelSelection.instanceId,
       providerGroups: threadProviderGroups,
       selectedModel: currentModelSelection,
       onSelectModel: (option) => props.onUpdateModelSelection(option.selection),
@@ -615,7 +578,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               items={composerMenu.items}
               triggerKind={composerMenu.trigger.kind}
               isLoading={composerMenu.isLoading}
-              onSelect={handleCommandSelect}
+              onSelect={composerMenu.onSelect}
             />
           </View>
         ) : null}
@@ -625,6 +588,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             status={connectionStatus}
             onPress={props.onReconnectEnvironment}
           />
+        ) : null}
+
+        {modelUnavailable ? (
+          <Pressable accessibilityRole="button" className="px-3 py-2" onPress={openSettings}>
+            <Text className="text-xs text-foreground">Model unavailable. Open model settings.</Text>
+          </Pressable>
         ) : null}
 
         <ComposerSurface
@@ -660,16 +629,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 onPickFiles={props.onPickDraftFiles}
               />
             ) : null}
-            {isExpanded ? (
+            {isExpanded && props.draftAttachments.length > 0 ? (
               <Animated.View
-                className={props.draftAttachments.length > 0 ? "px-[14px] pb-2.5" : undefined}
-                entering={FadeIn.duration(160)}
+                className="px-[14px] pb-2.5"
+                entering={COMPOSER_ATTACHMENT_ENTERING}
                 exiting={FadeOut.duration(120)}
               >
                 <ComposerAttachmentStrip
+                  environmentId={props.environmentId}
                   attachments={props.draftAttachments}
                   onRemove={voiceInput.isBusy ? () => undefined : props.onRemoveDraftImage}
-                  onPressImage={voiceInput.isBusy ? undefined : onPressImage}
+                  onPressPreview={voiceInput.isBusy ? undefined : onPressPreview}
                   onPressVideo={voiceInput.isBusy ? undefined : onPressVideo}
                 />
               </Animated.View>
@@ -678,65 +648,53 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               className={isExpanded ? "px-[14px]" : "min-w-0 flex-1 px-[4px]"}
               layout={COMPOSER_LAYOUT_TRANSITION}
             >
-              <View className={cn(pendingSlashCommand !== null && "flex-row items-center gap-1.5")}>
-                {pendingSlashCommand !== null ? (
-                  <PendingSlashCommandChip
-                    name={pendingSlashCommand.name}
-                    onRemove={() => setPendingSlashCommand(null)}
-                  />
-                ) : null}
-                <View className="min-w-0 flex-1">
-                  <ComposerEditor
-                    ref={inputRef}
-                    multiline
-                    value={props.draftMessage}
-                    readOnly={voiceInput.freezesEditor}
-                    skills={selectedProviderStatus?.skills ?? []}
-                    selection={composerMenu.selection}
-                    onChangeText={props.onChangeDraftMessage}
-                    onSelectionChange={composerMenu.onSelectionChange}
-                    onPasteImages={(uris) => void props.onNativePasteImages(uris)}
-                    placeholder={
-                      pendingSlashCommand?.hint ??
-                      (pendingSlashCommand
-                        ? `Add arguments for /${pendingSlashCommand.name}, or send it`
-                        : props.placeholder)
-                    }
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
-                    onSubmit={handleSend}
-                    scrollEnabled={isExpanded}
-                    singleLineCentered={!isExpanded}
-                    contentInsetVertical={isExpanded || Platform.OS === "android" ? 0 : 6}
-                    style={
-                      isExpanded
-                        ? {
-                            minHeight: 72,
-                            maxHeight: 160,
-                            paddingVertical: 4,
-                          }
-                        : {
-                            height: 36,
-                          }
-                    }
-                    textStyle={{
-                      ...bodyText,
-                      color: foregroundColor,
-                    }}
-                  />
-                </View>
-              </View>
+              <ComposerEditor
+                ref={inputRef}
+                multiline
+                value={props.draftMessage}
+                readOnly={voiceInput.freezesEditor}
+                skills={composerMenu.skills}
+                selection={composerMenu.selection}
+                onChangeText={props.onChangeDraftMessage}
+                onSelectionChange={composerMenu.onSelectionChange}
+                onPasteImages={(uris) => void props.onNativePasteImages(uris)}
+                placeholder={props.placeholder}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                onSubmit={handleSend}
+                scrollEnabled={isExpanded}
+                // Android: collapsed single line centers natively (gravity) in
+                // a pill-height box matching the send button; iOS keeps insets.
+                singleLineCentered={!isExpanded}
+                contentInsetVertical={isExpanded || Platform.OS === "android" ? 0 : 6}
+                style={
+                  isExpanded
+                    ? {
+                        minHeight: 72,
+                        maxHeight: 160,
+                        paddingVertical: 4,
+                      }
+                    : {
+                        height: 36,
+                      }
+                }
+                textStyle={{
+                  ...bodyText,
+                  color: foregroundColor,
+                }}
+              />
             </Animated.View>
             {!isExpanded && props.draftAttachments.length > 0 ? (
               <View className="flex-row gap-1 pl-1">
                 {props.draftAttachments.slice(0, 3).map((attachment) => (
                   <ComposerAttachmentThumbnail
+                    environmentId={props.environmentId}
                     key={attachment.id}
                     attachment={attachment}
                     size={30}
                     borderRadius={8}
                     compact
-                    onPressImage={onPressImage}
+                    onPressPreview={onPressPreview}
                     onPressVideo={onPressVideo}
                   />
                 ))}
@@ -766,10 +724,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   />
                 ) : (
                   <ComposerActionButton
-                    accessibilityLabel={sendLabel}
+                    accessibilityLabel={attachmentBlockReason ?? sendLabel}
                     icon="arrow.up"
                     variant="primary"
-                    disabled={!hasContent}
+                    disabled={!canSend}
                     onPress={handleSend}
                   />
                 )}
@@ -857,7 +815,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     />
                   ) : voicePresentation.showsSend ? (
                     <ComposerActionButton
-                      accessibilityLabel={sendLabel}
+                      accessibilityLabel={attachmentBlockReason ?? sendLabel}
                       icon="arrow.up"
                       variant="primary"
                       disabled={!canSend}
@@ -882,14 +840,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       </Animated.View>
 
       <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />
-      <ImageViewing
-        images={previewImageUri ? [{ uri: previewImageUri }] : []}
-        imageIndex={0}
-        visible={previewImageUri !== null}
-        onRequestClose={closePreview}
-        swipeToCloseEnabled
-        doubleTapToZoomEnabled
-      />
+      <FilePreviewModal source={previewFile} onRequestClose={closePreview} />
     </Animated.View>
   );
 });

@@ -42,7 +42,6 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import { prependTraditionalChineseInstruction } from "../traditionalChineseInstruction.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -74,12 +73,15 @@ import {
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
-  mergeCursorTodos,
-  type CursorTodoItem,
 } from "../acp/CursorAcpExtension.ts";
 import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  discoverCursorSkills,
+  hasCursorSkillMention,
+  rewriteCursorSkillMentions,
+} from "../Drivers/CursorSkills.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("cursor");
@@ -135,14 +137,13 @@ interface CursorSessionContext {
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   lastPlanFingerprint: string | undefined;
-  lastTodos: ReadonlyArray<CursorTodoItem>;
   activeTurnId: TurnId | undefined;
+  cursorSkillNames: ReadonlySet<string> | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
    * >0 means a turn is actively running, so a new sendTurn is a steer that
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   stopped: boolean;
-  languageInstructionInjected: boolean;
 }
 
 function settlePendingApprovalsAsCancelled(
@@ -542,6 +543,7 @@ export function makeCursorAdapter(
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
+            runtimeMode: input.runtimeMode,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },
             ...(mcpSession
@@ -627,9 +629,6 @@ export function makeCursorAdapter(
                     params,
                     "acp.cursor.extension",
                   );
-                  if (ctx) {
-                    ctx.lastTodos = params.todos;
-                  }
                   yield* offerRuntimeEvent({
                     type: "turn.proposed.completed",
                     ...(yield* makeEventStamp()),
@@ -660,11 +659,9 @@ export function makeCursorAdapter(
                       "acp.cursor.extension",
                     );
                     if (ctx) {
-                      const todos = mergeCursorTodos(ctx.lastTodos, params);
-                      ctx.lastTodos = todos;
                       yield* emitPlanUpdate(
                         ctx,
-                        extractTodosAsPlan({ ...params, todos }),
+                        extractTodosAsPlan(params),
                         params,
                         "acp.cursor.extension",
                         "cursor/update_todos",
@@ -787,11 +784,10 @@ export function makeCursorAdapter(
             pendingUserInputs,
             turns: [],
             lastPlanFingerprint: undefined,
-            lastTodos: [],
             activeTurnId: undefined,
+            cursorSkillNames: undefined,
             promptsInFlight: 0,
             stopped: false,
-            languageInstructionInjected: false,
           };
 
           const nf = yield* Stream.runDrain(
@@ -842,10 +838,6 @@ export function makeCursorAdapter(
                       "session/update",
                     );
                     return;
-                  case "ChildSessionToolCallUpdated":
-                    return;
-                  case "ChildSessionContentDelta":
-                    return;
                   case "ToolCallUpdated":
                     yield* logNative(
                       ctx.threadId,
@@ -879,7 +871,6 @@ export function makeCursorAdapter(
                         turnId: ctx.activeTurnId,
                         ...(event.itemId ? { itemId: event.itemId } : {}),
                         text: event.text,
-                        streamKind: event.streamKind,
                         rawPayload: event.rawPayload,
                       }),
                     );
@@ -965,7 +956,6 @@ export function makeCursorAdapter(
           ctx.activeTurnId = turnId;
           if (steeringTurnId === undefined) {
             ctx.lastPlanFingerprint = undefined;
-            ctx.lastTodos = [];
           }
           ctx.session = {
             ...ctx.session,
@@ -984,9 +974,29 @@ export function makeCursorAdapter(
             });
           }
 
-          const rawPromptParts: Array<EffectAcpSchema.ContentBlock> = [];
-          if (input.input?.trim()) {
-            rawPromptParts.push({ type: "text", text: input.input.trim() });
+          const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
+          const rawPrompt = input.input?.trim() ?? "";
+          if (rawPrompt) {
+            let cursorSkillNames = ctx.cursorSkillNames;
+            if (hasCursorSkillMention(rawPrompt) && cursorSkillNames === undefined) {
+              const skills = yield* discoverCursorSkills(
+                ctx.session.cwd,
+                options?.environment,
+              ).pipe(
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, path),
+              );
+              cursorSkillNames = new Set(
+                skills
+                  .filter((skill) => skill.enabled && skill.userInvocable !== false)
+                  .map((skill) => skill.name),
+              );
+              ctx.cursorSkillNames = cursorSkillNames;
+            }
+            const prompt = cursorSkillNames
+              ? rewriteCursorSkillMentions(rawPrompt, cursorSkillNames)
+              : rawPrompt;
+            promptParts.push({ type: "text", text: prompt });
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
@@ -1017,7 +1027,7 @@ export function makeCursorAdapter(
                     }),
                 ),
               );
-              rawPromptParts.push({
+              promptParts.push({
                 type: "image",
                 data: Buffer.from(bytes).toString("base64"),
                 mimeType: attachment.mimeType,
@@ -1025,16 +1035,7 @@ export function makeCursorAdapter(
             }
           }
 
-          const promptParts = prependTraditionalChineseInstruction({
-            parts: rawPromptParts,
-            alreadyInjected: ctx.languageInstructionInjected,
-            userText: input.input,
-            makeTextPart: (instruction) =>
-              ({ type: "text" as const, text: instruction }) satisfies EffectAcpSchema.ContentBlock,
-          });
-          ctx.languageInstructionInjected = promptParts.injected;
-
-          if (promptParts.parts.length === 0) {
+          if (promptParts.length === 0) {
             return yield* new ProviderAdapterValidationError({
               provider: PROVIDER,
               operation: "sendTurn",
@@ -1044,7 +1045,7 @@ export function makeCursorAdapter(
 
           const result = yield* ctx.acp
             .prompt({
-              prompt: promptParts.parts,
+              prompt: promptParts,
             })
             .pipe(
               Effect.mapError((error) =>
@@ -1054,9 +1055,9 @@ export function makeCursorAdapter(
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
           if (turnRecord) {
-            turnRecord.items.push({ prompt: promptParts.parts, result });
+            turnRecord.items.push({ prompt: promptParts, result });
           } else {
-            ctx.turns.push({ id: turnId, items: [{ prompt: promptParts.parts, result }] });
+            ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
           }
           ctx.session = {
             ...ctx.session,

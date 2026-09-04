@@ -1,41 +1,45 @@
 import {
+  CheckpointRef,
   EnvironmentId,
   MessageId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
+  type ServerProvider,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { Thread, ThreadShell } from "../types";
+import type { Thread, ThreadShell, TurnDiffSummary } from "../types";
+import type { TimelineEntry } from "../session-logic";
+import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
+import type { RightPanelSurface } from "../rightPanelStore";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  agentControlledBrowserCloseConfirmation,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
+  buildRevertTurnCountByUserMessageId,
   buildThreadTurnInterruptInput,
-  composeProviderSlashMessage,
-  resolveComposerPromptForSend,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
+  getAntigravitySendBlockReason,
   getStartedThreadModelChangeBlockReason,
-  loadVideoPreviewUrl,
-  isVideoPreviewRequestCurrent,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
-  previewTabIdsForRightPanelReconcile,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
+  resolveComposerInteractionMode,
+  resolveComposerProviderSelection,
   resolveDraftPromotionNavigationTarget,
-  rightPanelSurfacesRemovedAfterExit,
-  orphanedTerminalIdsAfterReopen,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   resolveDraftHeroState,
@@ -44,38 +48,243 @@ import {
   codexArtifactTemplatePromptToAppend,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
-  shouldDeferRightPanelTerminalClose,
-  deferredRightPanelTerminalIdsForThread,
+  shouldOpenProactivePullRequest,
+  shouldOpenProactiveTurnDiff,
+  shouldRenderPreviewMiniPlayer,
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
   shouldWriteThreadErrorToCurrentServerThread,
-  countCheckpointRevertFailures,
-  resolveCheckpointRevertOutcome,
+  toolGroupConsumesUpwardNavigation,
 } from "./ChatView.logic";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
-describe("loadVideoPreviewUrl", () => {
-  it("loads video bytes into an object URL", async () => {
-    const objectUrl = await loadVideoPreviewUrl("data:video/mp4;base64,AA==");
-    expect(objectUrl).toMatch(/^blob:/);
-    URL.revokeObjectURL(objectUrl);
+describe("agent browser close confirmation", () => {
+  const surfaces = [
+    { id: "browser:one", kind: "preview", resourceId: "tab-1" },
+    { id: "browser:two", kind: "preview", resourceId: "tab-2" },
+    { id: "diff", kind: "diff" },
+  ] satisfies RightPanelSurface[];
+
+  it("only warns for browsers under active agent control", () => {
+    expect(
+      agentControlledBrowserCloseConfirmation(surfaces, {
+        "tab-1": { controller: "none" },
+        "tab-2": { controller: "human" },
+      }),
+    ).toBeNull();
+
+    expect(
+      agentControlledBrowserCloseConfirmation([surfaces[0]!], {
+        "tab-1": { controller: "agent" },
+      }),
+    ).toBe(
+      [
+        "Close browser while the agent is using it?",
+        "The agent is actively controlling this browser. Closing it may interrupt the current browser action.",
+      ].join("\n"),
+    );
   });
 
-  it("stops loading when the preview request is cancelled", async () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    await expect(
-      loadVideoPreviewUrl("data:video/mp4;base64,AA==", controller.signal),
-    ).rejects.toMatchObject({ name: "AbortError" });
+  it("counts every agent-controlled browser in a bulk close", () => {
+    expect(
+      agentControlledBrowserCloseConfirmation(surfaces, {
+        "tab-1": { controller: "agent" },
+        "tab-2": { controller: "agent" },
+      }),
+    ).toContain("Close 2 browsers");
   });
 });
 
-describe("isVideoPreviewRequestCurrent", () => {
-  it("rejects changed threads and replaced previews", () => {
-    expect(isVideoPreviewRequestCurrent("thread-1", "thread-2", 1, 1)).toBe(false);
-    expect(isVideoPreviewRequestCurrent("thread-1", "thread-1", 1, 2)).toBe(false);
-    expect(isVideoPreviewRequestCurrent("thread-1", "thread-1", 2, 2)).toBe(true);
+describe("floating browser preview", () => {
+  it("only hides the duplicate while the same browser is rendered in the panel", () => {
+    expect(shouldRenderPreviewMiniPlayer(null, null)).toBe(false);
+    expect(
+      shouldRenderPreviewMiniPlayer("tab-1", {
+        id: "browser:one",
+        kind: "preview",
+        resourceId: "tab-1",
+      }),
+    ).toBe(false);
+    expect(
+      shouldRenderPreviewMiniPlayer("tab-1", {
+        id: "browser:two",
+        kind: "preview",
+        resourceId: "tab-2",
+      }),
+    ).toBe(true);
+    expect(shouldRenderPreviewMiniPlayer("tab-1", { id: "diff", kind: "diff" })).toBe(true);
+  });
+});
+
+describe("proactive panels", () => {
+  it("opens a pull request only after a newly observed link appears", () => {
+    expect(shouldOpenProactivePullRequest(undefined, "project:repo:42")).toBe(false);
+    expect(shouldOpenProactivePullRequest(null, "project:repo:42")).toBe(true);
+    expect(shouldOpenProactivePullRequest("project:repo:42", "project:repo:42")).toBe(false);
+    expect(shouldOpenProactivePullRequest("project:repo:42", null)).toBe(false);
+  });
+
+  it("opens the diff only when the observed running turn settles", () => {
+    const turnId = TurnId.make("turn-1");
+    expect(
+      shouldOpenProactiveTurnDiff({
+        previousRunningTurnId: undefined,
+        runningTurnId: null,
+        settledTurnId: turnId,
+        turnCompleted: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldOpenProactiveTurnDiff({
+        previousRunningTurnId: turnId,
+        runningTurnId: null,
+        settledTurnId: turnId,
+        turnCompleted: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldOpenProactiveTurnDiff({
+        previousRunningTurnId: turnId,
+        runningTurnId: TurnId.make("turn-2"),
+        settledTurnId: turnId,
+        turnCompleted: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldOpenProactiveTurnDiff({
+        previousRunningTurnId: turnId,
+        runningTurnId: null,
+        settledTurnId: turnId,
+        turnCompleted: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("toolGroupConsumesUpwardNavigation", () => {
+  class ScrollElement extends EventTarget {
+    scrollTop = 0;
+    scrollHeight = 100;
+    clientHeight = 100;
+    overflowY = "visible";
+
+    constructor(
+      readonly parentElement: ScrollElement | null = null,
+      readonly isToolGroup = false,
+    ) {
+      super();
+    }
+
+    closest(selector: string): ScrollElement | null {
+      if (selector !== "[data-tool-group-scroll]") return null;
+      return this.isToolGroup ? this : (this.parentElement?.closest(selector) ?? null);
+    }
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("Element", ScrollElement);
+    vi.stubGlobal("getComputedStyle", (element: ScrollElement) => ({
+      overflowY: element.overflowY,
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("releases upward navigation when an overflowing group is at the top", () => {
+    const group = Object.assign(new ScrollElement(null, true), {
+      overflowY: "auto",
+      scrollHeight: 300,
+    });
+
+    expect(toolGroupConsumesUpwardNavigation(new ScrollElement(group))).toBe(false);
+  });
+
+  it.each([
+    { overflowY: "auto", scrollTop: 1 },
+    { overflowY: "auto", scrollTop: 0.25 },
+    { overflowY: "scroll", scrollTop: 80 },
+  ])("consumes upward navigation within a scrolled group: %j", (scroll) => {
+    const group = Object.assign(new ScrollElement(null, true), {
+      scrollHeight: 300,
+      ...scroll,
+    });
+
+    expect(toolGroupConsumesUpwardNavigation(group)).toBe(true);
+  });
+
+  it.each([100, 300])(
+    "consumes scrolling in a nested result with a group content height of %i",
+    (scrollHeight) => {
+      const group = Object.assign(new ScrollElement(null, true), {
+        overflowY: "auto",
+        scrollHeight,
+      });
+      const result = Object.assign(new ScrollElement(group), {
+        overflowY: "auto",
+        scrollHeight: 300,
+        scrollTop: 0.25,
+      });
+
+      expect(toolGroupConsumesUpwardNavigation(new ScrollElement(result))).toBe(true);
+    },
+  );
+
+  it("releases upward navigation when the group and nested result are both at the top", () => {
+    const group = Object.assign(new ScrollElement(null, true), {
+      overflowY: "auto",
+      scrollHeight: 300,
+    });
+    const result = Object.assign(new ScrollElement(group), {
+      overflowY: "scroll",
+      scrollHeight: 300,
+    });
+
+    expect(toolGroupConsumesUpwardNavigation(new ScrollElement(result))).toBe(false);
+  });
+
+  it("ignores targets outside a tool group and non-element targets", () => {
+    const outside = Object.assign(new ScrollElement(), {
+      overflowY: "auto",
+      scrollHeight: 300,
+      scrollTop: 40,
+    });
+
+    expect(toolGroupConsumesUpwardNavigation(outside)).toBe(false);
+    expect(toolGroupConsumesUpwardNavigation(new EventTarget())).toBe(false);
+    expect(toolGroupConsumesUpwardNavigation(null)).toBe(false);
+  });
+
+  it("does not consume scrolling from an ancestor beyond the tool group", () => {
+    const timeline = Object.assign(new ScrollElement(), {
+      overflowY: "auto",
+      scrollHeight: 300,
+      scrollTop: 40,
+    });
+    const group = new ScrollElement(timeline, true);
+
+    expect(toolGroupConsumesUpwardNavigation(new ScrollElement(group))).toBe(false);
+  });
+
+  it.each(["hidden", "clip", "visible"])(
+    "ignores a non-scrollable child with overflow-y %s",
+    (overflowY) => {
+      const group = new ScrollElement(null, true);
+      const result = Object.assign(new ScrollElement(group), {
+        overflowY,
+        scrollHeight: 300,
+        scrollTop: 40,
+      });
+
+      expect(toolGroupConsumesUpwardNavigation(new ScrollElement(result))).toBe(false);
+    },
+  );
+
+  it("does not consume programmatic scrolling on an overflow-hidden group", () => {
+    const group = Object.assign(new ScrollElement(null, true), {
+      overflowY: "hidden",
+      scrollHeight: 300,
+      scrollTop: 40,
+    });
+
+    expect(toolGroupConsumesUpwardNavigation(group)).toBe(false);
   });
 });
 
@@ -483,6 +692,323 @@ describe("buildThreadTurnInterruptInput", () => {
   });
 });
 
+describe("resolveComposerProviderSelection", () => {
+  const catalogModels: ServerProvider["models"] = [
+    { slug: "gemini-pro", name: "Gemini Pro", isCustom: false, capabilities: null },
+  ];
+
+  function entry(driver: string, instanceId = driver, overrides: Partial<ServerProvider> = {}) {
+    return deriveProviderInstanceEntries([
+      {
+        driver: ProviderDriverKind.make(driver),
+        instanceId: ProviderInstanceId.make(instanceId),
+        enabled: true,
+        installed: true,
+        status: "ready",
+        auth: { status: "authenticated" },
+        version: null,
+        checkedAt: now,
+        models: [],
+        slashCommands: [],
+        skills: [],
+        ...overrides,
+      },
+    ])[0]!;
+  }
+
+  it("uses the custom instance's capability instead of the default instance", () => {
+    const defaultEntry = entry("antigravity", "antigravity", {
+      showInteractionModeToggle: true,
+    });
+    const customEntry = entry("antigravity", "google_work", {
+      showInteractionModeToggle: false,
+    });
+    const selection = resolveComposerProviderSelection({
+      entries: [defaultEntry, customEntry],
+      candidateInstanceIds: [customEntry.instanceId],
+      lockedProvider: null,
+      lockedInstanceId: null,
+    });
+
+    expect(selection.selectedProviderEntry?.instanceId).toBe(customEntry.instanceId);
+    expect(
+      resolveComposerInteractionMode({
+        provider: selection.selectedProviderEntry?.snapshot,
+        planModeEnabled: true,
+        interactionMode: "plan",
+      }),
+    ).toEqual({ enabled: false, interactionMode: "default" });
+  });
+
+  it("uses the fallback provider's plan capability after the draft's instance is disabled", () => {
+    const disabledEntry = entry("antigravity", "antigravity", {
+      enabled: false,
+      showInteractionModeToggle: false,
+    });
+    const fallbackEntry = entry("codex");
+    const selection = resolveComposerProviderSelection({
+      entries: [disabledEntry, fallbackEntry],
+      candidateInstanceIds: [disabledEntry.instanceId],
+      lockedProvider: null,
+      lockedInstanceId: null,
+    });
+
+    expect(selection.selectedProviderEntry?.instanceId).toBe(fallbackEntry.instanceId);
+    expect(
+      resolveComposerInteractionMode({
+        provider: selection.selectedProviderEntry?.snapshot,
+        planModeEnabled: true,
+        interactionMode: "plan",
+      }),
+    ).toEqual({ enabled: true, interactionMode: "plan" });
+  });
+
+  it("keeps a signed-out selection instead of silently switching providers", () => {
+    const signedOutEntry = entry("antigravity", "google_work", {
+      status: "error",
+      auth: { status: "unauthenticated" },
+      models: catalogModels,
+    });
+    const selection = resolveComposerProviderSelection({
+      entries: [entry("codex"), signedOutEntry],
+      candidateInstanceIds: [signedOutEntry.instanceId],
+      lockedProvider: null,
+      lockedInstanceId: null,
+    });
+
+    expect(selection.selectedProviderEntry?.instanceId).toBe(signedOutEntry.instanceId);
+    expect(
+      getAntigravitySendBlockReason(selection.selectedProviderEntry?.snapshot, "gemini-pro"),
+    ).toBe("Sign in to Antigravity in provider settings before sending.");
+  });
+
+  it("blocks sends until the selected Antigravity profile is installed", () => {
+    const provider = entry("antigravity", "google_work", {
+      installed: false,
+      models: catalogModels,
+    }).snapshot;
+
+    expect(getAntigravitySendBlockReason(provider, "gemini-pro")).toBe(
+      "Install Antigravity in provider settings before sending.",
+    );
+  });
+
+  it("blocks sends until Antigravity confirms authentication", () => {
+    const provider = entry("antigravity", "google_work", {
+      auth: { status: "unknown" },
+      models: catalogModels,
+    }).snapshot;
+
+    expect(getAntigravitySendBlockReason(provider, "gemini-pro")).toBe(
+      "Sign in to Antigravity in provider settings before sending.",
+    );
+  });
+
+  it("blocks saved model sends until Antigravity loads its account catalog", () => {
+    expect(getAntigravitySendBlockReason(entry("antigravity").snapshot, "gemini-pro")).toBe(
+      "Refresh Antigravity models in provider settings before sending.",
+    );
+  });
+
+  it("blocks an empty Antigravity selection after the catalog has loaded", () => {
+    const provider = entry("antigravity", "google_work", { models: catalogModels }).snapshot;
+
+    expect(getAntigravitySendBlockReason(provider, "")).toBe(
+      "Choose an Antigravity model before sending.",
+    );
+  });
+
+  it("blocks a saved model that a ready catalog no longer lists", () => {
+    const provider = entry("antigravity", "google_work", {
+      status: "ready",
+      models: catalogModels,
+    }).snapshot;
+
+    expect(getAntigravitySendBlockReason(provider, "saved-model-not-in-current-catalog")).toBe(
+      "That Antigravity model is no longer available. Choose another model.",
+    );
+    expect(getAntigravitySendBlockReason(provider, "gemini-pro")).toBeNull();
+  });
+
+  it("allows a saved native model to retry after a provider error without changing it", () => {
+    const provider = entry("antigravity", "google_work", {
+      status: "error",
+      models: catalogModels,
+    }).snapshot;
+
+    expect(
+      getAntigravitySendBlockReason(provider, "saved-model-not-in-current-catalog"),
+    ).toBeNull();
+  });
+
+  it("keeps existing send behavior for other providers", () => {
+    const provider = entry("codex", "codex", {
+      installed: false,
+      auth: { status: "unknown" },
+      models: [],
+    }).snapshot;
+
+    expect(getAntigravitySendBlockReason(provider, "gpt-model")).toBeNull();
+  });
+
+  it("does not continue an existing Antigravity thread in another profile after deletion", () => {
+    const missingInstanceId = ProviderInstanceId.make("google_work");
+    const selection = resolveComposerProviderSelection({
+      entries: [entry("antigravity")],
+      candidateInstanceIds: [missingInstanceId],
+      lockedProvider: ProviderDriverKind.make("antigravity"),
+      lockedInstanceId: missingInstanceId,
+    });
+
+    expect(selection.selectedProviderEntry).toBeUndefined();
+    expect(selection.unavailableProviderInstanceId).toBe(missingInstanceId);
+  });
+
+  it("does not treat the empty draft placeholder as a provider setup target", () => {
+    const selection = resolveComposerProviderSelection({
+      entries: [entry("antigravity", "antigravity", { enabled: false })],
+      candidateInstanceIds: [NO_PROVIDER_MODEL_SELECTION.instanceId],
+      lockedProvider: null,
+      lockedInstanceId: null,
+    });
+
+    expect(selection.selectedProviderEntry).toBeUndefined();
+    expect(selection.unavailableProviderInstanceId).toBeUndefined();
+  });
+
+  it("keeps the session's continuation group when another instance was selected", () => {
+    const sessionEntry = entry("antigravity", "google_work", {
+      enabled: false,
+      continuation: { groupKey: "work-profile" },
+    });
+    const anotherEntry = entry("antigravity", "google_personal", {
+      continuation: { groupKey: "personal-profile" },
+    });
+    const selection = resolveComposerProviderSelection({
+      entries: [sessionEntry, anotherEntry],
+      candidateInstanceIds: [anotherEntry.instanceId, sessionEntry.instanceId],
+      lockedProvider: ProviderDriverKind.make("antigravity"),
+      lockedInstanceId: sessionEntry.instanceId,
+    });
+
+    expect(selection.selectedProviderEntry).toBeUndefined();
+  });
+});
+
+describe("resolveComposerInteractionMode", () => {
+  it("resets a restored plan draft when the selected instance does not support plan mode", () => {
+    expect(
+      resolveComposerInteractionMode({
+        planModeEnabled: true,
+        provider: { showInteractionModeToggle: false },
+        interactionMode: "plan",
+      }),
+    ).toEqual({ enabled: false, interactionMode: "default" });
+  });
+
+  it("keeps legacy plan behavior for providers that omit the capability", () => {
+    expect(
+      resolveComposerInteractionMode({
+        planModeEnabled: true,
+        provider: {},
+        interactionMode: "plan",
+      }),
+    ).toEqual({ enabled: true, interactionMode: "plan" });
+  });
+
+  it("resets a restored plan draft when the beta setting is off", () => {
+    expect(
+      resolveComposerInteractionMode({
+        planModeEnabled: false,
+        provider: { showInteractionModeToggle: true },
+        interactionMode: "plan",
+      }),
+    ).toEqual({ enabled: false, interactionMode: "default" });
+  });
+
+  it("disables plan mode until the selected provider is available", () => {
+    expect(
+      resolveComposerInteractionMode({
+        planModeEnabled: true,
+        provider: null,
+        interactionMode: "plan",
+      }),
+    ).toEqual({ enabled: false, interactionMode: "default" });
+  });
+});
+
+describe("buildRevertTurnCountByUserMessageId", () => {
+  const userMessageId = MessageId.make("rewind-user-message");
+  const assistantMessageId = MessageId.make("rewind-assistant-message");
+  const turnId = TurnId.make("rewind-turn");
+  const timelineEntries = [
+    {
+      id: userMessageId,
+      kind: "message",
+      createdAt: now,
+      message: {
+        id: userMessageId,
+        role: "user",
+        text: "Update the file",
+        turnId,
+        createdAt: now,
+        updatedAt: now,
+        streaming: false,
+      },
+    },
+    {
+      id: assistantMessageId,
+      kind: "message",
+      createdAt: now,
+      message: {
+        id: assistantMessageId,
+        role: "assistant",
+        text: "Updated the file",
+        turnId,
+        createdAt: now,
+        updatedAt: now,
+        streaming: false,
+      },
+    },
+  ] satisfies ReadonlyArray<TimelineEntry>;
+  const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>([
+    [
+      assistantMessageId,
+      {
+        turnId,
+        checkpointTurnCount: 1,
+        checkpointRef: CheckpointRef.make("refs/t3/checkpoints/rewind-turn"),
+        status: "ready",
+        files: [],
+        assistantMessageId,
+        completedAt: now,
+      },
+    ],
+  ]);
+
+  it("offers the checkpoint before the user message when conversation rollback is supported", () => {
+    expect(
+      buildRevertTurnCountByUserMessageId({
+        supportsConversationRollback: true,
+        timelineEntries,
+        turnDiffSummaryByAssistantMessageId,
+        inferredCheckpointTurnCountByTurnId: {},
+      }),
+    ).toEqual(new Map([[userMessageId, 0]]));
+  });
+
+  it("offers no rewind action when file checkpoints exist but conversation rollback is unsupported", () => {
+    expect(
+      buildRevertTurnCountByUserMessageId({
+        supportsConversationRollback: false,
+        timelineEntries,
+        turnDiffSummaryByAssistantMessageId,
+        inferredCheckpointTurnCountByTurnId: {},
+      }).size,
+    ).toBe(0);
+  });
+});
+
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {
     const state = deriveComposerSendState({
@@ -553,63 +1079,6 @@ describe("deriveComposerSendState", () => {
         elementContextCount: 0,
       }).hasSendableContent,
     ).toBe(false);
-  });
-
-  it("treats an armed provider slash command as sendable", () => {
-    expect(
-      deriveComposerSendState({
-        prompt: "",
-        imageCount: 0,
-        terminalContexts: [],
-        slashCommandActive: true,
-      }).hasSendableContent,
-    ).toBe(true);
-  });
-});
-
-describe("composeProviderSlashMessage", () => {
-  it("keeps a plain prompt when no command is armed", () => {
-    expect(composeProviderSlashMessage(null, "  hello  ")).toBe("hello");
-  });
-
-  it("sends the command name alone when the prompt is empty", () => {
-    expect(composeProviderSlashMessage({ name: "goal pause", hint: null }, "")).toBe("/goal pause");
-  });
-
-  it("puts the prompt after the command name", () => {
-    expect(
-      composeProviderSlashMessage({ name: "goal", hint: "objective" }, "keep tests green"),
-    ).toBe("/goal keep tests green");
-  });
-});
-
-describe("resolveComposerPromptForSend", () => {
-  it("rewrites clear-go aliases so Grok receives /goal clear instead of prose", () => {
-    expect(resolveComposerPromptForSend(null, "clear go")).toEqual({
-      composed: "clear go",
-      send: "/goal clear",
-    });
-    expect(resolveComposerPromptForSend(null, "go clear")).toEqual({
-      composed: "go clear",
-      send: "/goal clear",
-    });
-    expect(resolveComposerPromptForSend({ name: "goal clear", hint: null }, "")).toEqual({
-      composed: "/goal clear",
-      send: "/goal clear",
-    });
-  });
-
-  it("leaves ordinary prompts and goal-set commands unchanged", () => {
-    expect(resolveComposerPromptForSend(null, "keep going")).toEqual({
-      composed: "keep going",
-      send: "keep going",
-    });
-    expect(
-      resolveComposerPromptForSend({ name: "goal", hint: "objective" }, "pack the NSIS installer"),
-    ).toEqual({
-      composed: "/goal pack the NSIS installer",
-      send: "/goal pack the NSIS installer",
-    });
   });
 });
 
@@ -823,200 +1292,6 @@ describe("reconcileMountedTerminalThreadIds", () => {
         activeThreadTerminalOpen: false,
       }),
     ).toEqual(ids.slice(-MAX_HIDDEN_MOUNTED_TERMINAL_THREADS));
-  });
-
-  it("keeps the active thread mounted after close so the drawer can animate out", () => {
-    expect(
-      reconcileMountedTerminalThreadIds({
-        currentThreadIds: ["thread-a"],
-        openThreadIds: [],
-        activeThreadId: "thread-a",
-        activeThreadTerminalOpen: false,
-        alwaysRetainActiveThread: true,
-      }),
-    ).toEqual(["thread-a"]);
-  });
-
-  it("retains the active terminal while its close transition exits", () => {
-    expect(
-      reconcileMountedTerminalThreadIds({
-        currentThreadIds: ["thread-a"],
-        openThreadIds: [],
-        activeThreadId: "thread-a",
-        activeThreadTerminalOpen: false,
-        activeThreadTerminalExiting: true,
-      }),
-    ).toEqual(["thread-a"]);
-  });
-});
-
-describe("rightPanelSurfacesRemovedAfterExit", () => {
-  it("returns only resources that stayed closed through the exit", () => {
-    const browser = { id: "browser:one", kind: "preview" };
-    const terminal = { id: "terminal:one", kind: "terminal" };
-
-    expect(
-      rightPanelSurfacesRemovedAfterExit(
-        [browser, terminal],
-        [terminal, { id: "files", kind: "files" }],
-      ),
-    ).toEqual([browser]);
-  });
-
-  it("does not clean up resources when the panel was only hidden", () => {
-    const surfaces = [{ id: "browser:one", kind: "preview" }];
-
-    expect(rightPanelSurfacesRemovedAfterExit(surfaces, surfaces)).toEqual([]);
-  });
-});
-
-describe("orphanedTerminalIdsAfterReopen", () => {
-  const terminalSurface = (
-    id: `terminal:${string}`,
-    terminalIds: string[],
-    activeTerminalId = terminalIds[0] ?? "",
-  ) => ({
-    id,
-    kind: "terminal" as const,
-    resourceId: `resource-${id}`,
-    terminalIds,
-    activeTerminalId,
-  });
-
-  it("finds split sessions dropped when a deferred surface reopens shrunken", () => {
-    expect(
-      orphanedTerminalIdsAfterReopen(
-        [terminalSurface("terminal:one", ["term-1", "term-2"])],
-        [terminalSurface("terminal:one", ["term-1"])],
-      ),
-    ).toEqual(["term-2"]);
-  });
-
-  it("returns nothing for surfaces that stayed identical or vanished", () => {
-    expect(
-      orphanedTerminalIdsAfterReopen(
-        [
-          terminalSurface("terminal:kept", ["term-1", "term-2"]),
-          terminalSurface("terminal:gone", ["term-3"]),
-        ],
-        [terminalSurface("terminal:kept", ["term-1", "term-2"])],
-      ),
-    ).toEqual([]);
-  });
-
-  it("ignores non-terminal deferred surfaces", () => {
-    expect(
-      orphanedTerminalIdsAfterReopen(
-        [{ id: "agents:one", kind: "agents" } as never],
-        [{ id: "agents:one", kind: "agents" } as never],
-      ),
-    ).toEqual([]);
-  });
-});
-
-describe("previewTabIdsForRightPanelReconcile", () => {
-  it("suppresses preview sessions that are waiting for exit cleanup", () => {
-    expect(
-      previewTabIdsForRightPanelReconcile(
-        ["closing", "open"],
-        [{ id: "browser:closing", kind: "preview", resourceId: "closing" }],
-        [{ id: "browser:open" }],
-      ),
-    ).toEqual(["open"]);
-  });
-
-  it("keeps a preview session that was explicitly reopened during exit", () => {
-    expect(
-      previewTabIdsForRightPanelReconcile(
-        ["reopened"],
-        [{ id: "browser:reopened", kind: "preview", resourceId: "reopened" }],
-        [{ id: "browser:reopened" }],
-      ),
-    ).toEqual(["reopened"]);
-  });
-});
-
-describe("shouldDeferRightPanelTerminalClose", () => {
-  it("defers the last inline terminal so exit cleanup owns teardown", () => {
-    expect(
-      shouldDeferRightPanelTerminalClose({
-        usesSheet: false,
-        panelOpen: true,
-        surfaceCount: 1,
-        terminalCount: 1,
-      }),
-    ).toBe(true);
-  });
-
-  it("keeps immediate teardown when closing does not exit the inline panel", () => {
-    expect(
-      shouldDeferRightPanelTerminalClose({
-        usesSheet: false,
-        panelOpen: true,
-        surfaceCount: 2,
-        terminalCount: 1,
-      }),
-    ).toBe(false);
-    expect(
-      shouldDeferRightPanelTerminalClose({
-        usesSheet: true,
-        panelOpen: true,
-        surfaceCount: 1,
-        terminalCount: 1,
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("deferredRightPanelTerminalIdsForThread", () => {
-  const threadRefA = {
-    environmentId: EnvironmentId.make("env-1"),
-    threadId: ThreadId.make("thread-a"),
-  };
-  const pending: Parameters<typeof deferredRightPanelTerminalIdsForThread>[0] = {
-    threadRef: threadRefA,
-    surfaces: [
-      {
-        kind: "terminal",
-        id: "terminal:surface-1",
-        resourceId: "resource-1",
-        terminalIds: ["t-1", "t-2"],
-        activeTerminalId: "t-1",
-      },
-    ],
-  };
-
-  it("collects terminal ids for the pending cleanup's own thread", () => {
-    expect([
-      ...deferredRightPanelTerminalIdsForThread(pending, scopedThreadKey(threadRefA)),
-    ]).toEqual(["t-1", "t-2"]);
-  });
-
-  it("returns the shared empty set for other threads and when nothing is pending", () => {
-    const otherThreadKey = scopedThreadKey({
-      environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-b"),
-    });
-    expect(deferredRightPanelTerminalIdsForThread(pending, otherThreadKey)).toBe(
-      deferredRightPanelTerminalIdsForThread(null, otherThreadKey),
-    );
-    expect(
-      deferredRightPanelTerminalIdsForThread(
-        {
-          threadRef: threadRefA,
-          surfaces: [
-            {
-              kind: "terminal",
-              id: "terminal:s",
-              resourceId: "resource-s",
-              terminalIds: [],
-              activeTerminalId: "",
-            },
-          ],
-        },
-        scopedThreadKey(threadRefA),
-      ),
-    ).toBe(deferredRightPanelTerminalIdsForThread(null, otherThreadKey));
   });
 });
 
@@ -1292,57 +1567,5 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
-  });
-});
-
-describe("resolveCheckpointRevertOutcome", () => {
-  it("stays pending while later checkpoints still exist", () => {
-    expect(
-      resolveCheckpointRevertOutcome({
-        checkpoints: [{ checkpointTurnCount: 1 }, { checkpointTurnCount: 2 }],
-        failedRevertCount: 0,
-        failedRevertCountAtRequest: 0,
-        targetTurnCount: 1,
-      }),
-    ).toBe("pending");
-  });
-
-  it("treats trimmed checkpoints as reverted only after the session is idle", () => {
-    expect(
-      resolveCheckpointRevertOutcome({
-        checkpoints: [{ checkpointTurnCount: 1 }],
-        failedRevertCount: 0,
-        failedRevertCountAtRequest: 0,
-        targetTurnCount: 1,
-        sessionStatus: "running",
-      }),
-    ).toBe("pending");
-    expect(
-      resolveCheckpointRevertOutcome({
-        checkpoints: [{ checkpointTurnCount: 1 }],
-        failedRevertCount: 0,
-        failedRevertCountAtRequest: 0,
-        targetTurnCount: 1,
-        sessionStatus: "ready",
-      }),
-    ).toBe("reverted");
-  });
-
-  it("fails when a new revert-failed activity arrives", () => {
-    expect(countCheckpointRevertFailures([{ kind: "tool.started" }])).toBe(0);
-    expect(
-      countCheckpointRevertFailures([
-        { kind: "checkpoint.revert.failed" },
-        { kind: "checkpoint.revert.failed" },
-      ]),
-    ).toBe(2);
-    expect(
-      resolveCheckpointRevertOutcome({
-        checkpoints: [{ checkpointTurnCount: 1 }, { checkpointTurnCount: 2 }],
-        failedRevertCount: 1,
-        failedRevertCountAtRequest: 0,
-        targetTurnCount: 1,
-      }),
-    ).toBe("failed");
   });
 });

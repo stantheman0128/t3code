@@ -8,6 +8,7 @@ import type {
   ServerProviderSlashCommand,
   ServerProviderModel,
   ServerProviderState,
+  ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
@@ -52,6 +53,7 @@ export interface ProviderProbeResult {
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: ServerProviderAuth;
   readonly message?: string;
+  readonly usageLimits?: ServerProviderUsageLimits;
 }
 
 export interface ServerProviderPresentation {
@@ -264,7 +266,9 @@ export function buildServerProvider(input: {
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
-    ...(input.usageLimits ? { usageLimits: input.usageLimits } : {}),
+    ...((input.probe.usageLimits ?? input.usageLimits)
+      ? { usageLimits: input.probe.usageLimits ?? input.usageLimits }
+      : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
     ...(loginCommand ? { loginCommand } : {}),
   };

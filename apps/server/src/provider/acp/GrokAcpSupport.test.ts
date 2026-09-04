@@ -311,6 +311,44 @@ describe("applyGrokAcpModelSelection", () => {
     }),
   );
 
+  it.effect("keeps the session's current model when the product slug is requested", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-4.6",
+        requestedModelId: "grok-build",
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([]);
+      expect(result).toEqual({
+        modelId: "grok-4.6",
+        reasoningEffort: undefined,
+        fastMode: undefined,
+      });
+    }),
+  );
+
+  it.effect("applies reasoning to the current model when the product slug is requested", () =>
+    Effect.gen(function* () {
+      const { runtime, modelCalls } = makeRecordingRuntime();
+      const result = yield* applyGrokAcpModelSelection({
+        runtime,
+        currentModelId: "grok-4.6",
+        currentReasoningEffort: "high",
+        requestedModelId: "grok-build",
+        requestedReasoningEffort: "xhigh",
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
+      expect(result).toEqual({
+        modelId: "grok-4.6",
+        reasoningEffort: "xhigh",
+        fastMode: undefined,
+      });
+    }),
+  );
+
   it.effect("skips set_model when no model is requested", () =>
     Effect.gen(function* () {
       const { runtime, modelCalls } = makeRecordingRuntime();

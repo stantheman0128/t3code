@@ -7,13 +7,9 @@ import {
   getDefaultProviderInstanceModel,
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
-  reorderProviderInstanceIds,
   resolveDefaultProviderModelSelection,
-  resolvePickerFirstModelSelection,
-  resolveProviderInstanceOrder,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
-  sortProviderInstanceEntries,
 } from "./providerInstances";
 
 function provider(input: {
@@ -124,37 +120,75 @@ describe("applyProviderInstanceSettings", () => {
     expect(entry?.enabled).toBe(false);
   });
 
-  it("relabels a custom Codex instance to Codex after settings turn the default off", () => {
+  it.each(["constructor", "toString"])(
+    "treats a removed custom instance named %s as disabled",
+    (instanceId) => {
+      const entries = deriveProviderInstanceEntries([
+        provider({
+          provider: ProviderDriverKind.make("claudeAgent"),
+          instanceId,
+        }),
+      ]);
+      const [entry] = applyProviderInstanceSettings(entries, {
+        providerInstances: {},
+        providers: {} as never,
+      });
+
+      expect(entry?.enabled).toBe(false);
+    },
+  );
+
+  it("uses settings for a configured custom instance named constructor", () => {
+    const instanceId = ProviderInstanceId.make("constructor");
     const entries = deriveProviderInstanceEntries([
       provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex",
-        displayName: "Codex A",
-      }),
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex_codex_b",
-        displayName: "Codex",
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId,
       }),
     ]);
-    const labeled = applyProviderInstanceSettings(entries, {
+    const [entry] = applyProviderInstanceSettings(entries, {
       providerInstances: {
-        [ProviderInstanceId.make("codex")]: {
-          driver: ProviderDriverKind.make("codex"),
+        [instanceId]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
           enabled: false,
-        },
-        [ProviderInstanceId.make("codex_codex_b")]: {
-          driver: ProviderDriverKind.make("codex"),
-          enabled: true,
         },
       },
       providers: {} as never,
     });
 
-    expect(labeled.map((entry) => [entry.instanceId, entry.enabled, entry.displayName])).toEqual([
-      ["codex", false, "Codex A"],
-      ["codex_codex_b", true, "Codex"],
+    expect(entry?.enabled).toBe(false);
+  });
+
+  it("treats a removed default instance for a fork driver as disabled", () => {
+    const driver = ProviderDriverKind.make("constructor");
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: driver,
+        instanceId: "constructor",
+      }),
     ]);
+    const [entry] = applyProviderInstanceSettings(entries, {
+      providerInstances: {},
+      providers: {} as never,
+    });
+
+    expect(entry?.isDefault).toBe(true);
+    expect(entry?.enabled).toBe(false);
+  });
+
+  it("uses legacy settings for a built-in default instance", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+      }),
+    ]);
+    const [entry] = applyProviderInstanceSettings(entries, {
+      providerInstances: {},
+      providers: { codex: { enabled: false } } as never,
+    });
+
+    expect(entry?.enabled).toBe(false);
   });
 });
 
@@ -169,42 +203,6 @@ describe("deriveProviderInstanceEntries", () => {
     expect(entry?.instanceId).toBe("codex_personal");
     expect(entry?.driverKind).toBe("codex");
     expect(entry?.isDefault).toBe(false);
-  });
-
-  it("labels a lone custom Codex instance as Codex when the default is off", () => {
-    const [defaultEntry, customEntry] = deriveProviderInstanceEntries([
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex",
-        displayName: "Codex A",
-        enabled: false,
-      }),
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex_codex_b",
-        displayName: "Codex",
-      }),
-    ]);
-
-    expect(defaultEntry?.displayName).toBe("Codex A");
-    expect(customEntry?.displayName).toBe("Codex");
-  });
-
-  it("keeps custom Codex instances distinct when more than one is enabled", () => {
-    const entries = deriveProviderInstanceEntries([
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex",
-        displayName: "Codex",
-      }),
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex_codex_b",
-        displayName: "Codex",
-      }),
-    ]);
-
-    expect(entries.map((entry) => entry.displayName)).toEqual(["Codex", "Codex B"]);
   });
 });
 
@@ -580,61 +578,5 @@ describe("resolveDefaultProviderModelSelection", () => {
         null,
       ),
     ).toBeNull();
-  });
-});
-
-describe("provider instance order", () => {
-  it("fills stored order with any visible ids that were not saved yet", () => {
-    const grok = ProviderInstanceId.make("grok");
-    const claude = ProviderInstanceId.make("claudeAgent");
-    const codex = ProviderInstanceId.make("codex");
-    expect(resolveProviderInstanceOrder([codex, claude, grok], [grok, claude])).toEqual([
-      grok,
-      claude,
-      codex,
-    ]);
-  });
-
-  it("reorders ids and sorts Grok before Claude when asked", () => {
-    const grok = ProviderInstanceId.make("grok");
-    const claude = ProviderInstanceId.make("claudeAgent");
-    const codex = ProviderInstanceId.make("codex");
-    expect(reorderProviderInstanceIds([codex, claude, grok], grok, claude)).toEqual([
-      codex,
-      grok,
-      claude,
-    ]);
-
-    const entries = deriveProviderInstanceEntries([
-      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
-      provider({ provider: ProviderDriverKind.make("grok"), instanceId: "grok" }),
-      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
-    ]);
-    expect(
-      sortProviderInstanceEntries(entries, [grok, claude, codex]).map((entry) => entry.instanceId),
-    ).toEqual([grok, claude, codex]);
-  });
-
-  it("picks the first ready instance in picker order for a new project", () => {
-    const grok = ProviderInstanceId.make("grok");
-    const claude = ProviderInstanceId.make("claudeAgent");
-    const providers = [
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claudeAgent",
-        models: [model("claude-opus-4-6", false, true)],
-      }),
-      provider({
-        provider: ProviderDriverKind.make("grok"),
-        instanceId: "grok",
-        models: [model("grok-4.6", false, true)],
-      }),
-    ];
-    expect(
-      resolvePickerFirstModelSelection(providers, { providerInstances: {}, providers: {} }, [
-        grok,
-        claude,
-      ]),
-    ).toEqual({ instanceId: grok, model: "grok-4.6" });
   });
 });

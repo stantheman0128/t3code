@@ -191,6 +191,12 @@ export const makeGrokAcpRuntime = (
     return yield* makeXAiPromptCompletionRuntime(runtime);
   });
 
+/**
+ * T3's built-in Grok slug. It is the CLI's product name, not a model id the ACP accepts,
+ * so selecting it means "use whatever model the Grok session currently runs on".
+ */
+export const GROK_DEFAULT_MODEL_SLUG = "grok-build";
+
 export function resolveGrokAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
   const base = trimmed && trimmed.length > 0 ? trimmed : "grok-4.6";
@@ -678,14 +684,17 @@ export function applyGrokAcpModelSelection<E>(input: {
   readonly requestedFastMode?: boolean | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<GrokAcpSelection, E> {
+  // The product slug is never sent over the wire; it keeps the session's current model.
+  const requestedWithoutProductSlug =
+    input.requestedModelId === GROK_DEFAULT_MODEL_SLUG ? undefined : input.requestedModelId;
   const requestedModelId =
     input.availableModelIds !== undefined
       ? resolveGrokSessionModelId({
-          requested: input.requestedModelId,
+          requested: requestedWithoutProductSlug,
           current: input.currentModelId,
           availableIds: input.availableModelIds,
         })
-      : input.requestedModelId;
+      : requestedWithoutProductSlug;
   const modelChanged = requestedModelId !== undefined && requestedModelId !== input.currentModelId;
   const reasoningProvided = input.requestedReasoningEffort !== undefined;
   const reasoningEffort = reasoningProvided

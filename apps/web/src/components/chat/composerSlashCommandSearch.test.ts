@@ -177,48 +177,7 @@ describe("searchSlashCommandItems", () => {
     ]);
   });
 
-  it("ranks native /goal ahead of /goal status and a Goal skill", () => {
-    const grokDriver = ProviderDriverKind.make("grok");
-    const items = [
-      {
-        id: "provider-slash-command:grok:goal status",
-        type: "provider-slash-command",
-        provider: grokDriver,
-        command: { name: "goal status" },
-        label: "/goal status",
-        description: "Show the current Grok goal",
-      },
-      {
-        id: "skill:grok:Goal",
-        type: "skill",
-        provider: grokDriver,
-        skill: {
-          name: "Goal",
-          path: "C:\\Users\\ada\\.agents\\skills\\goal\\SKILL.md",
-          enabled: true,
-          shortDescription: "Run or manage a Codex-style persistent goal loop",
-        },
-        label: "/skill:Goal",
-        description: "Run or manage a Codex-style persistent goal loop",
-      },
-      {
-        id: "provider-slash-command:grok:goal",
-        type: "provider-slash-command",
-        provider: grokDriver,
-        command: { name: "goal", input: { hint: "objective" } },
-        label: "/goal",
-        description: "Set an autonomous goal Grok keeps working until evidence confirms it",
-      },
-    ] satisfies Array<Extract<ComposerCommandItem, { type: "provider-slash-command" | "skill" }>>;
-
-    expect(searchSlashCommandItems(items, "goal").map((item) => item.id)).toEqual([
-      "provider-slash-command:grok:goal",
-      "skill:grok:Goal",
-      "provider-slash-command:grok:goal status",
-    ]);
-  });
-
-  it("hides skills from slash completion after the first message line", () => {
+  it("hides provider commands from slash completion after the first message line", () => {
     const items = [
       {
         id: "slash:model",
@@ -226,6 +185,14 @@ describe("searchSlashCommandItems", () => {
         command: "model",
         label: "/model",
         description: "Switch model",
+      },
+      {
+        id: "provider-slash-command:claudeAgent:compact",
+        type: "provider-slash-command",
+        provider: claudeDriver,
+        command: { name: "compact" },
+        label: "/compact",
+        description: "Compact the conversation",
       },
       {
         id: "skill:claudeAgent:unslop",
@@ -245,9 +212,11 @@ describe("searchSlashCommandItems", () => {
 
     expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
       "slash:model",
+      "skill:claudeAgent:unslop",
     ]);
     expect(slashCommandItemsForPromptPosition(items, true).map((item) => item.id)).toEqual([
       "slash:model",
+      "provider-slash-command:claudeAgent:compact",
       "skill:claudeAgent:unslop",
     ]);
   });

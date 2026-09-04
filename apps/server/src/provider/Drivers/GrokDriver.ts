@@ -1,4 +1,4 @@
-import { GrokSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+import { GrokSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -25,8 +25,9 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
-import { providerLoginCommandFields, type ServerProviderDraft } from "../providerSnapshot.ts";
+import { withInstanceIdentity } from "./instanceIdentity.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { discoverGrokSkills } from "./GrokSkills.ts";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   makeStaticProviderMaintenanceResolver,
@@ -95,24 +96,6 @@ export type GrokDriverEnv =
   | ProviderEventLoggers
   | ServerConfig
   | ServerSettingsService;
-
-const withInstanceIdentity =
-  (input: {
-    readonly driverKind: ProviderDriverKind;
-    readonly instanceId: ProviderInstance["instanceId"];
-    readonly displayName: string | undefined;
-    readonly accentColor: string | undefined;
-    readonly continuationGroupKey: string;
-  }) =>
-  (snapshot: ServerProviderDraft): ServerProvider => ({
-    ...snapshot,
-    instanceId: input.instanceId,
-    driver: input.driverKind,
-    ...providerLoginCommandFields(input.driverKind),
-    ...(input.displayName ? { displayName: input.displayName } : {}),
-    ...(input.accentColor ? { accentColor: input.accentColor } : {}),
-    continuation: { groupKey: input.continuationGroupKey },
-  });
 
 export function createGrokFamilyDriver(spec: {
   readonly driverKind: ProviderDriverKind;
@@ -229,6 +212,24 @@ export function createGrokFamilyDriver(spec: {
               }),
           ),
         );
+        const snapshotForCwd = (workspaceCwd: string) =>
+          !effectiveConfig.enabled
+            ? snapshot.getSnapshot
+            : Effect.all([
+                snapshot.getSnapshot,
+                discoverGrokSkills(effectiveConfig, processEnv, workspaceCwd).pipe(
+                  Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderDriverError({
+                        driver: driverKind,
+                        instanceId,
+                        detail: `Failed to discover Grok skills for '${workspaceCwd}'`,
+                        cause,
+                      }),
+                  ),
+                ),
+              ]).pipe(Effect.map(([machineSnapshot, skills]) => ({ ...machineSnapshot, skills })));
 
         return {
           instanceId,
@@ -238,6 +239,7 @@ export function createGrokFamilyDriver(spec: {
           accentColor,
           enabled,
           snapshot,
+          snapshotForCwd,
           adapter,
           textGeneration,
         } satisfies ProviderInstance;

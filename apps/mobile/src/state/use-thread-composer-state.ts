@@ -1,17 +1,19 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
   MessageId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ThreadId,
   type EnvironmentId,
   type ModelSelection,
   type ProviderInteractionMode,
   type RuntimeMode,
-  type ThreadId,
 } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
@@ -20,8 +22,13 @@ import {
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
+import {
+  parseSpawnProviderSlashCommand,
+  resolveSpawnProviderModelSelection,
+  SPAWN_PROVIDER_TARGETS,
+} from "@t3tools/shared/spawnProviderSession";
 
-import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
+import { makeQueuedMessageMetadata, makeTurnCommandMetadata } from "../lib/commandMetadata";
 import { isModelSelectionUnavailable } from "../lib/modelOptions";
 import { resolveProviderInteractionMode } from "../features/threads/legacy-plan-mode";
 import {
@@ -48,12 +55,14 @@ import {
   removeComposerDraftAttachment,
   scheduleUnusedComposerAttachmentCleanup,
   setComposerDraftText,
+  setStickyComposerModelSelection,
   updateComposerDraftSettings,
   useComposerDraft,
 } from "./use-composer-drafts";
 import { setPendingConnectionError } from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
+import { useProject } from "./entities";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
@@ -102,12 +111,21 @@ export function useThreadDraftForThread(input: {
 }
 
 export function useThreadComposerState() {
+  const navigation = useNavigation();
   const {
     selectedThread: selectedThreadShell,
     selectedThreadCreation,
     selectedEnvironmentRuntime,
   } = useThreadSelection();
   const selectedThreadDetail = useSelectedThreadDetail();
+  const selectedProject = useProject(
+    selectedThreadShell
+      ? {
+          environmentId: selectedThreadShell.environmentId,
+          projectId: selectedThreadShell.projectId,
+        }
+      : null,
+  );
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
@@ -383,6 +401,77 @@ export function useThreadComposerState() {
       return null;
     }
 
+    const spawn = attachments.length === 0 ? parseSpawnProviderSlashCommand(text) : null;
+    if (spawn) {
+      const target = SPAWN_PROVIDER_TARGETS[spawn.command];
+      const selection = resolveSpawnProviderModelSelection(
+        serverConfig?.providers ?? [],
+        target.driverKind,
+      );
+      if (!selection) {
+        Alert.alert(
+          `${target.displayName} isn't ready`,
+          `Enable ${target.displayName} in Settings → Providers, then try again.`,
+        );
+        return null;
+      }
+      setStickyComposerModelSelection(selection);
+      if (spawn.prompt === null) {
+        clearComposerDraftContent(threadKey);
+        navigation.navigate("NewTaskSheet", {
+          screen: "NewTaskDraft",
+          params: {
+            environmentId: String(selectedThreadShell.environmentId),
+            projectId: String(selectedThreadShell.projectId),
+            branch: selectedThreadShell.branch,
+            worktreePath: selectedThreadShell.worktreePath,
+            modelInstanceId: String(selection.instanceId),
+            model: selection.model,
+          },
+        });
+        return null;
+      }
+      const metadata = makeTurnCommandMetadata();
+      const messageId = MessageId.make(metadata.messageId);
+      const enqueuePromise = enqueueThreadOutboxMessage({
+        environmentId: selectedThreadShell.environmentId,
+        threadId: ThreadId.make(metadata.threadId),
+        messageId,
+        commandId: CommandId.make(metadata.commandId),
+        text: spawn.prompt,
+        attachments: [],
+        modelSelection: selection,
+        runtimeMode: draft.runtimeMode ?? thread.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        creation: {
+          projectId: selectedThreadShell.projectId,
+          ...(selectedProject?.title !== undefined ? { projectTitle: selectedProject.title } : {}),
+          ...(selectedProject?.workspaceRoot !== undefined
+            ? { projectCwd: selectedProject.workspaceRoot }
+            : {}),
+          workspaceMode: "local",
+          branch: selectedThreadShell.branch,
+          worktreePath: selectedThreadShell.worktreePath,
+        },
+        createdAt: metadata.createdAt,
+      });
+      clearComposerDraftContent(threadKey);
+      enqueuePromise.then(
+        () => undefined,
+        (error: unknown) => {
+          void mergeComposerDraftContent(threadKey, { text, attachments: [] });
+          setPendingConnectionError(
+            error instanceof Error ? error.message : "Failed to save the queued message.",
+          );
+        },
+      );
+      navigation.navigate("Thread", {
+        environmentId: String(selectedThreadShell.environmentId),
+        threadId: metadata.threadId,
+      });
+      return messageId;
+    }
+
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
     // Enqueue publishes the queued atom synchronously (the durable write
@@ -427,8 +516,11 @@ export function useThreadComposerState() {
     );
     return messageId;
   }, [
+    navigation,
     selectedEnvironmentRuntime?.connectionState,
     selectedEnvironmentRuntime?.serverConfig,
+    selectedProject?.title,
+    selectedProject?.workspaceRoot,
     selectedThreadCreation,
     selectedThreadDetail,
     selectedThreadShell,

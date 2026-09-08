@@ -37,6 +37,7 @@ export * from "./browserImport.ts";
 export * from "./browserProfile.ts";
 export * from "./preview.ts";
 export * from "./previewAutomation.ts";
+export * from "./spawnSession.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";

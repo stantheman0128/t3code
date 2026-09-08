@@ -591,6 +591,14 @@ describe("T3 browser developer instructions", () => {
       /preview_open/,
     );
   });
+
+  it("tells the agent to session_spawn instead of asking for a slash command", () => {
+    const instructions = buildCodexDeveloperInstructions("default", runtime, false, true);
+    NodeAssert.match(instructions, /session_spawn/);
+    NodeAssert.match(instructions, /session_list_providers/);
+    NodeAssert.doesNotMatch(instructions, /preview_open/);
+    NodeAssert.match(instructions, /Do not tell them to type a slash command/);
+  });
 });
 
 describe("hasConfiguredMcpServer", () => {

@@ -510,4 +510,9 @@ describe("parseStandaloneComposerSlashCommand", () => {
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
   });
+
+  it("does not treat spawn commands as mode switches", () => {
+    expect(parseStandaloneComposerSlashCommand("/spawn-codex")).toBeNull();
+    expect(parseStandaloneComposerSlashCommand("/spawn-grok fix tests")).toBeNull();
+  });
 });

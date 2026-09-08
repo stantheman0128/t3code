@@ -102,6 +102,18 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedLocal.command, "chat.newLocal");
 
+    const parsedSpawnCodex = yield* decode(KeybindingRule, {
+      key: "mod+alt+shift+c",
+      command: "chat.spawnCodex",
+    });
+    assert.strictEqual(parsedSpawnCodex.command, "chat.spawnCodex");
+
+    const parsedSpawnGrokbot = yield* decode(KeybindingRule, {
+      key: "mod+alt+shift+b",
+      command: "chat.spawnGrokbot",
+    });
+    assert.strictEqual(parsedSpawnGrokbot.command, "chat.spawnGrokbot");
+
     const parsedModelPickerToggle = yield* decode(KeybindingRule, {
       key: "mod+shift+m",
       command: "modelPicker.toggle",

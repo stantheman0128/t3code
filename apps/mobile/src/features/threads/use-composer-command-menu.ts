@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderInteractionMode, ServerProvider } from "@t3tools/contracts";
+import { spawnProviderSlashMenuItems } from "@t3tools/shared/spawnProviderSession";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   detectComposerTrigger,
@@ -70,13 +71,24 @@ export function buildComposerSlashCommandItems(input: {
       label: "/default",
       description: "Switch to default mode",
     },
+    ...spawnProviderSlashMenuItems().map((item) => ({
+      id: `cmd:${item.command}`,
+      type: "slash-command" as const,
+      command: item.command,
+      label: item.label,
+      description: item.description,
+    })),
   ] satisfies ComposerCommandItem[];
-  const items: ComposerCommandItem[] = builtIn.filter(
-    (item) => item.command.includes(query) && (item.command === "model" || allowInteractionMode),
-  );
+  const items: ComposerCommandItem[] = builtIn.filter((item) => {
+    if (!item.command.includes(query)) return false;
+    if (item.command === "model") return true;
+    if (item.command.startsWith("spawn-")) return input.atMessageStart;
+    return allowInteractionMode;
+  });
 
-  // Providers expand commands only at the start of a message. T3 commands
-  // change local state and do not have this restriction.
+  // Providers expand commands only at the start of a message. Most T3
+  // commands change local state and do not have this restriction; spawn
+  // commands are filtered above because they must open the message.
   if (!input.atMessageStart) return items;
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {
     if (!command.name.toLowerCase().includes(query)) continue;

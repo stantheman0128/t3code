@@ -22,6 +22,7 @@ import { useFontFamily } from "../../lib/useFontFamily";
 
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProviderInstanceId,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 
@@ -47,6 +48,11 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { hasProviderUsageLimits, isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
+import {
+  parseSpawnProviderSlashCommand,
+  resolveSpawnProviderModelSelection,
+  SPAWN_PROVIDER_TARGETS,
+} from "@t3tools/shared/spawnProviderSession";
 import { COMPOSER_LAYOUT_TRANSITION, ComposerSurface } from "./ThreadComposer";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
@@ -76,6 +82,8 @@ import {
   getComposerDraftSnapshot,
   mergeComposerDraftContent,
   restoreComposerDraftSnapshot,
+  setComposerDraftText,
+  setStickyComposerModelSelection,
   updateComposerDraftSettings,
   scheduleUnusedComposerAttachmentCleanup,
   type ComposerDraft,
@@ -143,6 +151,8 @@ export function NewTaskDraftScreen(props: {
     readonly projectId?: string;
     readonly branch?: string | null;
     readonly worktreePath?: string | null;
+    readonly modelInstanceId?: string;
+    readonly model?: string;
   };
   /** Queued outbox message id when editing an existing pending task. */
   readonly pendingTaskId?: string;
@@ -389,6 +399,8 @@ export function NewTaskDraftScreen(props: {
     (hasImportedIncomingShare && !incomingShare) ||
     isIncomingShareUnavailable;
   const appliedInitialProjectKeyRef = useRef<string | null>(null);
+  const appliedInitialModelKeyRef = useRef<string | null>(null);
+  const lastInitialModelRef = useRef(props.initialProjectRef);
   useEffect(() => {
     if (cancelledIncomingShareId === props.incomingShareId) {
       navigation.goBack();
@@ -423,6 +435,7 @@ export function NewTaskDraftScreen(props: {
     shareImportMountedRef.current = true;
     return () => {
       appliedInitialProjectKeyRef.current = null;
+      appliedInitialModelKeyRef.current = null;
       shareImportMountedRef.current = false;
       activeShareImportTokenRef.current = null;
       cancellingShareImportKeyRef.current = null;
@@ -512,6 +525,7 @@ export function NewTaskDraftScreen(props: {
     if (lastInitialProjectRefRef.current !== props.initialProjectRef) {
       lastInitialProjectRefRef.current = props.initialProjectRef;
       appliedInitialProjectKeyRef.current = null;
+      appliedInitialModelKeyRef.current = null;
     }
     const initialEnvironmentId = props.initialProjectRef?.environmentId;
     const initialProjectId = props.initialProjectRef?.projectId;
@@ -592,6 +606,43 @@ export function NewTaskDraftScreen(props: {
     selectedProjectKey,
     setProject,
   ]);
+
+  useEffect(() => {
+    if (props.pendingTaskId || props.draftId) {
+      return;
+    }
+    if (lastInitialModelRef.current !== props.initialProjectRef) {
+      lastInitialModelRef.current = props.initialProjectRef;
+      appliedInitialModelKeyRef.current = null;
+    }
+    const instanceId = props.initialProjectRef?.modelInstanceId;
+    const model = props.initialProjectRef?.model;
+    const draftKey = flow.draftKey;
+    if (!instanceId || !model || !draftKey) {
+      return;
+    }
+    const initialEnvironmentId = props.initialProjectRef?.environmentId;
+    const initialProjectId = props.initialProjectRef?.projectId;
+    if (
+      initialEnvironmentId &&
+      initialProjectId &&
+      (selectedProject?.environmentId !== initialEnvironmentId ||
+        selectedProject.id !== initialProjectId)
+    ) {
+      return;
+    }
+    const applyKey = `${draftKey}:${instanceId}:${model}`;
+    if (appliedInitialModelKeyRef.current === applyKey) {
+      return;
+    }
+    const selection = {
+      instanceId: ProviderInstanceId.make(instanceId),
+      model,
+    };
+    updateComposerDraftSettings(draftKey, { modelSelection: selection });
+    setStickyComposerModelSelection(selection);
+    appliedInitialModelKeyRef.current = applyKey;
+  }, [flow.draftKey, props.draftId, props.initialProjectRef, props.pendingTaskId, selectedProject]);
 
   useEffect(() => {
     if (!selectedProject) {
@@ -949,14 +1000,39 @@ export function NewTaskDraftScreen(props: {
     const draft = getComposerDraftSnapshot(draftKey);
     // Read the latest explicit pick. Antigravity selections stay unchanged
     // when setup or a catalog change makes them unavailable.
-    const modelSelection =
+    let modelSelection =
       resolveSelectableModelSelection(
         selectedEnvironmentServerConfig,
         draft.modelSelection ?? null,
       ) ?? flow.selectedModel;
     const workspaceMode = draft.workspaceSelection?.mode ?? flow.workspaceMode;
     const selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
-    const initialMessageText = draft.text.trim();
+    let initialMessageText = draft.text.trim();
+    const spawn =
+      draft.attachments.length === 0 ? parseSpawnProviderSlashCommand(initialMessageText) : null;
+    if (spawn) {
+      const target = SPAWN_PROVIDER_TARGETS[spawn.command];
+      const spawnedSelection = resolveSpawnProviderModelSelection(
+        selectedEnvironmentServerConfig?.providers ?? [],
+        target.driverKind,
+      );
+      if (!spawnedSelection) {
+        Alert.alert(
+          `${target.displayName} isn't ready`,
+          `Enable ${target.displayName} in Settings → Providers, then try again.`,
+        );
+        return;
+      }
+      modelSelection = spawnedSelection;
+      updateComposerDraftSettings(draftKey, { modelSelection: spawnedSelection });
+      setStickyComposerModelSelection(spawnedSelection);
+      if (spawn.prompt === null) {
+        setComposerDraftText(draftKey, "");
+        return;
+      }
+      initialMessageText = spawn.prompt;
+      setComposerDraftText(draftKey, spawn.prompt);
+    }
 
     if (
       attachmentBlockReason !== null ||

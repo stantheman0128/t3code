@@ -69,6 +69,7 @@ import {
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
+import { parseSpawnProviderSlashCommand } from "@t3tools/shared/spawnProviderSession";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
   getTerminalLabel,
@@ -247,6 +248,7 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useSpawnProviderSession } from "../hooks/useSpawnProviderSession";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
@@ -1401,6 +1403,7 @@ export default function ChatView(props: ChatViewProps) {
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
+  const { spawnProviderSession } = useSpawnProviderSession();
   const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
@@ -6550,6 +6553,42 @@ export default function ChatView(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerReviewComments.length,
     });
+    const spawnCommand =
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerElementContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0
+        ? parseSpawnProviderSlashCommand(trimmed)
+        : null;
+    if (spawnCommand) {
+      if (spawnCommand.prompt === null) {
+        const previousPrompt = promptRef.current;
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        const opened = await spawnProviderSession(spawnCommand.command);
+        if (!opened) {
+          promptRef.current = previousPrompt;
+          setComposerDraftPrompt(composerDraftTarget, previousPrompt);
+        }
+        return;
+      }
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      const started = await spawnProviderSession(spawnCommand.command, {
+        prompt: spawnCommand.prompt,
+      });
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+      if (started) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
     const feedbackCommand =
       ctxSelectedProvider === "codex" &&
       composerImages.length === 0 &&

@@ -61,6 +61,39 @@ describe("mobile slash commands", () => {
     ).toEqual([]);
   });
 
+  it("does not offer spawn commands inside the message", () => {
+    expect(
+      buildComposerSlashCommandItems({
+        query: "spawn",
+        atMessageStart: false,
+        hasThread: true,
+        allowInteractionMode: true,
+        selectedProviderStatus: {
+          driver: ProviderDriverKind.make("codex"),
+          slashCommands: [],
+        },
+      }).map((item) => item.id),
+    ).toEqual([]);
+  });
+
+  it("offers spawn commands at the start of a message", () => {
+    const items = buildComposerSlashCommandItems({
+      query: "spawn",
+      atMessageStart: true,
+      hasThread: true,
+      allowInteractionMode: false,
+      selectedProviderStatus: {
+        driver: ProviderDriverKind.make("cursor"),
+        slashCommands: [],
+      },
+    });
+    expect(items.map((item) => item.command)).toEqual([
+      "spawn-codex",
+      "spawn-grok",
+      "spawn-grokbot",
+    ]);
+  });
+
   it("still applies the T3 plan command for supported providers", () => {
     const items = buildComposerSlashCommandItems({
       query: "plan",

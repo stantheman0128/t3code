@@ -13,6 +13,11 @@ import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
+  resolveSpawnProviderModelSelection,
+  SPAWN_PROVIDER_COMMANDS,
+  SPAWN_PROVIDER_TARGETS,
+} from "@t3tools/shared/spawnProviderSession";
+import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
@@ -40,6 +45,7 @@ import * as Option from "effect/Option";
 import {
   ActivityIcon,
   ArrowLeftIcon,
+  BotIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -69,6 +75,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useSpawnProviderSession } from "../hooks/useSpawnProviderSession";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { toggleShowPerformanceBar, useClientSettings } from "../hooks/useSettings";
@@ -621,6 +628,7 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const { spawnProviderSession } = useSpawnProviderSession();
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1586,6 +1594,50 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
+  }
+
+  const spawnProjectRef = resolveThreadActionProjectRef({
+    activeDraftThread,
+    activeThread: activeThread ?? undefined,
+    defaultProjectRef,
+    handleNewThread,
+  });
+  if (spawnProjectRef) {
+    const spawnProviders =
+      environments.find(
+        (environment) => environment.environmentId === spawnProjectRef.environmentId,
+      )?.serverConfig?.providers ??
+      (spawnProjectRef.environmentId === primaryEnvironmentId ? providers : []);
+    for (const command of SPAWN_PROVIDER_COMMANDS) {
+      const target = SPAWN_PROVIDER_TARGETS[command];
+      if (!resolveSpawnProviderModelSelection(spawnProviders, target.driverKind)) {
+        continue;
+      }
+      actionItems.push({
+        kind: "action",
+        value: `action:${command}`,
+        searchTerms: [
+          "spawn",
+          "session",
+          "new thread",
+          target.displayName,
+          command,
+          target.driverKind,
+        ],
+        title: `Spawn ${target.displayName} session`,
+        description: `Open a new ${target.displayName} thread in this project`,
+        icon: <BotIcon className={ITEM_ICON_CLASS} />,
+        shortcutCommand:
+          command === "spawn-codex"
+            ? "chat.spawnCodex"
+            : command === "spawn-grok"
+              ? "chat.spawnGrok"
+              : "chat.spawnGrokbot",
+        run: async () => {
+          await spawnProviderSession(command);
+        },
+      });
+    }
   }
 
   if (activeThreadReferenceCopyTarget !== null) {

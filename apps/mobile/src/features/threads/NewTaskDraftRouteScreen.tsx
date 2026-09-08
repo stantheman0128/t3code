@@ -20,6 +20,8 @@ type NewTaskDraftRouteParams = {
   readonly projectId?: string | string[];
   readonly branch?: string | null;
   readonly worktreePath?: string | null;
+  readonly modelInstanceId?: string | string[];
+  readonly model?: string | string[];
   readonly title?: string | string[];
   readonly pendingTaskId?: string | string[];
   readonly draftId?: string | string[];
@@ -48,6 +50,10 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
       projectId: Array.isArray(params.projectId) ? params.projectId[0] : params.projectId,
       branch: params.branch,
       worktreePath: params.worktreePath,
+      modelInstanceId: Array.isArray(params.modelInstanceId)
+        ? params.modelInstanceId[0]
+        : params.modelInstanceId,
+      model: Array.isArray(params.model) ? params.model[0] : params.model,
     }),
     [params],
   );

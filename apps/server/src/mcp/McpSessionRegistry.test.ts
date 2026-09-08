@@ -127,3 +127,21 @@ it.effect("does not keep credentials of other threads alive", () =>
     expect(yield* registry.resolve(token)).toBeUndefined();
   }),
 );
+
+it.effect("copies requested capabilities onto the issued credential", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-session-only"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["session"]),
+    });
+    expect(issued.config.capabilities.has("session")).toBe(true);
+    expect(issued.config.capabilities.has("preview")).toBe(false);
+
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect(resolved?.capabilities.has("session")).toBe(true);
+    expect(resolved?.capabilities.has("preview")).toBe(false);
+  }),
+);

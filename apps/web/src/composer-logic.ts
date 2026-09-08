@@ -3,6 +3,7 @@ import {
   serializeAssistantCitation,
   withAssistantCitationComment,
 } from "@t3tools/shared/assistantCitations";
+import type { SpawnProviderCommand } from "@t3tools/shared/spawnProviderSession";
 import {
   splitPromptIntoComposerSegments,
   type ComposerPromptSegment,
@@ -10,7 +11,7 @@ import {
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = "model" | "plan" | "default" | SpawnProviderCommand;
 export type ComposerSubmissionIntent = "foreground" | "background";
 
 export interface ComposerTrigger {

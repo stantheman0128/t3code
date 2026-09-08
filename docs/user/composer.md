@@ -111,6 +111,23 @@ Show skills in slash menu**. Only skills enabled for the provider are listed.
 Provider commands must start the message to run. T3 Code commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 
+`/spawn-codex`, `/spawn-grok`, and `/spawn-grokbot` start a **new thread** in
+the current project on that provider. They stay separate: Grok Bot is not Grok.
+Send the command alone to open a draft on that provider, or add a prompt on the
+same line to start the turn immediately. The new thread reuses this thread's
+branch and worktree when it has one. Web and desktop also offer these from the
+command palette; you can bind `chat.spawnCodex`, `chat.spawnGrok`, and
+`chat.spawnGrokbot` in Settings → Keyboard. On mobile, a bare command opens
+**New task** already switched to that provider. The destination provider must be
+ready.
+
+You can also **ask the current agent** to open another session in natural
+language ("spawn a Codex thread", "start Gemini on this"). It uses the
+`session_spawn` tool on the T3 Code MCP server. That covers every ready
+provider: Codex, Claude, Cursor, Grok, Grok Bot, OpenCode, and Antigravity
+(Gemini / Google). Native subagents stay inside the current provider thread;
+`session_spawn` opens a visible peer thread.
+
 Send `/compact` in an existing conversation to reduce context usage when the
 provider supports it. Web and desktop also offer compaction from the context meter.
 

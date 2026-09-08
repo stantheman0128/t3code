@@ -3,6 +3,15 @@ import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
 
 import { TRADITIONAL_CHINESE_INSTRUCTION } from "./traditionalChineseInstruction.ts";
 
+const T3_CODE_SESSION_TOOL_INSTRUCTIONS = `
+
+## T3 Code sessions
+
+When the user asks you to start, spawn, or hand off another T3 Code thread or session (Codex, Claude, Cursor, Grok, Grok Bot, OpenCode, Antigravity, Gemini, or any other configured provider), call \`session_spawn\` on the \`t3-code\` MCP server. Do not tell them to type a slash command. Use \`session_list_providers\` when they did not name a provider or spawn failed because it was not ready.
+
+Gemini and Google models use provider \`antigravity\`. Grok Bot is not Grok. Native subagents of the current provider stay on this thread; \`session_spawn\` opens a visible peer thread in T3 Code.
+`;
+
 const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## T3 Code collaborative browser
@@ -24,8 +33,12 @@ Do not switch to global browser skills, Chrome, Node REPL browser automation, st
 const browserToolInstructions = (browserToolsAvailable: boolean): string =>
   browserToolsAvailable ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "";
 
+const sessionToolInstructions = (sessionToolsAvailable: boolean): string =>
+  sessionToolsAvailable ? T3_CODE_SESSION_TOOL_INSTRUCTIONS : "";
+
 const codexPlanModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
+  sessionToolsAvailable: boolean,
 ): string => `<collaboration_mode># Plan Mode (Conversational)
 
 You work in 3 phases, and you should *chat your way* to a great plan before finalizing it. A great plan is very detailed-intent- and implementation-wise-so that it can be handed to another engineer or agent to be implemented right away. It must be **decision complete**, where the implementer does not need to make any decisions.
@@ -155,10 +168,12 @@ Only produce at most one \`<proposed_plan>\` block per turn, and only when you a
 
 If the user stays in Plan mode and asks for revisions after a prior \`<proposed_plan>\`, any new \`<proposed_plan>\` must be a complete replacement. If the user indicates that the prior plan is not acceptable but does not provide enough information to produce a complete replacement, address the concern and continue planning without producing a \`<proposed_plan>\` block. If the follow-up neither requires changes nor calls the plan into question (e.g. clarifying question), answer it before the block, then reproduce the prior \`<proposed_plan>\` unchanged.
 ${browserToolInstructions(browserToolsAvailable)}
+${sessionToolInstructions(sessionToolsAvailable)}
 </collaboration_mode>`;
 
 const codexDefaultModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
+  sessionToolsAvailable: boolean,
 ): string => `<collaboration_mode># Collaboration Mode: Default
 
 You are now in Default mode. Any previous instructions for other modes (e.g. Plan mode) are no longer active.
@@ -171,6 +186,7 @@ Use the \`request_user_input\` tool only when it is listed in the available tool
 
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
 ${browserToolInstructions(browserToolsAvailable)}
+${sessionToolInstructions(sessionToolsAvailable)}
 </collaboration_mode>`;
 
 export interface CodexRuntimeInfo {
@@ -187,11 +203,12 @@ export function buildCodexDeveloperInstructions(
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
   browserToolsAvailable = true,
+  sessionToolsAvailable = true,
 ): string {
   const base =
     interactionMode === "plan"
-      ? codexPlanModeDeveloperInstructions(browserToolsAvailable)
-      : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
+      ? codexPlanModeDeveloperInstructions(browserToolsAvailable, sessionToolsAvailable)
+      : codexDefaultModeDeveloperInstructions(browserToolsAvailable, sessionToolsAvailable);
   return `${base}
 
 ${buildRuntimeInstructions({ harness: "Codex", ...runtime })}

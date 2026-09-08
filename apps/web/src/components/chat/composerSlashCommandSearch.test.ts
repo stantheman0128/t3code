@@ -220,4 +220,31 @@ describe("searchSlashCommandItems", () => {
       "skill:claudeAgent:unslop",
     ]);
   });
+
+  it("hides spawn commands from slash completion after the first message line", () => {
+    const items = [
+      {
+        id: "slash:model",
+        type: "slash-command",
+        command: "model",
+        label: "/model",
+        description: "Switch model",
+      },
+      {
+        id: "slash:spawn-codex",
+        type: "slash-command",
+        command: "spawn-codex",
+        label: "/spawn-codex",
+        description: "Start a Codex thread in this project",
+      },
+    ] satisfies Array<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+
+    expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
+      "slash:model",
+    ]);
+    expect(slashCommandItemsForPromptPosition(items, true).map((item) => item.id)).toEqual([
+      "slash:model",
+      "slash:spawn-codex",
+    ]);
+  });
 });

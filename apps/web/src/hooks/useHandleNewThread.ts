@@ -7,6 +7,7 @@ import {
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
+  type ModelSelection,
   type ScopedProjectRef,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -94,6 +95,7 @@ export function useNewThreadHandler() {
         startFromOrigin?: boolean;
         replace?: boolean;
         carryComposerContent?: boolean;
+        modelSelection?: ModelSelection;
       },
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
@@ -228,6 +230,16 @@ export function useNewThreadHandler() {
           });
         }
       };
+      const applyDestinationModel = (destinationDraftId: DraftId) => {
+        if (options?.modelSelection) {
+          setModelSelection(destinationDraftId, options.modelSelection, {
+            replaceOptions: true,
+            explicit: true,
+          });
+          return;
+        }
+        applyModelUnlessExplicit(destinationDraftId);
+      };
       // The shared resolver owns the priority order. The t3.json read is
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
@@ -353,7 +365,7 @@ export function useNewThreadHandler() {
           // without it, a changed pin could never reach the draft the user
           // is looking at, because explicit picks are the only thing the
           // flag protects.
-          applyModelUnlessExplicit(emptyStoredDraftThread.draftId);
+          applyDestinationModel(emptyStoredDraftThread.draftId);
           // The workspace context must also ride along here: when projectRef
           // targets a different physical member of the logical project,
           // createDraftThreadState treats the remap as a project change and
@@ -416,7 +428,7 @@ export function useNewThreadHandler() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
-        applyModelUnlessExplicit(currentRouteTarget.draftId);
+        applyDestinationModel(currentRouteTarget.draftId);
         return Promise.resolve({
           draftId: currentRouteTarget.draftId,
           threadId: latestActiveDraftThread.threadId,
@@ -482,7 +494,7 @@ export function useNewThreadHandler() {
           runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });
-        applyModelUnlessExplicit(draftId);
+        applyDestinationModel(draftId);
         carryComposerContentTo(draftId);
 
         await router.navigate({

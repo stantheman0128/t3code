@@ -3,6 +3,7 @@ import {
   normalizeSearchQuery,
   scoreQueryMatch,
 } from "@t3tools/shared/searchRanking";
+import { isSpawnProviderSlashCommandName } from "@t3tools/shared/spawnProviderSession";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { scoreProviderSkill } from "../../providerSkillSearch";
@@ -15,8 +16,9 @@ type SlashSearchItem = Extract<
 /**
  * A provider expands a slash command only when it opens the whole message;
  * anywhere else it reaches the agent as literal text, so it is not offered
- * there. Built-ins apply locally on selection and skills insert a `$` mention
- * the server dispatches from any position, so both stay available.
+ * there. Spawn commands start another provider thread and have the same
+ * restriction. Other built-ins apply locally on selection and skills insert a
+ * `$` mention the server dispatches from any position, so both stay available.
  */
 export function slashCommandItemsForPromptPosition(
   items: ReadonlyArray<SlashSearchItem>,
@@ -25,7 +27,15 @@ export function slashCommandItemsForPromptPosition(
   if (isAtPromptStart) {
     return [...items];
   }
-  return items.filter((item) => item.type !== "provider-slash-command");
+  return items.filter((item) => {
+    if (item.type === "provider-slash-command") {
+      return false;
+    }
+    if (item.type === "slash-command" && isSpawnProviderSlashCommandName(item.command)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function scoreSlashCommandItem(item: SlashSearchItem, query: string): number | null {

@@ -15,7 +15,6 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
-  PROVIDER_DISPLAY_NAMES,
   resolveProviderInstanceEnabled,
   type ModelSelection,
   type ProviderDriverKind,
@@ -25,8 +24,13 @@ import {
   type ServerSettings,
   type ServerProviderState,
 } from "@t3tools/contracts";
+import {
+  normalizeProviderAccentColor,
+  resolveProviderInstanceDisplayName,
+  shouldShowInstanceBadge,
+} from "@t3tools/client-runtime/state/provider-instance-display";
 
-import { formatProviderDriverKindLabel } from "./providerModels";
+export { normalizeProviderAccentColor, shouldShowInstanceBadge };
 
 /**
  * Local-only placeholder used while a draft has no provider it can safely
@@ -81,122 +85,6 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
 }
 
 /**
- * Turn an instance id slug into a human-readable label. Splits on `_` / `-`
- * and camelCase boundaries and title-cases each token, so `codex_personal`
- * becomes "Codex Personal" and `myCustomInstance` becomes "My Custom
- * Instance".
- *
- * This is a fallback used only when the wire snapshot's `displayName`
- * doesn't disambiguate a non-default instance from the default one of the
- * same driver (today every built-in driver hard-codes a single presentation
- * label per kind, so two instances of the same kind arrive with identical
- * display names). When a server/driver later plumbs the user's configured
- * `ProviderInstanceConfig.displayName` through to the snapshot, that value
- * will take precedence over this fallback.
- */
-function humanizeInstanceId(instanceId: ProviderInstanceId): string {
-  const words: string[] = [];
-  for (const token of instanceId
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .split(" ")) {
-    if (token.length === 0) continue;
-    const word = token.charAt(0).toUpperCase() + token.slice(1);
-    if (words.at(-1)?.toLowerCase() === word.toLowerCase()) continue;
-    words.push(word);
-  }
-  return words.join(" ");
-}
-
-function driverKindLabel(driverKind: ProviderDriverKind): string {
-  return PROVIDER_DISPLAY_NAMES[driverKind] ?? formatProviderDriverKindLabel(driverKind);
-}
-
-/**
- * Whether an instance's icon carries the account badge: accent color set, or
- * several instances sharing a driver so the brand glyph alone is ambiguous.
- * Shared by the composer trigger, the picker rail, and sidebar rows.
- */
-export function shouldShowInstanceBadge(
-  entry: ProviderInstanceEntry,
-  entries: Iterable<ProviderInstanceEntry>,
-): boolean {
-  if (entry.accentColor) return true;
-  let sharedDriverCount = 0;
-  for (const candidate of entries) {
-    if (candidate.driverKind === entry.driverKind && ++sharedDriverCount > 1) return true;
-  }
-  return false;
-}
-
-export function normalizeProviderAccentColor(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) return undefined;
-  return /^#[0-9a-fA-F]{6}$/u.test(trimmed) ? trimmed : undefined;
-}
-
-/**
- * Resolve an entry's displayName with a tiered priority:
- *
- *   1. A snapshot `displayName` that differs from the driver-kind label —
- *      the server has explicitly named this instance, trust it.
- *   2. For a non-default instance, a humanized `instanceId` only when
- *      another enabled instance of the same driver is also showing — the
- *      server fell back to the driver-level presentation constant, so we
- *      differentiate by slug. A lone custom Codex instance stays "Codex".
- *   3. The snapshot's `displayName` (if any) — default instance, trust
- *      whatever label the driver stamped.
- *   4. `driverKindLabel(driverKind)` — nothing else on hand, so use the
- *      canonical brand label from contracts (falling back to a generic
- *      title-case of the kind slug).
- */
-function resolveInstanceDisplayName(
-  snapshot: ServerProvider,
-  instanceId: ProviderInstanceId,
-  driverKind: ProviderDriverKind,
-  isDefault: boolean,
-  disambiguate: boolean,
-): string {
-  const trimmedSnapshotName = snapshot.displayName?.trim();
-  const kindLabel = driverKindLabel(driverKind);
-  if (trimmedSnapshotName && trimmedSnapshotName !== kindLabel) {
-    return trimmedSnapshotName;
-  }
-  if (!isDefault && disambiguate) {
-    const humanized = humanizeInstanceId(instanceId);
-    if (humanized.length > 0) return humanized;
-  }
-  return trimmedSnapshotName || kindLabel;
-}
-
-function enabledCountByDriver(
-  entries: Iterable<{ readonly driverKind: ProviderDriverKind; readonly enabled: boolean }>,
-) {
-  const counts = new Map<ProviderDriverKind, number>();
-  for (const entry of entries) {
-    if (!entry.enabled) continue;
-    counts.set(entry.driverKind, (counts.get(entry.driverKind) ?? 0) + 1);
-  }
-  return counts;
-}
-
-function withResolvedInstanceDisplayNames(
-  entries: ReadonlyArray<ProviderInstanceEntry>,
-): ReadonlyArray<ProviderInstanceEntry> {
-  const enabledCounts = enabledCountByDriver(entries);
-  return entries.map((entry) => {
-    const displayName = resolveInstanceDisplayName(
-      entry.snapshot,
-      entry.instanceId,
-      entry.driverKind,
-      entry.isDefault,
-      (enabledCounts.get(entry.driverKind) ?? 0) > 1,
-    );
-    return displayName === entry.displayName ? entry : { ...entry, displayName };
-  });
-}
-
-/**
  * Project the wire `ServerProvider[]` into instance entries, one per
  * configured instance. Preserves the server's ordering (which sources
  * from `deriveProviderInstanceConfigMap` — explicit `providerInstances.*`
@@ -206,28 +94,26 @@ function withResolvedInstanceDisplayNames(
 export function deriveProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return withResolvedInstanceDisplayNames(
-    providers.map((snapshot) => {
-      const instanceId = snapshot.instanceId;
-      const driverKind = snapshot.driver;
-      const defaultId = defaultInstanceIdForDriver(driverKind);
-      const isDefault = instanceId === defaultId;
-      return {
-        instanceId,
-        driverKind,
-        displayName: resolveInstanceDisplayName(snapshot, instanceId, driverKind, isDefault, false),
-        accentColor: normalizeProviderAccentColor(snapshot.accentColor),
-        continuationGroupKey: snapshot.continuation?.groupKey,
-        enabled: snapshot.enabled,
-        installed: snapshot.installed,
-        status: snapshot.status,
-        isDefault,
-        isAvailable: snapshot.availability !== "unavailable",
-        snapshot,
-        models: snapshot.models,
-      } satisfies ProviderInstanceEntry;
-    }),
-  );
+  return providers.map((snapshot) => {
+    const instanceId = snapshot.instanceId;
+    const driverKind = snapshot.driver;
+    const defaultId = defaultInstanceIdForDriver(driverKind);
+    const isDefault = instanceId === defaultId;
+    return {
+      instanceId,
+      driverKind,
+      displayName: resolveProviderInstanceDisplayName(snapshot),
+      accentColor: normalizeProviderAccentColor(snapshot.accentColor),
+      continuationGroupKey: snapshot.continuation?.groupKey,
+      enabled: snapshot.enabled,
+      installed: snapshot.installed,
+      status: snapshot.status,
+      isDefault,
+      isAvailable: snapshot.availability !== "unavailable",
+      snapshot,
+      models: snapshot.models,
+    } satisfies ProviderInstanceEntry;
+  });
 }
 
 /**
@@ -276,23 +162,21 @@ export function applyProviderInstanceSettings(
     Record<string, { readonly enabled?: boolean } | undefined>
   >;
 
-  return withResolvedInstanceDisplayNames(
-    entries.map((entry) => {
-      const instances = settings.providerInstances ?? {};
-      const explicitInstance = Object.hasOwn(instances, entry.instanceId)
-        ? instances[entry.instanceId]
-        : undefined;
-      const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
-        ? legacyProviders[entry.driverKind]
-        : undefined;
-      const enabled = explicitInstance
-        ? resolveProviderInstanceEnabled(explicitInstance)
-        : entry.isDefault && legacyProvider
-          ? (legacyProvider.enabled ?? entry.enabled)
-          : false;
-      return enabled === entry.enabled ? entry : { ...entry, enabled };
-    }),
-  );
+  return entries.map((entry) => {
+    const instances = settings.providerInstances ?? {};
+    const explicitInstance = Object.hasOwn(instances, entry.instanceId)
+      ? instances[entry.instanceId]
+      : undefined;
+    const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
+      ? legacyProviders[entry.driverKind]
+      : undefined;
+    const enabled = explicitInstance
+      ? resolveProviderInstanceEnabled(explicitInstance)
+      : entry.isDefault && legacyProvider
+        ? (legacyProvider.enabled ?? entry.enabled)
+        : false;
+    return enabled === entry.enabled ? entry : { ...entry, enabled };
+  });
 }
 
 /**

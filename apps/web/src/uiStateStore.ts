@@ -1,4 +1,5 @@
 import { Debouncer } from "@tanstack/react-pacer";
+import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { parseStoredLastLocationPath } from "./lastLocation";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
@@ -32,6 +33,7 @@ export interface PersistedUiState {
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   lastLocationPath?: string | null;
+  pullRequestMergeMethod?: string;
 }
 
 export interface UiProjectState {
@@ -57,7 +59,12 @@ export interface UiLocationState {
   lastLocationPath: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiLocationState {}
+export interface UiPullRequestState {
+  pullRequestMergeMethod: PullRequestMergeMethod;
+}
+
+export interface UiState
+  extends UiProjectState, UiThreadState, UiEndpointState, UiLocationState, UiPullRequestState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -68,6 +75,7 @@ const initialState: UiState = {
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
   lastLocationPath: null,
+  pullRequestMergeMethod: "merge",
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -119,6 +127,10 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   );
 }
 
+function isPullRequestMergeMethod(value: unknown): value is PullRequestMergeMethod {
+  return value === "merge" || value === "squash" || value === "rebase";
+}
+
 export function parsePersistedState(parsed: PersistedUiState): UiState {
   const projectExpandedById =
     parsed.projectExpandedById === undefined
@@ -155,6 +167,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
     lastLocationPath: parseStoredLastLocationPath(parsed.lastLocationPath),
+    pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
+      ? parsed.pullRequestMergeMethod
+      : initialState.pullRequestMergeMethod,
   };
 }
 
@@ -230,6 +245,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         lastLocationPath: state.lastLocationPath,
+        pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -349,6 +365,12 @@ export function setSidebarProjectScopeKey(state: UiState, projectKey: string | n
   };
 }
 
+function setPullRequestMergeMethod(state: UiState, method: PullRequestMergeMethod): UiState {
+  return state.pullRequestMergeMethod === method
+    ? state
+    : { ...state, pullRequestMergeMethod: method };
+}
+
 export function resolveProjectExpanded(
   projectExpandedById: Readonly<Record<string, boolean>>,
   preferenceKeys: readonly string[],
@@ -459,6 +481,7 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setLastLocationPath: (path: string | null) => void;
   setSidebarProjectScopeKey: (projectKey: string | null) => void;
+  setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -492,6 +515,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     }),
   setSidebarProjectScopeKey: (projectKey) =>
     set((state) => setSidebarProjectScopeKey(state, projectKey)),
+  setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>

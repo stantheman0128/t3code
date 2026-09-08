@@ -109,7 +109,7 @@ export function shouldOpenProactivePullRequest(
   previousTargetKey: string | null | undefined,
   targetKey: string | null,
 ): boolean {
-  return previousTargetKey !== undefined && targetKey !== null && targetKey !== previousTargetKey;
+  return targetKey !== null && targetKey !== previousTargetKey;
 }
 
 interface ProactivePanelObservation {
@@ -163,11 +163,11 @@ export function shouldOpenProactiveTurnDiff(input: {
   turnCompleted: boolean;
 }): boolean {
   return (
-    input.previousRunningTurnId !== undefined &&
-    input.previousRunningTurnId !== null &&
     input.runningTurnId === null &&
     input.turnCompleted &&
-    input.settledTurnId === input.previousRunningTurnId
+    input.settledTurnId !== null &&
+    (input.previousRunningTurnId === undefined ||
+      input.settledTurnId === input.previousRunningTurnId)
   );
 }
 
@@ -510,6 +510,16 @@ export function getAntigravitySendBlockReason(
     return "That Antigravity model is no longer available. Choose another model.";
   }
   return null;
+}
+
+export function buildRunningThreadTurnInterruptInput(
+  thread: Pick<Thread, "id" | "session"> | null | undefined,
+  phase: SessionPhase,
+): { threadId: ThreadId; turnId?: TurnId } | null {
+  if (phase !== "running" || thread?.session?.status !== "running") {
+    return null;
+  }
+  return buildThreadTurnInterruptInput(thread);
 }
 
 export function reconcileMountedTerminalThreadIds(input: {

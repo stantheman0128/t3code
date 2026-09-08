@@ -28,11 +28,7 @@ import {
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import { discoverGrokSkills } from "./GrokSkills.ts";
-import {
-  makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
-  resolveProviderMaintenanceCapabilitiesEffect,
-} from "../providerMaintenance.ts";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
@@ -46,7 +42,7 @@ export const GROKBOT_DRIVER_KIND = ProviderDriverKind.make("grokbot");
 export function grokSettingsFromGrokBotConfig(input: {
   readonly enabled: boolean;
   readonly binaryPath?: string | undefined;
-  readonly customModels?: ReadonlyArray<string> | undefined;
+  readonly customModels?: GrokSettings["customModels"] | undefined;
 }): GrokSettings {
   const binaryPath = input.binaryPath?.trim() || "omp";
   return decodeGrokSettings({
@@ -78,14 +74,6 @@ export function resolveGrokBotBinaryPath(config: {
   return "omp";
 }
 
-const UPDATE_FOR = (driverKind: ProviderDriverKind) =>
-  makeStaticProviderMaintenanceResolver(
-    makeManualOnlyProviderMaintenanceCapabilities({
-      provider: driverKind,
-      packageName: null,
-    }),
-  );
-
 export type GrokDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
@@ -103,7 +91,10 @@ export function createGrokFamilyDriver(spec: {
   readonly forceGrokbot: boolean;
 }): ProviderDriver<GrokSettings, GrokDriverEnv> {
   const driverKind = spec.driverKind;
-  const UPDATE = UPDATE_FOR(driverKind);
+  const maintenanceCapabilities = makeManualOnlyProviderMaintenanceCapabilities({
+    provider: driverKind,
+    packageName: null,
+  });
   return {
     driverKind,
     metadata: {
@@ -121,6 +112,7 @@ export function createGrokFamilyDriver(spec: {
         const path = yield* Path.Path;
         const httpClient = yield* HttpClient.HttpClient;
         const serverSettings = yield* ServerSettingsService;
+        const { cwd: projectRoot } = yield* ServerConfig;
         const eventLoggers = yield* ProviderEventLoggers;
         const processEnv = mergeProviderInstanceEnvironment(environment);
         const continuationIdentity = defaultProviderContinuationIdentity({
@@ -128,8 +120,8 @@ export function createGrokFamilyDriver(spec: {
           instanceId,
         });
         const stampIdentity = withInstanceIdentity({
-          driverKind,
           instanceId,
+          driverKind,
           displayName,
           accentColor,
           continuationGroupKey: continuationIdentity.continuationKey,
@@ -143,16 +135,6 @@ export function createGrokFamilyDriver(spec: {
               })
             : { ...config, enabled, useGrokbotBackend: false }
         ) satisfies GrokSettings;
-        const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(
-          UPDATE,
-          {
-            binaryPath: spec.forceGrokbot
-              ? effectiveConfig.grokbotBinaryPath
-              : effectiveConfig.binaryPath,
-            env: processEnv,
-          },
-        );
-
         const adapter = yield* makeGrokAdapter(effectiveConfig, {
           environment: processEnv,
           ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
@@ -161,7 +143,6 @@ export function createGrokFamilyDriver(spec: {
         });
         const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv);
 
-        const { cwd: projectRoot } = yield* ServerConfig;
         const checkProvider = checkGrokProviderStatus(
           effectiveConfig,
           processEnv,
@@ -179,7 +160,7 @@ export function createGrokFamilyDriver(spec: {
           serverSettings,
         );
         const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<GrokSettings>>({
-          maintenanceCapabilities,
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
           getSettings: snapshotSettings.getSettings,
           streamSettings: snapshotSettings.streamSettings,
           haveSettingsChanged: haveProviderSnapshotSettingsChanged,
@@ -213,7 +194,7 @@ export function createGrokFamilyDriver(spec: {
           ),
         );
         const snapshotForCwd = (workspaceCwd: string) =>
-          !effectiveConfig.enabled
+          !effectiveConfig.enabled || spec.forceGrokbot
             ? snapshot.getSnapshot
             : Effect.all([
                 snapshot.getSnapshot,

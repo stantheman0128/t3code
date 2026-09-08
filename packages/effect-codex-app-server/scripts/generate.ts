@@ -194,6 +194,63 @@ const Codex0150DefinitionSchemas: Record<string, Schema.Json> = {
   },
 };
 
+// Pinned protocol JSON omits later CodexErrorInfo variants. Keep historical
+// thread payloads decodable; do not fold unknown values into "other".
+const CodexErrorInfoCompatibilityValues = [
+  "rateLimitExceeded",
+  "misalignmentPolicyViolation",
+] as const;
+
+const CodexErrorInfoCompatibilityExports = new Set([
+  "V2ThreadReadResponse",
+  "V2ThreadResumeResponse",
+  "V2ThreadRollbackResponse",
+  "V2ThreadForkResponse",
+  "V2TurnCompletedNotification",
+]);
+
+function applyCodex0151DefinitionCompatibility(
+  exportName: string,
+  definitionName: string,
+  definitionSchema: Schema.Json,
+): Schema.Json {
+  if (
+    !CodexErrorInfoCompatibilityExports.has(exportName) ||
+    definitionName !== "CodexErrorInfo" ||
+    typeof definitionSchema !== "object"
+  ) {
+    return definitionSchema;
+  }
+
+  const schema = definitionSchema as {
+    readonly oneOf?: ReadonlyArray<{ readonly enum?: ReadonlyArray<string> }>;
+  };
+  const [firstVariant, ...remainingVariants] = schema.oneOf ?? [];
+  const currentEnum = firstVariant?.enum;
+  if (!currentEnum) {
+    return definitionSchema;
+  }
+
+  const missingValues = CodexErrorInfoCompatibilityValues.filter(
+    (value) => !currentEnum.includes(value),
+  );
+  if (missingValues.length === 0) {
+    return definitionSchema;
+  }
+
+  const enumValues = [...currentEnum];
+  const otherIndex = enumValues.indexOf("other");
+  const nextEnum =
+    otherIndex === -1
+      ? [...enumValues, ...missingValues]
+      : [...enumValues.slice(0, otherIndex), ...missingValues, ...enumValues.slice(otherIndex)];
+
+  return {
+    ...definitionSchema,
+    oneOf: [{ ...firstVariant, enum: nextEnum }, ...remainingVariants],
+  };
+}
+
 const getGeneratedPaths = Effect.fn("getGeneratedPaths")(function* () {
   const path = yield* Path.Path;
   const generatedDir = path.join(import.meta.dirname, "..", "src", "_generated");
@@ -660,7 +717,8 @@ const generateFiles = Effect.fn("generateFiles")(function* () {
 
     for (const [definitionName, definitionSchema] of Object.entries(parsed.definitions ?? {})) {
       const compatibleDefinitionSchema =
-        Codex0150DefinitionSchemas[definitionName] ?? definitionSchema;
+        Codex0150DefinitionSchemas[definitionName] ??
+        applyCodex0151DefinitionCompatibility(file.exportName, definitionName, definitionSchema);
       aggregateSchemas[localDefinitionNames.get(definitionName)!] = stripNullDefaults(
         normalizeNullableTypes(
           rewriteExternalRefs(

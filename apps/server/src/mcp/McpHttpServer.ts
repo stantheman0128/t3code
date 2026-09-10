@@ -28,6 +28,8 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
+import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import { SessionToolkitHandlersLive } from "./toolkits/session/handlers.ts";
 import { SessionToolkit } from "./toolkits/session/tools.ts";
 
@@ -443,6 +445,10 @@ const SessionToolkitRegistrationLive = McpServer.toolkit(SessionToolkit).pipe(
   Layer.provide(SessionToolkitHandlersLive),
 );
 
+export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequestsToolkit).pipe(
+  Layer.provide(PullRequestsToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -453,4 +459,5 @@ const McpTransportLive = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   SessionToolkitRegistrationLive,
+  PullRequestsToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

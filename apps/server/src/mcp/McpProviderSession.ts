@@ -10,6 +10,8 @@ export interface McpProviderSessionConfig {
   readonly endpoint: string;
   readonly authorizationHeader: string;
   readonly capabilities: ReadonlySet<McpCapability>;
+  /** Whether the credential grants the preview (browser) toolkit. */
+  readonly preview: boolean;
 }
 
 const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();

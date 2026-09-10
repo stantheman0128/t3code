@@ -251,8 +251,6 @@ export interface ProviderServiceLiveOptions {
    * test see whether a credential was requested at all.
    */
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
-  /** Same seam as `issueMcpCredential`, for observing the deny path's revoke. */
-  readonly revokeMcpCredential?: typeof McpSessionRegistry.revokeActiveMcpThread;
 }
 
 interface TurnAnalyticsMetadata {
@@ -481,8 +479,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   );
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
-  const revokeMcpCredential =
-    options?.revokeMcpCredential ?? McpSessionRegistry.revokeActiveMcpThread;
   const fileSystem = yield* FileSystem.FileSystem;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
@@ -855,14 +851,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* recordCompletedTurnProperties(properties);
   });
   /**
-   * Attach the `t3-code` MCP server to the session that is about to start.
+   * Whether the credential minted below may drive the user's browser.
    *
    * Every session gets a credential with `session` so the agent can spawn a
-   * peer T3 thread. `preview` is added only when agent browser access is on
-   * for this thread's project. Adapters treat a missing session as "no MCP
-   * server"; `/mcp` accepts nothing but tokens issued here.
-   */
-  /**
+   * peer T3 thread, and `pull-requests` so it can register links on its own
+   * thread. `preview` is added only when agent browser access is on for this
+   * thread's project. Adapters treat a missing session as "no MCP server";
+   * `/mcp` accepts nothing but tokens issued here.
+   *
    * Deny on an unreadable settings file rather than letting the read failure
    * escape: adding `ServerSettingsError` to `ProviderServiceError` would widen
    * a union every caller handles, for a branch that only decides whether one
@@ -891,18 +887,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
+  /**
+   * Attach the `t3-code` MCP server to the session that is about to start.
+   *
+   * Every session gets a credential: `session` so the agent can spawn a peer
+   * thread, and `pull-requests` so it can register links on its own thread.
+   * Browser access is a capability on that credential, so turning the setting
+   * off withholds the preview tools without taking the server away.
+   * `issueActiveMcpCredential` revokes the thread's previous token first, which
+   * matters because a session restart (runtime mode, cwd, model) re-prepares
+   * without stopping.
+   */
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
-      const previewEnabled = yield* agentBrowserAccessEnabled(threadId);
-      const capabilities = new Set<"preview" | "session">(["session"]);
-      if (previewEnabled) {
-        capabilities.add("preview");
-      }
-      const credential = yield* issueMcpCredential({
-        threadId,
-        providerInstanceId,
-        capabilities,
-      });
+      const preview = yield* agentBrowserAccessEnabled(threadId);
+      const credential = yield* issueMcpCredential({ threadId, providerInstanceId, preview });
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }

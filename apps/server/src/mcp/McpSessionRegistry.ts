@@ -14,7 +14,24 @@ import * as McpProviderSession from "./McpProviderSession.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  /**
+   * Whether the credential may drive the user's browser. The pull request
+   * toolkit is always granted: it only touches the thread's own links.
+   * Session spawn is always granted so the agent can open peer threads.
+   */
+  readonly preview?: boolean;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
+}
+
+function resolveMcpCredentialCapabilities(
+  request: McpCredentialRequest,
+): ReadonlySet<McpInvocationContext.McpCapability> {
+  if (request.capabilities) {
+    return request.capabilities;
+  }
+  return new Set<McpInvocationContext.McpCapability>(
+    request.preview ? ["session", "pull-requests", "preview"] : ["session", "pull-requests"],
+  );
 }
 
 export interface McpIssuedCredential {
@@ -69,7 +86,7 @@ export interface McpSessionRegistryOptions {
  *
  * The bound matters because `/mcp` is mounted outside the environment auth
  * stack and is reachable on whatever host the server binds to, so this token is
- * the only thing guarding the preview toolkit on a remote-reachable server.
+ * the only thing guarding the `t3-code` toolkits on a remote-reachable server.
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
@@ -129,7 +146,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: request.capabilities ?? new Set(["preview", "session"]),
+        capabilities: resolveMcpCredentialCapabilities(request),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -146,6 +163,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
           capabilities: scope.capabilities,
+          preview: scope.capabilities.has("preview"),
         },
       };
     },

@@ -128,14 +128,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
-    id: "show-provider-usage",
-    title: "Provider usage",
-    to: "/settings/appearance",
-  },
-  {
     id: "usage-percent-display",
     title: "Usage percent",
     to: "/settings/appearance",
+    searchTerms: ["left used remaining quota context window"],
   },
   {
     id: "provider-chrome",

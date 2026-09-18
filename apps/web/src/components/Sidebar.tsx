@@ -183,6 +183,7 @@ import {
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
+  sortThreadsForSidebar,
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
@@ -1844,7 +1845,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           )}
                         >
                           {topStatus.icon === "working" ? (
-                            <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                            <span
+                              aria-hidden
+                              className="inline-flex size-4 shrink-0 origin-center [content-visibility:visible] animate-working-spin motion-reduce:animate-none"
+                            >
+                              <CircleDashedIcon className="size-4" />
+                            </span>
                           ) : topStatus.icon === "done" ? (
                             <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
                           ) : null}

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   dismissThreadErrorBannerForSession,
   getThreadErrorBannerKey,
+  isProviderAuthExpiryError,
   isThreadErrorBannerDismissedForSession,
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
@@ -80,9 +81,31 @@ describe("ThreadErrorBanner", () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-label="Dismiss error"');
     expect(markup).not.toContain("controlAlignment");
-    expect(markup).toContain("flex gap-2 items-start");
+    expect(markup).toContain("gap-2 items-start");
     expect(markup).toContain("min-h-7 pt-1 sm:min-h-6 sm:pt-0.5");
     expect(markup).toContain("h-lh w-4");
     expect(markup).toContain("h-lh self-start");
+  });
+
+  it("detects provider auth expiry errors without treating ordinary failures as login issues", () => {
+    expect(
+      isProviderAuthExpiryError(
+        "Provider adapter request failed (grok) for session/prompt: HTTP 401 Invalid or expired credentials auth_kind=none",
+      ),
+    ).toBe(true);
+    expect(isProviderAuthExpiryError("Provider crashed")).toBe(false);
+  });
+
+  it("offers sign-in and reconnect when the error is an expired login", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadErrorBanner
+        error="Provider adapter request failed (grok) for session/prompt: HTTP 401"
+        onSignIn={() => {}}
+        onReconnect={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("Sign in");
+    expect(markup).toContain("Reconnect");
   });
 });

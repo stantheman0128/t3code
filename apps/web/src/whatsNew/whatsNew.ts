@@ -1,0 +1,93 @@
+import { compareSemverVersions } from "@t3tools/shared/semver";
+
+export interface WhatsNewEntry {
+  readonly version: string;
+  readonly title: string;
+  readonly highlights: readonly string[];
+}
+
+export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
+
+/** Add an entry for each desktop version that should open What's New after install. */
+export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
+  {
+    version: "0.0.105",
+    title: "What's new in 0.0.105",
+    highlights: [
+      "The Goal strip sits above the composer with Pause, Resume, and Edit.",
+      "Picking /goal from the slash menu puts a chip on the first editor line, same height as the text.",
+    ],
+  },
+  {
+    version: "0.0.104",
+    title: "What's new in 0.0.104",
+    highlights: [
+      "After /goal, the composer shows the current objective again. Click the strip to expand it.",
+    ],
+  },
+  {
+    version: "0.0.103",
+    title: "What's new in 0.0.103",
+    highlights: [
+      "Grok /goal is back in the slash menu after the provider health check. 0.0.102 left only /compact.",
+    ],
+  },
+  {
+    version: "0.0.102",
+    title: "What's new in 0.0.102",
+    highlights: [
+      "Antigravity health checks reuse a recent result instead of launching a full unpack every 30 seconds.",
+      "Each Antigravity process unpacks into a T3-owned temp folder and deletes that folder when it stops, even if Windows has to force-kill it.",
+      "This stops Temp from growing by about a gigabyte on every health check.",
+    ],
+  },
+  {
+    version: "0.0.101",
+    title: "What's new in 0.0.101",
+    highlights: [
+      "If a provider login expires, the chat shows Sign in and Reconnect. Thread history stays; the failed prompt is not sent again.",
+      "Sign in with Google opens the browser as soon as the link is ready.",
+      "A failed Antigravity install waits before downloading again, instead of grabbing another copy immediately.",
+    ],
+  },
+  {
+    version: "0.0.100",
+    title: "What's new in 0.0.100",
+    highlights: [
+      "Ask the current agent to spawn Codex, Claude, Gemini, Grok, or another ready provider as a new visible thread in the same project.",
+      "Check for Updates now names the available version so you can download or install it from the dialog.",
+      "After each app update, T3 Code opens this summary of what changed.",
+    ],
+  },
+  {
+    version: "0.0.99",
+    title: "What's new in 0.0.99",
+    highlights: [
+      "Ask the current agent to spawn Codex, Claude, Gemini, Grok, or another ready provider as a new visible thread in the same project.",
+      "Slash commands and the command palette still work for Codex, Grok, and Grok Bot.",
+      "Native subagents stay on the current thread; spawn opens a peer T3 thread.",
+    ],
+  },
+];
+
+export function resolveWhatsNewToShow(input: {
+  readonly currentVersion: string;
+  readonly lastSeenVersion: string | null;
+  readonly entries?: readonly WhatsNewEntry[];
+}): WhatsNewEntry | null {
+  const currentVersion = input.currentVersion.trim();
+  if (currentVersion.length === 0 || currentVersion === "0.0.0") {
+    return null;
+  }
+  if (input.lastSeenVersion === currentVersion) {
+    return null;
+  }
+  if (
+    input.lastSeenVersion !== null &&
+    compareSemverVersions(currentVersion, input.lastSeenVersion) <= 0
+  ) {
+    return null;
+  }
+  const entries = input.entries ?? WHATS_NEW_ENTRIES;
+  return entries.find((entry) => entry.version === currentVersion) ?? null;
+}

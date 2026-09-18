@@ -36,6 +36,7 @@ import {
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  resolveComposerPromptForSend,
   deriveLockedProvider,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
@@ -1395,6 +1396,42 @@ describe("deriveComposerSendState", () => {
         elementContextCount: 0,
       }).hasSendableContent,
     ).toBe(false);
+  });
+
+  it("treats an accessed slash command chip as sendable with an empty prompt", () => {
+    expect(
+      deriveComposerSendState({
+        prompt: "",
+        imageCount: 0,
+        terminalContexts: [],
+        slashCommandActive: true,
+      }).hasSendableContent,
+    ).toBe(true);
+  });
+});
+
+describe("resolveComposerPromptForSend", () => {
+  it("reconstitutes /goal from the chip plus arguments", () => {
+    expect(
+      resolveComposerPromptForSend({ name: "goal", hint: "objective" }, "keep tests green"),
+    ).toEqual({
+      composed: "/goal keep tests green",
+      send: "/goal keep tests green",
+    });
+  });
+
+  it("sends the command alone when the editor is empty", () => {
+    expect(resolveComposerPromptForSend({ name: "goal", hint: null }, "  ")).toEqual({
+      composed: "/goal",
+      send: "/goal",
+    });
+  });
+
+  it("leaves a prompt unchanged when no slash chip is active", () => {
+    expect(resolveComposerPromptForSend(null, "  hello  ")).toEqual({
+      composed: "hello",
+      send: "hello",
+    });
   });
 });
 

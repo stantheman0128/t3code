@@ -10,6 +10,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  buildServerProvider,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
@@ -90,6 +91,50 @@ describe("providerModelsFromSettings", () => {
 
     expect(models.map((model) => model.slug)).toEqual(["claude-opus-4-8", "opus"]);
     expect(models[1]?.isCustom).toBe(true);
+  });
+});
+
+describe("buildServerProvider", () => {
+  it("normalizes legacy provider limits before publishing the snapshot", () => {
+    const provider = buildServerProvider({
+      presentation: { displayName: "Cursor" },
+      enabled: true,
+      checkedAt: "2026-09-09T12:00:00.000Z",
+      models: [],
+      usageLimits: {
+        status: "available",
+        observedAt: "2026-09-09T11:59:00.000Z",
+        windows: [
+          {
+            id: "primary",
+            label: "Weekly",
+            remainingPercent: 42,
+            resetsAt: "2026-09-16T12:00:00.000Z",
+            durationMinutes: 7 * 24 * 60,
+          },
+        ],
+      },
+      probe: {
+        installed: true,
+        version: "1.0.0",
+        status: "ready",
+        auth: { status: "authenticated" },
+      },
+    });
+
+    expect(provider.usageLimits).toEqual({
+      checkedAt: "2026-09-09T12:00:00.000Z",
+      windows: [
+        {
+          id: "primary",
+          kind: "weekly",
+          label: "Weekly",
+          usedPercent: 58,
+          resetsAt: "2026-09-16T12:00:00.000Z",
+          windowDurationMins: 10_080,
+        },
+      ],
+    });
   });
 });
 

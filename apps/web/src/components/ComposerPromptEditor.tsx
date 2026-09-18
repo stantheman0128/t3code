@@ -56,6 +56,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 
 import {
@@ -78,6 +79,7 @@ import {
   COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME,
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
+  COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME,
   COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME,
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
@@ -918,6 +920,8 @@ interface ComposerPromptEditorProps {
   skills: ReadonlyArray<ServerProviderSkill>;
   disabled: boolean;
   placeholder: string;
+  /** First-line token (slash chip). Sits in the same line box as the prompt. */
+  prefix?: ReactNode;
   containerClassName?: string;
   className?: string;
   placeholderClassName?: string;
@@ -1635,6 +1639,7 @@ function ComposerPromptEditorInner({
   skills,
   disabled,
   placeholder,
+  prefix,
   containerClassName,
   className,
   placeholderClassName,
@@ -1965,6 +1970,31 @@ function ComposerPromptEditorInner({
     });
   }, []);
 
+  const prefixRef = useRef<HTMLSpanElement>(null);
+  const [firstLineIndentPx, setFirstLineIndentPx] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!prefix) {
+      setFirstLineIndentPx(0);
+      return;
+    }
+    const node = prefixRef.current;
+    if (!node) {
+      return;
+    }
+    const update = () => {
+      const width = node.offsetWidth;
+      setFirstLineIndentPx(width > 0 ? width + 6 : 0);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [prefix]);
+
+  const firstLineIndentStyle =
+    firstLineIndentPx > 0 ? { textIndent: `${firstLineIndentPx}px` } : undefined;
+
   return (
     <ComposerTerminalContextActionsContext value={terminalContextActions}>
       <ComposerCitationCommentContext value={citationCommentActions}>
@@ -1974,6 +2004,20 @@ function ComposerPromptEditorInner({
             containerClassName,
           )}
         >
+          {prefix ? (
+            <span
+              ref={prefixRef}
+              className={cn(
+                "pointer-events-none absolute left-0 top-0 z-1",
+                COMPOSER_INLINE_CHIP_LINE_STRUT_CLASS_NAME,
+              )}
+              data-testid="composer-inline-chip-line"
+            >
+              <span className="pointer-events-auto inline-flex max-w-full items-center">
+                {prefix}
+              </span>
+            </span>
+          ) : null}
           <PlainTextPlugin
             contentEditable={
               <ContentEditable
@@ -1982,6 +2026,7 @@ function ComposerPromptEditorInner({
                   "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
                   className,
                 )}
+                style={firstLineIndentStyle}
                 data-testid="composer-editor"
                 aria-placeholder={placeholder}
                 placeholder={<span />}
@@ -2035,6 +2080,7 @@ function ComposerPromptEditorInner({
                     "pointer-events-none absolute inset-0 leading-relaxed text-placeholder/75",
                     placeholderClassName,
                   )}
+                  style={firstLineIndentStyle}
                 >
                   {placeholder}
                 </div>
@@ -2065,6 +2111,7 @@ export function ComposerPromptEditor({
   skills,
   disabled,
   placeholder,
+  prefix,
   containerClassName,
   className,
   placeholderClassName,
@@ -2115,6 +2162,7 @@ export function ComposerPromptEditor({
         skills={skills}
         disabled={disabled}
         placeholder={placeholder}
+        {...(prefix !== undefined ? { prefix } : {})}
         {...(containerClassName ? { containerClassName } : {})}
         onRemoveTerminalContext={onRemoveTerminalContext}
         onChange={onChange}

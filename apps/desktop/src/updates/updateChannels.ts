@@ -9,3 +9,14 @@ export function isNightlyDesktopVersion(version: string): boolean {
 export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
   return isNightlyDesktopVersion(appVersion) ? "nightly" : "latest";
 }
+
+export function shouldApplyAvailableUpdate(input: {
+  readonly version: string;
+  readonly selectedChannel: DesktopUpdateChannel;
+  readonly localFeedEnabled: boolean;
+}): boolean {
+  if (input.localFeedEnabled) {
+    return true;
+  }
+  return resolveDefaultDesktopUpdateChannel(input.version) === input.selectedChannel;
+}

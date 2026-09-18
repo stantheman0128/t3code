@@ -352,9 +352,8 @@ describe("AcpRuntimeModel", () => {
 
     expect(thoughtResult.events).toEqual([
       {
-        _tag: "ContentDelta",
+        _tag: "ThoughtDelta",
         text: "checking the adapter",
-        streamKind: "reasoning_text",
         rawPayload: {
           sessionId: "session-1",
           update: {

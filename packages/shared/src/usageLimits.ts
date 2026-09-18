@@ -379,6 +379,59 @@ export interface LimitPool {
   readonly windows: readonly LimitPoolWindow[];
 }
 
+/**
+ * One Limits-page row per enabled, available driver: either its pooled windows
+ * or a notice explaining why there are no bars. Drivers that never publish
+ * `usageLimits` still appear so Grok Bot / Antigravity are not silently omitted.
+ */
+export interface LimitDriverCatalogEntry {
+  readonly driver: ServerProvider["driver"];
+  readonly pool: LimitPool | null;
+  readonly notice: string | null;
+}
+
+function providersVisibleOnLimits(providers: readonly ServerProvider[]): readonly ServerProvider[] {
+  return providers.filter(
+    (provider) => provider.enabled && provider.installed && isProviderAvailable(provider),
+  );
+}
+
+export function collectLimitDriverCatalog(
+  presentations: Parameters<typeof collectLimitSources>[0],
+  now: number,
+): readonly LimitDriverCatalogEntry[] {
+  const poolByDriver = new Map(
+    collectLimitPools(collectLimitAccounts(presentations), now).map((pool) => [pool.driver, pool]),
+  );
+  const driverOrder: Array<ServerProvider["driver"]> = [];
+  const seen = new Set<string>();
+  const instancesByDriver = new Map<string, ServerProvider[]>();
+
+  for (const presentation of presentations.values()) {
+    for (const provider of providersVisibleOnLimits(presentation.serverConfig?.providers ?? [])) {
+      const list = instancesByDriver.get(provider.driver);
+      if (list) list.push(provider);
+      else instancesByDriver.set(provider.driver, [provider]);
+      if (!seen.has(provider.driver)) {
+        seen.add(provider.driver);
+        driverOrder.push(provider.driver);
+      }
+    }
+  }
+
+  return driverOrder.map((driver) => {
+    const pool = poolByDriver.get(driver) ?? null;
+    if (pool && pool.windows.length > 0) {
+      return { driver, pool, notice: null };
+    }
+    const notice =
+      (instancesByDriver.get(driver) ?? [])
+        .map((provider) => (provider.usageLimits ? limitsNotice(provider.usageLimits) : null))
+        .find((value) => value !== null) ?? "No subscription limits for this provider.";
+    return { driver, pool: null, notice };
+  });
+}
+
 const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
   session: 0,
   weekly: 1,
@@ -502,6 +555,28 @@ export function limitsNotice(limits: ServerProviderUsageLimits): string | null {
 /** Quota left in the window, 0..100. Bars and labels show what remains, as Codex does. */
 export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
+}
+
+/** Distinct fill colours for Limits bars so drivers are readable next to each other. */
+export function limitBarColor(driver: ServerProvider["driver"]): string {
+  switch (driver) {
+    case "codex":
+      return "#10a37f";
+    case "claudeAgent":
+      return "#d97757";
+    case "cursor":
+      return "#f54e00";
+    case "grok":
+      return "#38bdf8";
+    case "grokbot":
+      return "#a78bfa";
+    case "opencode":
+      return "#84cc16";
+    case "antigravity":
+      return "#8b5cf6";
+    default:
+      return "#737373";
+  }
 }
 
 function resetMillis(window: ServerProviderUsageWindow): number | null {

@@ -11,7 +11,7 @@ import {
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { ensureLocalApi } from "../../localApi";
@@ -20,6 +20,20 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+
+export function shouldAutoOpenGoogleSignIn(input: {
+  readonly usesBrowser: boolean;
+  readonly authorizationUrl: string | null | undefined;
+  readonly flowId: string | null | undefined;
+  readonly lastOpenedFlowId: string | null;
+}): boolean {
+  return Boolean(
+    input.usesBrowser &&
+    input.authorizationUrl &&
+    input.flowId &&
+    input.flowId !== input.lastOpenedFlowId,
+  );
+}
 
 interface ProviderSetupSectionProps {
   readonly environmentId: EnvironmentId;
@@ -143,6 +157,7 @@ function ProviderSetupActions({
   const [error, setError] = useState<string | null>(null);
   const [callbackDraft, setCallbackDraft] = useState({ flowId: null as string | null, value: "" });
   const [copiedFlowId, setCopiedFlowId] = useState<string | null>(null);
+  const openedSignInFlowIdRef = useRef<string | null>(null);
   const callbackUrl = callbackDraft.flowId === auth?.flowId ? callbackDraft.value : "";
   const authActive =
     auth?.phase === "starting" || auth?.phase === "waiting" || auth?.phase === "verifying";
@@ -220,6 +235,22 @@ function ProviderSetupActions({
       setError("Could not open the sign-in page. Copy the link and open it in your browser.");
     }
   }
+
+  useEffect(() => {
+    const flowId = auth?.flowId ?? null;
+    if (
+      !shouldAutoOpenGoogleSignIn({
+        usesBrowser,
+        authorizationUrl,
+        flowId,
+        lastOpenedFlowId: openedSignInFlowIdRef.current,
+      })
+    ) {
+      return;
+    }
+    openedSignInFlowIdRef.current = flowId;
+    void openSignInPage();
+  }, [auth?.flowId, authorizationUrl, usesBrowser]);
 
   async function copySignInLink() {
     if (!authorizationUrl) return;

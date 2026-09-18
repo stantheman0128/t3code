@@ -70,13 +70,14 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
-  it("shows the Grok Bot backend controls for Grok providers", () => {
+  it("keeps Grok CLI and Grok Bot settings on separate drivers", () => {
     const grok = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("grok")];
+    const grokbot = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("grokbot")];
     expect(grok).toBeDefined();
+    expect(grokbot).toBeDefined();
 
-    expect(deriveProviderSettingsFields(grok!).map((field) => field.key)).toEqual([
-      "useGrokbotBackend",
-      "grokbotBinaryPath",
+    expect(deriveProviderSettingsFields(grok!).map((field) => field.key)).toEqual(["binaryPath"]);
+    expect(deriveProviderSettingsFields(grokbot!).map((field) => field.key)).toEqual([
       "binaryPath",
     ]);
   });

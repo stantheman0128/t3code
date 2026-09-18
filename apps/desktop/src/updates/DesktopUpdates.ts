@@ -32,7 +32,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
-import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
+import { shouldApplyAvailableUpdate } from "./updateChannels.ts";
 import {
   LOCAL_UPDATE_FEED_MANIFEST_NAME,
   resolveLocalUpdateFeedDirectory,
@@ -705,7 +705,14 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
-          if (resolveDefaultDesktopUpdateChannel(info.version) !== state.channel) {
+          const localFeedEnabled = yield* Ref.get(localFeedEnabledRef);
+          if (
+            !shouldApplyAvailableUpdate({
+              version: info.version,
+              selectedChannel: state.channel,
+              localFeedEnabled,
+            })
+          ) {
             yield* logUpdaterInfo("ignoring update that does not match selected channel", {
               version: info.version,
               channel: state.channel,

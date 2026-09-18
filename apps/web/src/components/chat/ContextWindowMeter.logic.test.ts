@@ -2,6 +2,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
+  composerPlanUsageLimits,
   formatContextWindowCompactionMessage,
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
@@ -284,5 +285,57 @@ describe("shouldReserveContextWindowMeter", () => {
     expect(shouldReserveContextWindowMeter({ ...loadingStartedThread, meterEnabled: false })).toBe(
       false,
     );
+  });
+});
+
+describe("composerPlanUsageLimits", () => {
+  it("converts used-percent windows into remaining bars", () => {
+    expect(
+      composerPlanUsageLimits(
+        {
+          checkedAt: "2026-09-10T12:00:00.000Z",
+          windows: [
+            {
+              id: "five_hour",
+              kind: "session",
+              label: "5h",
+              usedPercent: 28,
+              resetsAt: "2026-09-10T17:00:00.000Z",
+              windowDurationMins: 300,
+            },
+          ],
+        },
+        "SuperGrok",
+      ),
+    ).toEqual({
+      status: "available",
+      planLabel: "SuperGrok",
+      observedAt: "2026-09-10T12:00:00.000Z",
+      windows: [
+        {
+          id: "five_hour",
+          label: "5h",
+          remainingPercent: 72,
+          resetsAt: "2026-09-10T17:00:00.000Z",
+          durationMinutes: 300,
+        },
+      ],
+    });
+  });
+
+  it("hides unavailable or empty snapshots", () => {
+    expect(
+      composerPlanUsageLimits({
+        checkedAt: "2026-09-10T12:00:00.000Z",
+        windows: [{ id: "five_hour", kind: "session", label: "5h", usedPercent: 10 }],
+        unavailable: { reason: "unsupported" },
+      }),
+    ).toBeNull();
+    expect(
+      composerPlanUsageLimits({
+        checkedAt: "2026-09-10T12:00:00.000Z",
+        windows: [],
+      }),
+    ).toBeNull();
   });
 });

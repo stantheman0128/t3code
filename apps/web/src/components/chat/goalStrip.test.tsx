@@ -7,7 +7,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ComposerBannerStack } from "./ComposerBannerStack";
-import { resolveComposerGoalBanner } from "./goalStrip";
+import {
+  composeGoalControlPrompt,
+  GoalStripBar,
+  resolveComposerGoalBanner,
+  resolveComposerGoalStrip,
+} from "./goalStrip";
 
 const GROK_OBJECTIVE = "Prove Klaus Pinn's D-sequence claims C1, C2, and C5.";
 const GOAL_STARTED_AT = "2026-08-28T12:00:00.000Z";
@@ -25,6 +30,44 @@ function renderGoalBanner(input: Parameters<typeof resolveComposerGoalBanner>[0]
     return "";
   }
   return renderToStaticMarkup(<ComposerBannerStack items={[item]} />);
+}
+
+function renderGoalStrip(input: {
+  readonly phase?: Parameters<typeof resolveComposerGoalStrip>[0]["phase"];
+  readonly expanded?: boolean;
+  readonly promptGoal?: ReturnType<typeof grokPromptGoal>;
+  readonly codexGoal?: CodexGoal | null;
+  readonly paused?: boolean;
+}) {
+  const promptGoal = input.paused
+    ? derivePromptGoalFromUserTexts([
+        { text: `/goal ${GROK_OBJECTIVE}`, createdAt: GOAL_STARTED_AT },
+        { text: "/goal pause", createdAt: GOAL_STARTED_AT },
+      ])
+    : (input.promptGoal ?? grokPromptGoal());
+  const model = resolveComposerGoalStrip({
+    threadId: "1",
+    phase: input.phase ?? "ready",
+    codexGoal: input.codexGoal ?? null,
+    promptGoal: input.codexGoal ? null : promptGoal,
+    now: GOAL_NOW,
+  });
+  if (model === null) {
+    return { model: null, markup: "" };
+  }
+  return {
+    model,
+    markup: renderToStaticMarkup(
+      <GoalStripBar
+        model={model}
+        expanded={input.expanded ?? false}
+        onToggle={() => {}}
+        onPause={() => {}}
+        onResume={() => {}}
+        onEdit={() => {}}
+      />,
+    ),
+  };
 }
 
 describe("resolveComposerGoalBanner", () => {
@@ -92,5 +135,46 @@ describe("resolveComposerGoalBanner", () => {
     expect(markup).toContain("Ship it");
     expect(markup).toContain("2m");
     expect(markup).toContain("not running");
+  });
+});
+
+describe("GoalStripBar", () => {
+  it("keeps Pause, Resume, and Edit off the expand control", () => {
+    const active = renderGoalStrip({ expanded: false });
+    const paused = renderGoalStrip({ paused: true });
+    const elapsed = formatPromptGoalElapsedLabel({
+      startedAt: GOAL_STARTED_AT,
+      now: GOAL_NOW,
+    });
+
+    expect(active.model?.status).toBe("active");
+    expect(active.markup).toContain('data-composer-goal-strip="true"');
+    expect(active.markup).toContain("Goal active");
+    expect(active.markup).toContain("D-sequence claims C1, C2, and C5.");
+    expect(active.markup).toContain('aria-label="Pause goal"');
+    expect(active.markup).toContain(">Pause</button>");
+    expect(active.markup).toContain('aria-label="Edit goal"');
+    expect(active.markup).toContain(">Edit</button>");
+    expect(active.markup).not.toContain('aria-label="Resume goal"');
+    expect(active.markup).toContain('aria-label="Show full goal"');
+
+    expect(paused.model?.status).toBe("paused");
+    expect(paused.markup).toContain("Goal paused");
+    expect(paused.markup).toContain('aria-label="Resume goal"');
+    expect(paused.markup).toContain(">Resume</button>");
+    expect(paused.markup).not.toContain('aria-label="Pause goal"');
+    expect(paused.markup).toContain('aria-label="Edit goal"');
+
+    const expanded = renderGoalStrip({ phase: "running", expanded: true });
+    expect(expanded.markup).toContain("Goal running");
+    expect(expanded.markup).toContain("running");
+    expect(elapsed).toBe("12m");
+    expect(expanded.markup).toContain("12m");
+  });
+
+  it("composes provider control slashes for pause and resume", () => {
+    expect(composeGoalControlPrompt("pause")).toBe("/goal pause");
+    expect(composeGoalControlPrompt("resume")).toBe("/goal resume");
+    expect(composeGoalControlPrompt("clear")).toBe("/goal clear");
   });
 });

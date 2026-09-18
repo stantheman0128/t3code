@@ -887,17 +887,6 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
     case "agent_thought_chunk": {
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
-          _tag: "ContentDelta",
-          text: upd.content.text,
-          streamKind: "reasoning_text",
-          rawPayload: params,
-        });
-      }
-      break;
-    }
-    case "agent_thought_chunk": {
-      if (upd.content.type === "text" && upd.content.text.length > 0) {
-        events.push({
           _tag: "ThoughtDelta",
           text: upd.content.text,
           rawPayload: params,

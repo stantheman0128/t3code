@@ -153,6 +153,26 @@ rustup target add aarch64-pc-windows-msvc
 NSIS is downloaded by electron-builder. WSL support additionally needs a Linux node-pty prebuild;
 see the [release runbook](./release.md#windows-payload-topology-and-update-validation).
 
+### Local Windows update feed
+
+`vp run dist:desktop:win` copies the unsigned NSIS installer into
+`%LOCALAPPDATA%\t3code-local-updates`. An installed Alpha build whose `app-update.yml` uses the
+loopback generic provider can **Check for Updates** and install from that folder. The pack does not
+replace the running app unless `T3CODE_FORCE_INSTALL=1`.
+
+Older local installs bake `http://127.0.0.1:47821` and do not bind a feed themselves. Serve the
+staged folder with `vp run serve:local-update-feed` so Check for Updates can reach `latest.yml`.
+Newer desktop builds bind that port (or fall back and call `setFeedURL`).
+
+To pack whenever this repo's git HEAD changes (five-minute debounce), register the logon watcher:
+
+```powershell
+vp run watch:local-desktop-pack -- --install-task
+```
+
+It stages a newer version into the feed and leaves install to Check for Updates. Packs still need
+the Windows installer prerequisites above. Logs: `%LOCALAPPDATA%\t3code-local-updates\pack.log`.
+
 ### Signing and passkeys
 
 Add `--signed` after configuring the platform credentials in the

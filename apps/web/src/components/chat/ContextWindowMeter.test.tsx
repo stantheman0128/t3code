@@ -36,6 +36,13 @@ describe("ContextWindowMeter", () => {
     expect(markup).not.toContain("openOnHover");
   });
 
+  it("can label occupancy as used instead of leftover", () => {
+    const markup = renderToStaticMarkup(<ContextWindowMeter usage={usage} percentDisplay="used" />);
+
+    expect(markup).toContain("10% used");
+    expect(markup).not.toContain("90% left");
+  });
+
   it("shows plan usage limits next to the context window", () => {
     const markup = renderToStaticMarkup(
       <ContextWindowMeter
@@ -65,19 +72,17 @@ describe("ContextWindowMeter", () => {
     expect(markup).toContain("bg-muted-foreground/25");
   });
 
-  it("can label context and plan quota as used", () => {
+  it("still renders from plan quota when the thread has no occupancy snapshot", () => {
     const markup = renderToStaticMarkup(
       <ContextWindowMeter
-        usage={usage}
-        percentDisplay="used"
         planUsageLimits={{
           status: "available",
-          planLabel: "ChatGPT Plus",
+          planLabel: "SuperGrok",
           windows: [
             {
               id: "primary",
               label: "5h",
-              remainingPercent: 58,
+              remainingPercent: 72,
               resetsAt: null,
             },
           ],
@@ -85,9 +90,16 @@ describe("ContextWindowMeter", () => {
       />,
     );
 
-    expect(markup).toContain("10% used");
-    expect(markup).toContain("42% used");
-    expect(markup).not.toContain("left");
+    expect(markup).toContain("Plan usage limits · SuperGrok");
+    expect(markup).toContain("72% left");
+    expect(markup).not.toContain("Context window");
+  });
+
+  it("keeps an empty ring when the setting is on but nothing has reported yet", () => {
+    const markup = renderToStaticMarkup(<ContextWindowMeter />);
+
+    expect(markup).toContain('aria-label="Context window"');
+    expect(markup).toContain("No context usage yet.");
   });
 
   it("explains why the compact action is disabled", () => {

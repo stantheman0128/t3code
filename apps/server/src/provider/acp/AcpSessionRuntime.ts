@@ -87,6 +87,18 @@ export interface AcpSessionRuntimeOptions {
   /** Native cancellation waits for the prompt response and the getEvents consumer to drain. */
   readonly cancelBehavior?: "interrupt" | "wait-for-prompt";
   readonly cancelTimeout?: Duration.Input;
+  /**
+   * How long a graceful process stop may run before the runtime force-kills.
+   * On Windows the process spawner still force-kills the tree; pair this with
+   * `gracefulShutdownWait` when the child needs time to exit on stdin EOF.
+   */
+  readonly forceKillAfter?: Duration.Input;
+  /**
+   * Close ACP stdin and wait this long for a voluntary exit before the
+   * scoped process finalizer force-kills. Unset keeps the previous immediate
+   * kill path used by other providers.
+   */
+  readonly gracefulShutdownWait?: Duration.Input;
   readonly clientCapabilities?: EffectAcpSchema.InitializeRequest["clientCapabilities"];
   readonly clientInfo: {
     readonly name: string;
@@ -359,6 +371,7 @@ export const make = (
     const promptDispatchSemaphore = yield* Semaphore.make(1);
     const activePromptRef = yield* Ref.make<Option.Option<AcpActivePrompt>>(Option.none());
     const sessionLoadGateRef = yield* Ref.make<Option.Option<SessionLoadGate>>(Option.none());
+    const forceKillAfter = options.forceKillAfter ?? "1 second";
 
     const ensureConnected = Effect.gen(function* () {
       const error = yield* Ref.get(terminationErrorRef);
@@ -449,6 +462,50 @@ export const make = (
         ),
       );
 
+    yield* Effect.log("ACP child spawned.", {
+      pid: child.pid,
+      command: options.spawn.command,
+      clientName: options.clientInfo.name,
+    });
+
+    if (options.gracefulShutdownWait !== undefined) {
+      const gracefulShutdownWait = options.gracefulShutdownWait;
+      yield* Scope.addFinalizer(
+        runtimeScope,
+        Effect.gen(function* () {
+          const pid = child.pid;
+          if (!(yield* child.isRunning.pipe(Effect.orElseSucceed(() => false)))) {
+            yield* Effect.log("ACP child already exited before graceful stop.", {
+              pid,
+              clientName: options.clientInfo.name,
+              forceKill: false,
+            });
+            return;
+          }
+          yield* Effect.log("ACP child graceful stop starting.", {
+            pid,
+            clientName: options.clientInfo.name,
+            wait: String(gracefulShutdownWait),
+          });
+          const startedAt = yield* Clock.currentTimeMillis;
+          yield* Stream.empty.pipe(Stream.run(child.stdin), Effect.ignore);
+          const exited = yield* child.exitCode.pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => true),
+            Effect.timeoutOption(gracefulShutdownWait),
+            Effect.map(Option.isSome),
+          );
+          const waitedMs = (yield* Clock.currentTimeMillis) - startedAt;
+          yield* Effect.log("ACP child graceful stop finished.", {
+            pid,
+            clientName: options.clientInfo.name,
+            waitedMs,
+            forceKill: !exited,
+          });
+        }),
+      );
+    }
+
     yield* child.stderr.pipe(
       Stream.decodeText(),
       Stream.runForEach((chunk) =>
@@ -460,7 +517,7 @@ export const make = (
             Effect.gen(function* () {
               yield* Deferred.fail(stderrFailure, error);
               yield* recordTermination(error);
-              yield* child.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore);
+              yield* child.kill({ forceKillAfter }).pipe(Effect.ignore);
             }),
           ),
         ),
@@ -539,12 +596,44 @@ export const make = (
             }
             return;
           }
-          // One runtime projects one root ACP session. Child-session updates need
-          // explicit lineage routing and must never be flattened into this stream.
-          if (
-            startState._tag !== "Started" ||
-            notification.sessionId !== startState.result.sessionId
-          ) {
+          // One runtime projects one root ACP session. Child-session
+          // updates must never flatten into the parent chat. Route tool
+          // calls and content so Grok subagents still reach the Agents panel.
+          if (startState._tag !== "Started") {
+            return;
+          }
+          if (notification.sessionId !== startState.result.sessionId) {
+            const parsed = parseSessionUpdateEvent(notification);
+            for (const event of parsed.events) {
+              if (event._tag === "ToolCallUpdated") {
+                yield* Queue.offer(eventQueue, {
+                  _tag: "ChildSessionToolCallUpdated",
+                  sessionId: notification.sessionId,
+                  toolCall: event.toolCall,
+                  rawPayload: event.rawPayload,
+                });
+                continue;
+              }
+              if (event._tag === "ContentDelta") {
+                yield* Queue.offer(eventQueue, {
+                  _tag: "ChildSessionContentDelta",
+                  sessionId: notification.sessionId,
+                  text: event.text,
+                  streamKind: event.streamKind,
+                  rawPayload: event.rawPayload,
+                });
+                continue;
+              }
+              if (event._tag === "ThoughtDelta") {
+                yield* Queue.offer(eventQueue, {
+                  _tag: "ChildSessionContentDelta",
+                  sessionId: notification.sessionId,
+                  text: event.text,
+                  streamKind: "reasoning_text",
+                  rawPayload: event.rawPayload,
+                });
+              }
+            }
             return;
           }
           yield* processSessionUpdate(notification);
@@ -913,7 +1002,7 @@ export const make = (
       error: EffectAcpErrors.AcpError,
     ) {
       yield* recordTermination(error);
-      yield* child.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore);
+      yield* child.kill({ forceKillAfter }).pipe(Effect.ignore);
     });
 
     const cancel = Effect.gen(function* () {

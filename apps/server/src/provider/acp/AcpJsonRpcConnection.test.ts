@@ -627,7 +627,7 @@ describe("AcpSessionRuntime", () => {
     }).pipe(Effect.provide(NodeServices.layer));
   });
 
-  it.effect("drops session updates emitted for a child ACP session", () =>
+  it.effect("routes child ACP session updates without flattening them into the parent stream", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
       yield* runtime.start();

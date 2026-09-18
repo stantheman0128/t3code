@@ -3,10 +3,12 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   collectLimitAccounts,
+  collectLimitDriverCatalog,
   collectLimitNotices,
   collectLimitPools,
   formatDuration,
   formatResetsIn,
+  limitBarColor,
   remainingPercent,
   type LimitAccount,
   type LimitPoolWindow,
@@ -23,9 +25,16 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
-import { useProviderColors } from "./usageProviders";
 
-const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
+const DRIVER_LABEL: Partial<Record<string, string>> = {
+  antigravity: "Antigravity",
+  claudeAgent: "Claude",
+  codex: "Codex",
+  cursor: "Cursor",
+  grok: "Grok",
+  grokbot: "Grok Bot",
+  opencode: "OpenCode",
+};
 const PACE_LABEL = { ahead: "Ahead of pace", on: "On pace", under: "Under pace" } as const;
 
 function accountName(account: LimitAccount) {
@@ -61,7 +70,7 @@ function AccountSegment({
           fill={`url(#${patternId})`}
         />
       ) : null}
-      <Rect width={`${remaining}%`} height="100%" fill={color} opacity={0.35} />
+      <Rect width={`${remaining}%`} height="100%" fill={color} opacity={0.8} />
     </Svg>
   );
 }
@@ -207,9 +216,10 @@ export function UsageLimitsSection({
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const pools = collectLimitPools(collectLimitAccounts(selected), now);
-  const notices = collectLimitNotices(selected);
-  const colors = useProviderColors();
+  const catalog = collectLimitDriverCatalog(selected, now);
+  const notices = collectLimitNotices(selected).filter((notice) =>
+    catalog.every((entry) => entry.notice === null || !notice.endsWith(entry.notice)),
+  );
   return (
     <View className="gap-6">
       {failedLabels.length ? (
@@ -217,30 +227,38 @@ export function UsageLimitsSection({
           {failedLabels.join(", ")} could not refresh limits. Showing the last known values.
         </Text>
       ) : null}
-      {pools.length === 0 ? (
+      {catalog.length === 0 ? (
         <Text className="py-12 text-center text-base text-foreground-muted">
           {selected.size === 0
             ? "Select an environment to see limits."
-            : "No provider on the selected environments reports subscription limits."}
+            : "No enabled providers on the selected environments."}
         </Text>
       ) : null}
-      {pools.map((pool) => (
-        <View key={pool.driver} className="gap-3">
+      {catalog.map((entry) => (
+        <View key={entry.driver} className="gap-3">
           <View className="flex-row items-center gap-2 px-1">
-            <ProviderIcon provider={pool.driver} size={18} />
+            <ProviderIcon provider={entry.driver} size={18} />
             <Text className="text-base font-t3-medium text-foreground">
-              {DRIVER_LABEL[pool.driver] ?? pool.driver}
+              {DRIVER_LABEL[entry.driver] ?? entry.driver}
             </Text>
           </View>
-          {pool.windows.map((window) => (
-            <PoolWindowCard
-              key={`${window.kind}:${window.id}`}
-              pool={window}
-              color={pool.driver === "claudeAgent" ? colors.claude : colors.codex}
-              now={now}
-              environmentIds={selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]}
-            />
-          ))}
+          {entry.pool ? (
+            entry.pool.windows.map((window) => (
+              <PoolWindowCard
+                key={`${window.kind}:${window.id}`}
+                pool={window}
+                color={limitBarColor(entry.driver)}
+                now={now}
+                environmentIds={
+                  selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                }
+              />
+            ))
+          ) : (
+            <Text className="px-1 text-sm text-foreground-muted">
+              {entry.notice ?? "No subscription limits for this provider."}
+            </Text>
+          )}
         </View>
       ))}
       {notices.map((notice) => (

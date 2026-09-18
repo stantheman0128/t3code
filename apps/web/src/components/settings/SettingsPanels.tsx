@@ -40,6 +40,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_TERMINAL_FONT_SIZE,
   type QuitConfirmationMode,
+  type UsagePercentDisplay,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -177,6 +178,11 @@ const TIMESTAMP_FORMAT_LABELS = {
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Split",
+};
+
+const USAGE_PERCENT_DISPLAY_LABELS: Record<UsagePercentDisplay, string> = {
+  left: "N% left",
+  used: "N% used",
 };
 
 const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
@@ -506,11 +512,17 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Contrast"]
         : []),
       ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
+      ...(settings.usagePercentDisplay !== DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay
+        ? ["Usage percent"]
+        : []),
       ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
         ? ["Diff colors"]
         : []),
       ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
         ? ["Panel animations"]
+        : []),
+      ...(settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome
+        ? ["Provider chrome"]
         : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
@@ -601,6 +613,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserAutoShowFloatingPreview,
       settings.appearanceContrast,
       settings.diffColorScheme,
+      settings.usagePercentDisplay,
       settings.enableAgentBrowserAccess,
       settings.confirmQuit,
       settings.confirmThreadArchive,
@@ -625,6 +638,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizeTerminal,
       settings.glassOpacity,
       settings.panelAnimationDurationMs,
+      settings.providerChrome,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
@@ -716,7 +730,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+      usagePercentDisplay: DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
+      providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
@@ -1197,6 +1213,71 @@ export function AppearanceSettingsPanel() {
                 value={settings.glassOpacity}
               />
             </div>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("usage-percent-display")}
+          description="Plan quota and the context window use the same switch: leftover, or already used."
+          resetAction={
+            settings.usagePercentDisplay !== DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay ? (
+              <SettingResetButton
+                label="Usage percent"
+                onClick={() =>
+                  updateSettings({
+                    usagePercentDisplay: DEFAULT_UNIFIED_SETTINGS.usagePercentDisplay,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.usagePercentDisplay}
+              onValueChange={(value) => {
+                if (value === "left" || value === "used") {
+                  updateSettings({ usagePercentDisplay: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Usage percent">
+                <SelectValue>
+                  {USAGE_PERCENT_DISPLAY_LABELS[settings.usagePercentDisplay]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="left">
+                  {USAGE_PERCENT_DISPLAY_LABELS.left}
+                </SelectItem>
+                <SelectItem hideIndicator value="used">
+                  {USAGE_PERCENT_DISPLAY_LABELS.used}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("provider-chrome")}
+          description="Match the active provider's chat method: type, density, composer, icons, motion ladder, and one status actor. Sidebar and title bar stay T3. Switch the provider to see it."
+          resetAction={
+            settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome ? (
+              <SettingResetButton
+                label="provider chrome"
+                onClick={() =>
+                  updateSettings({
+                    providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.providerChrome}
+              onCheckedChange={(checked) => updateSettings({ providerChrome: Boolean(checked) })}
+              aria-label="Provider chrome"
+            />
           }
         />
 

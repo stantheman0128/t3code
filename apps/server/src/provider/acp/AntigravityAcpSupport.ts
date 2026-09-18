@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
@@ -18,6 +19,15 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import {
+  ANTIGRAVITY_ACP_FORCE_KILL_AFTER,
+  ANTIGRAVITY_ACP_GRACEFUL_SHUTDOWN_WAIT,
+  ANTIGRAVITY_EXTRACT_CLEANUP_ATTEMPTS,
+  ANTIGRAVITY_EXTRACT_CLEANUP_RETRY_DELAY,
+  ANTIGRAVITY_EXTRACT_DIR_PREFIX,
+  shouldRemoveAntigravityExtractRoot,
+  withAntigravityExtractTempEnv,
+} from "../antigravityAcpLifecycle.ts";
 import {
   makeAntigravityStderrHandler,
   makeAntigravityStdoutTransform,
@@ -47,7 +57,50 @@ export interface AntigravityAcpRuntimeInput extends Omit<
   readonly clientFileSystem?: boolean;
   /** ACP `authenticate` method id. Defaults to the personal Google account flow. */
   readonly authMethod?: AntigravityAuthMethod;
+  /**
+   * Parent directory for the owned PyInstaller extract root. Tests pass an
+   * isolated temp folder; production leaves this unset so the OS temp dir is
+   * used.
+   */
+  readonly extractParentDirectory?: string;
 }
+
+const removeOwnedAntigravityExtractRoot = (
+  fileSystem: {
+    readonly exists: (path: string) => Effect.Effect<boolean, unknown>;
+    readonly remove: (
+      path: string,
+      options?: { readonly recursive?: boolean; readonly force?: boolean },
+    ) => Effect.Effect<void, unknown>;
+  },
+  extractRoot: string,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    if (!shouldRemoveAntigravityExtractRoot(extractRoot)) {
+      yield* Effect.log("Refusing to delete unowned Antigravity extract directory.", {
+        extractRoot,
+      });
+      return;
+    }
+    for (let attempt = 1; attempt <= ANTIGRAVITY_EXTRACT_CLEANUP_ATTEMPTS; attempt++) {
+      const removed = yield* fileSystem
+        .remove(extractRoot, { recursive: true, force: true })
+        .pipe(Effect.result);
+      if (Result.isSuccess(removed) || !(yield* fileSystem.exists(extractRoot))) {
+        yield* Effect.log("Antigravity extract directory removed.", {
+          extractRoot,
+          attempt,
+        });
+        return;
+      }
+      yield* Effect.log("Antigravity extract directory still present; retrying.", {
+        extractRoot,
+        attempt,
+      });
+      yield* Effect.sleep(ANTIGRAVITY_EXTRACT_CLEANUP_RETRY_DELAY);
+    }
+    yield* Effect.log("Antigravity extract directory cleanup gave up.", { extractRoot });
+  });
 
 /** Normal launches reject browser login; only the auth flow supplies `onAuthorizationUrl`. */
 export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(function* (
@@ -55,11 +108,29 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
 ): Effect.fn.Return<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
-  Crypto.Crypto | Scope.Scope
+  Crypto.Crypto | FileSystem.FileSystem | Scope.Scope
 > {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const extractRoot = yield* Effect.acquireRelease(
+    fileSystem.makeTempDirectory({
+      prefix: ANTIGRAVITY_EXTRACT_DIR_PREFIX,
+      ...(input.extractParentDirectory ? { directory: input.extractParentDirectory } : {}),
+    }),
+    (directory) => removeOwnedAntigravityExtractRoot(fileSystem, directory).pipe(Effect.ignore),
+  );
+  yield* Effect.log("Antigravity ACP using owned extract directory.", {
+    extractRoot,
+  });
+  const spawn = {
+    ...input.spawn,
+    env: withAntigravityExtractTempEnv(input.spawn.env ?? {}, extractRoot),
+  };
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({
       ...input,
+      spawn,
+      forceKillAfter: input.forceKillAfter ?? ANTIGRAVITY_ACP_FORCE_KILL_AFTER,
+      gracefulShutdownWait: input.gracefulShutdownWait ?? ANTIGRAVITY_ACP_GRACEFUL_SHUTDOWN_WAIT,
       authMethodId: input.authMethod ?? "oauth-personal",
       resumeMethod: "resume",
       cancelBehavior: "wait-for-prompt",

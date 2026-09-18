@@ -442,7 +442,15 @@ export const ClientSettingsSchema = Schema.Struct({
    * the opt-in flag. Off still snaps, and OS reduced-motion still wins.
    */
   layoutMotion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * @deprecated Kept so older settings files still decode. Provider quota
+   * bars belong on Usage → Limits, not on each provider card.
+   */
   showProviderUsage: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Plan quota and the context-window meter use the same leftover-or-used
+   * switch. Default matches ChatGPT Usage (`N% left`).
+   */
   usagePercentDisplay: UsagePercentDisplay.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_USAGE_PERCENT_DISPLAY)),
   ),
@@ -458,7 +466,7 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   /**
    * When on, the chat workspace picks up the active provider's type, accent,
-   * and density. Off keeps T3's default chrome.
+   * density, and icon optical grammar. Off keeps T3's default chrome.
    */
   providerChrome: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   pullRequestMergeMethodOverrides: Schema.Record(

@@ -1,9 +1,11 @@
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { DesktopUpdateState } from "@t3tools/contracts";
 import type * as Electron from "electron";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -12,6 +14,7 @@ import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import { resolveManualUpdateCheckDialog } from "../updates/manualUpdateCheckDialog.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 export class DesktopApplicationMenuActionError extends Schema.TaggedError<DesktopApplicationMenuActionError>()(
@@ -56,28 +59,84 @@ const zoomMainWindow = Effect.fn("desktop.menu.zoomMainWindow")(function* (
   yield* desktopWindow.zoomMain(direction);
 });
 
+const waitForManualUpdateCheckState = Effect.fn("desktop.menu.waitForManualUpdateCheckState")(
+  function* (getState: Effect.Effect<DesktopUpdateState>) {
+    let updateState = yield* getState;
+    for (let attempt = 0; attempt < 40 && updateState.status === "checking"; attempt += 1) {
+      yield* Effect.sleep(Duration.millis(50));
+      updateState = yield* getState;
+    }
+    return updateState;
+  },
+);
+
 const checkForUpdatesFromMenu = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
   const result = yield* updates.check("menu");
-  const updateState = result.state;
+  const settledState =
+    result.state.status === "checking"
+      ? yield* waitForManualUpdateCheckState(updates.getState)
+      : result.state;
+  const dialog = resolveManualUpdateCheckDialog(settledState);
 
-  if (updateState.status === "up-to-date") {
+  if (dialog.kind === "up-to-date") {
     yield* electronDialog.showMessageBox({
       type: "info",
       title: "You're up to date!",
-      message: `T3 Code ${updateState.currentVersion} is currently the newest version available.`,
+      message: `T3 Code ${dialog.currentVersion} is currently the newest version available.`,
       buttons: ["OK"],
     });
-  } else if (updateState.status === "error") {
+    return;
+  }
+  if (dialog.kind === "error") {
     yield* electronDialog.showMessageBox({
       type: "warning",
       title: "Update check failed",
       message: "Could not check for updates.",
-      detail: updateState.message ?? "An unknown error occurred. Please try again later.",
+      detail: dialog.message,
       buttons: ["OK"],
     });
+    return;
   }
+  if (dialog.kind === "available") {
+    const choice = yield* electronDialog.showMessageBox({
+      type: "info",
+      title: "Update available",
+      message: `T3 Code ${dialog.availableVersion} is ready to download.`,
+      detail: `You are on ${dialog.currentVersion}. Download it now, then restart from the update button to install.`,
+      buttons: ["Download", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice.response === 0) {
+      yield* updates.download;
+    }
+    return;
+  }
+  if (dialog.kind === "downloaded") {
+    const choice = yield* electronDialog.showMessageBox({
+      type: "info",
+      title: "Update ready to install",
+      message: `T3 Code ${dialog.version} is downloaded.`,
+      detail: "Restart now to install it. Running tasks will be interrupted.",
+      buttons: ["Restart and Install", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice.response === 0) {
+      yield* updates.install;
+    }
+    return;
+  }
+
+  yield* electronDialog.showMessageBox({
+    type: "warning",
+    title: "Update check did not finish",
+    message: "T3 Code could not confirm whether an update is available.",
+    detail: "Watch the update control in the app, or try Check for Updates again.",
+    buttons: ["OK"],
+  });
 }).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
 
 const handleCheckForUpdatesMenuClick = Effect.gen(function* () {

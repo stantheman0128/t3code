@@ -7,6 +7,7 @@ import {
   ProviderSetupError,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -111,7 +112,12 @@ const testLayer = Layer.merge(
 type ProbeError = EffectAcpErrors.AcpError | ProviderSetupError;
 
 const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
-  options: { readonly enabled?: boolean; readonly safe?: boolean } = {},
+  options: {
+    readonly enabled?: boolean;
+    readonly safe?: boolean;
+    readonly healthProbeCacheTtl?: Duration.Input;
+    readonly healthProbeFailureBackoff?: Duration.Input;
+  } = {},
 ) {
   const initialProbe = yield* Deferred.make<EffectAcpSchema.InitializeResponse, ProbeError>();
   const probeCalls = yield* Ref.make(0);
@@ -128,6 +134,8 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
         Effect.andThen(Ref.get(probe)),
         Effect.flatten,
       ),
+      healthProbeCacheTtl: options.healthProbeCacheTtl ?? "0 millis",
+      healthProbeFailureBackoff: options.healthProbeFailureBackoff ?? "0 millis",
       supportsTextGeneration: Ref.update(safetyCalls, (count) => count + 1).pipe(
         Effect.andThen(Ref.get(safety)),
         Effect.flatten,
@@ -300,6 +308,113 @@ it.layer(testLayer)("Antigravity provider snapshots", (it) => {
           auth: { status: "unknown" },
           models: [],
         });
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("does not relaunch a successful health probe until the cache expires", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          healthProbeCacheTtl: "10 minutes",
+          healthProbeFailureBackoff: "5 minutes",
+        });
+        yield* harness.initialize;
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+        yield* harness.provider.snapshot.refresh;
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("does not relaunch a failed health probe until backoff elapses", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          healthProbeCacheTtl: "10 minutes",
+          healthProbeFailureBackoff: "5 minutes",
+        });
+        const failed = yield* Stream.toPull(
+          harness.provider.snapshot.streamChanges.pipe(
+            Stream.filter((snapshot) => snapshot.status === "error"),
+          ),
+        );
+        yield* Deferred.fail(
+          harness.initialProbe,
+          new ProviderSetupError({
+            instanceId,
+            operation: "resolve",
+            detail: "Antigravity could not complete its local health check.",
+          }),
+        );
+        yield* failed;
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+        yield* harness.provider.snapshot.refresh;
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("relaunches a successful health probe after the cache TTL", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          healthProbeCacheTtl: "10 minutes",
+          healthProbeFailureBackoff: "5 minutes",
+        });
+        yield* harness.initialize;
+        yield* TestClock.adjust("9 minutes");
+        yield* harness.provider.snapshot.refresh;
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+        yield* TestClock.adjust("2 minutes");
+        yield* harness.provider.snapshot.refresh;
+        expect(yield* Ref.get(harness.probeCalls)).toBeGreaterThanOrEqual(2);
+      }),
+    ),
+  );
+
+  it.effect("relaunches a failed health probe after backoff elapses", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          healthProbeCacheTtl: "10 minutes",
+          healthProbeFailureBackoff: "5 minutes",
+        });
+        const failed = yield* Stream.toPull(
+          harness.provider.snapshot.streamChanges.pipe(
+            Stream.filter((snapshot) => snapshot.status === "error"),
+          ),
+        );
+        yield* Deferred.fail(
+          harness.initialProbe,
+          new ProviderSetupError({
+            instanceId,
+            operation: "resolve",
+            detail: "Antigravity could not complete its local health check.",
+          }),
+        );
+        yield* failed;
+        yield* TestClock.adjust("4 minutes");
+        yield* harness.provider.snapshot.refresh;
+        expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+        yield* TestClock.adjust("2 minutes");
+        yield* harness.provider.snapshot.refresh;
+        expect(yield* Ref.get(harness.probeCalls)).toBeGreaterThanOrEqual(2);
+      }),
+    ),
+  );
+
+  it.effect("reuses one in-flight health probe for overlapping refreshes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          healthProbeCacheTtl: "10 minutes",
+          healthProbeFailureBackoff: "5 minutes",
+        });
+        const extra = yield* harness.provider.snapshot.refresh.pipe(Effect.forkChild);
+        yield* harness.initialize;
+        yield* Fiber.join(extra);
         expect(yield* Ref.get(harness.probeCalls)).toBe(1);
       }),
     ),

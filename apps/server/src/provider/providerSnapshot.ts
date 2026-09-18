@@ -21,6 +21,7 @@ import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { createProviderVersionAdvisory } from "./providerMaintenance.ts";
 import { providerLoginSpec } from "@t3tools/shared/providerLogin";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { legacyUsageLimitsToServerUsageLimits } from "./providerUsageLimits.ts";
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
 // Auth status checks involve disk/network lookups and can be slow on first run (especially Windows)
@@ -222,6 +223,14 @@ export function buildServerProvider(input: {
       })
     : undefined;
   const loginCommand = providerLoginCommand(input.driver);
+  const usageLimits =
+    input.probe.usageLimits ??
+    (input.usageLimits
+      ? legacyUsageLimitsToServerUsageLimits({
+          checkedAt: input.checkedAt,
+          limits: input.usageLimits,
+        })
+      : undefined);
   return {
     displayName: input.presentation.displayName,
     ...(input.presentation.badgeLabel ? { badgeLabel: input.presentation.badgeLabel } : {}),
@@ -244,9 +253,7 @@ export function buildServerProvider(input: {
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
-    ...((input.probe.usageLimits ?? input.usageLimits)
-      ? { usageLimits: input.probe.usageLimits ?? input.usageLimits }
-      : {}),
+    ...(usageLimits ? { usageLimits } : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
     ...(loginCommand ? { loginCommand } : {}),
   };

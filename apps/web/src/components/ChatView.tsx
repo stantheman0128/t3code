@@ -249,6 +249,7 @@ import {
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
+import { resolveProviderChromeDriver } from "./chat/providerChrome";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useSpawnProviderSession } from "../hooks/useSpawnProviderSession";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
@@ -309,11 +310,19 @@ import { terminalEnvironment } from "../state/terminal";
 import {
   environmentThreadDetails,
   threadEnvironment,
+  useCodexGoal,
   useEnvironmentThread,
 } from "../state/threads";
 import {
+  derivePromptGoalFromUserTexts,
+  formatCodexGoalDescription,
+  formatCodexGoalError,
+  formatCodexGoalStatus,
+  parseCodexGoalCommand,
   requestOlderThreadTurns,
   threadHasOlderTurns,
+  toCodexGoalSetInput,
+  type CodexGoalCommand,
 } from "@t3tools/client-runtime/state/threads";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { vcsEnvironment } from "../state/vcs";
@@ -327,6 +336,8 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { ComposerPromptQueue } from "./chat/ComposerPromptQueue";
+import { selectPromptQueue, usePromptQueueStore } from "../promptQueueStore";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
@@ -360,6 +371,7 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { composeGoalControlPrompt, GoalStripBar, resolveComposerGoalStrip } from "./chat/goalStrip";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import {
   hasAvailableCompactionProvider,
@@ -387,6 +399,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  resolveComposerPromptForSend,
   dismissBranchMismatchForSession,
   hasEnvironmentReconnectWarningGraceElapsed,
   latestTurnStartFailureId,
@@ -1415,6 +1428,9 @@ export default function ChatView(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  const promptQueue = usePromptQueueStore(selectPromptQueue(routeThreadKey));
+  const updateQueuedPrompt = usePromptQueueStore((state) => state.update);
+  const removeQueuedPrompt = usePromptQueueStore((state) => state.remove);
   const updateProjectScriptSettings = useAtomCommand(serverEnvironment.updateSettings, {
     reportFailure: false,
   });
@@ -1437,6 +1453,7 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, { reportFailure: false });
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -1457,6 +1474,11 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
+    reportFailure: false,
+  });
+  const getCodexGoal = useAtomCommand(threadEnvironment.getCodexGoal, { reportFailure: false });
+  const setCodexGoal = useAtomCommand(threadEnvironment.setCodexGoal, { reportFailure: false });
+  const clearCodexGoal = useAtomCommand(threadEnvironment.clearCodexGoal, {
     reportFailure: false,
   });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
@@ -1705,6 +1727,12 @@ export default function ChatView(props: ChatViewProps) {
   const sendInFlightRef = useRef(false);
   const environmentUnavailableSendToastSlotRef = useRef(0);
   const feedbackUploadsInFlightRef = useRef(new Set<string>());
+  const goalCommandsInFlightRef = useRef(new Set<string>());
+  const [goalCommandThreadKeysInFlight, setGoalCommandThreadKeysInFlight] = useState(
+    () => new Set<string>(),
+  );
+  const routeThreadKeyRef = useRef(routeThreadKey);
+  routeThreadKeyRef.current = routeThreadKey;
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   const terminalUiState = useTerminalUiStateStore((state) =>
@@ -2352,6 +2380,7 @@ export default function ChatView(props: ChatViewProps) {
       (activeThread.session !== null && activeThread.session.status !== "stopped")),
   );
 
+  const providerChromeEnabled = useClientSettings((settings) => settings.providerChrome);
   const loadBalancingSettings = useClientSettings();
   const automaticEnvironment = Boolean(
     clientSettingsHydrated &&
@@ -2625,6 +2654,20 @@ export default function ChatView(props: ChatViewProps) {
     conversationProviderStatus !== null &&
     conversationProviderStatus.supportsConversationRollback !== false;
   const phase = derivePhase(activeThread?.session ?? null);
+  const hasActiveCodexGoalSession =
+    isServerThread &&
+    selectedProvider === "codex" &&
+    activeThread !== null &&
+    activeThread !== undefined &&
+    activeThread.session !== null &&
+    activeThread.session.status !== "stopped";
+  const codexGoal = useCodexGoal(
+    hasActiveCodexGoalSession ? environmentId : null,
+    hasActiveCodexGoalSession ? activeThreadId : null,
+    hasActiveCodexGoalSession
+      ? (activeThread.session?.providerInstanceId ?? activeThread.modelSelection.instanceId)
+      : null,
+  );
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const latestCheckpointCompletedAt = activeThread?.checkpoints.at(-1)?.completedAt ?? null;
   const workspaceMutationId = useMemo(() => {
@@ -3241,6 +3284,19 @@ export default function ChatView(props: ChatViewProps) {
     timelineMessages,
     workLogEntries,
   ]);
+  const [goalStripExpanded, setGoalStripExpanded] = useState(false);
+  useEffect(() => {
+    setGoalStripExpanded(false);
+  }, [activeThread?.id]);
+  const promptGoal = useMemo(
+    () =>
+      derivePromptGoalFromUserTexts(
+        timelineMessages
+          .filter((message) => message.role === "user")
+          .map((message) => ({ text: message.text, createdAt: message.createdAt })),
+      ),
+    [timelineMessages],
+  );
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -5912,6 +5968,16 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [feedbackSubmissions, routeThreadKey],
   );
+  const composerGoalStripModel = useMemo(
+    () =>
+      resolveComposerGoalStrip({
+        threadId: activeThread?.id,
+        phase,
+        codexGoal,
+        promptGoal,
+      }),
+    [activeThread?.id, codexGoal, phase, promptGoal],
+  );
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
@@ -6431,6 +6497,242 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
+  const markGoalCommandInFlight = useCallback((threadKey: string, inFlight: boolean) => {
+    if (inFlight) {
+      goalCommandsInFlightRef.current.add(threadKey);
+    } else {
+      goalCommandsInFlightRef.current.delete(threadKey);
+    }
+    setGoalCommandThreadKeysInFlight((current) => {
+      if (inFlight === current.has(threadKey)) {
+        return current;
+      }
+      const next = new Set(current);
+      if (inFlight) {
+        next.add(threadKey);
+      } else {
+        next.delete(threadKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const runCodexGoalCommand = useCallback(
+    async (
+      command: Exclude<CodexGoalCommand, { readonly action: "invalid" }>,
+      options?: { readonly clearDraft?: boolean; readonly composedPrompt?: string },
+    ) => {
+      if (
+        !isServerThread ||
+        activeThreadId === null ||
+        activeThread == null ||
+        activeThread.session === null
+      ) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Start the Codex thread first",
+            description: "Send a message before managing its native Goal.",
+          }),
+        );
+        return false;
+      }
+
+      const target = { environmentId, input: { threadId: activeThreadId } };
+      const composedPrompt = options?.composedPrompt;
+      const submittedThreadKey = routeThreadKey;
+      const stillOnSubmittedThread = () => routeThreadKeyRef.current === submittedThreadKey;
+      const clearSubmittedGoalCommandDraft = () => {
+        if (!options?.clearDraft || !stillOnSubmittedThread()) return;
+        if (composedPrompt !== undefined && promptRef.current !== composedPrompt) return;
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      };
+
+      markGoalCommandInFlight(routeThreadKey, true);
+      try {
+        if (command.action === "status") {
+          const sessionWasStopped = activeThread.session.status === "stopped";
+          const result = await getCodexGoal(target);
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result) && stillOnSubmittedThread()) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: sessionWasStopped ? "warning" : "error",
+                  title: sessionWasStopped
+                    ? "Wake the Codex thread first"
+                    : "Codex Goal operation failed",
+                  description: sessionWasStopped
+                    ? "/goal status does not wake a stopped provider session."
+                    : formatCodexGoalError(squashAtomCommandFailure(result)),
+                }),
+              );
+            }
+            return false;
+          }
+          clearSubmittedGoalCommandDraft();
+          if (!stillOnSubmittedThread()) return true;
+          toastManager.add(
+            stackedThreadToast(
+              result.value === null
+                ? { type: "info", title: "No active Codex Goal" }
+                : {
+                    type: "info",
+                    title: `Goal ${formatCodexGoalStatus(result.value.status)}`,
+                    description: formatCodexGoalDescription(result.value),
+                  },
+            ),
+          );
+          return true;
+        }
+
+        const result =
+          command.action === "clear"
+            ? await clearCodexGoal(target)
+            : await setCodexGoal({
+                environmentId,
+                input: toCodexGoalSetInput(activeThreadId, command),
+              });
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result) && stillOnSubmittedThread()) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Codex Goal operation failed",
+                description: formatCodexGoalError(squashAtomCommandFailure(result)),
+              }),
+            );
+          }
+          return false;
+        }
+        clearSubmittedGoalCommandDraft();
+        return true;
+      } finally {
+        markGoalCommandInFlight(routeThreadKey, false);
+      }
+    },
+    [
+      activeThread,
+      activeThreadId,
+      clearCodexGoal,
+      clearComposerDraftContent,
+      composerDraftTarget,
+      composerRef,
+      environmentId,
+      getCodexGoal,
+      isServerThread,
+      markGoalCommandInFlight,
+      promptRef,
+      routeThreadKey,
+      setCodexGoal,
+    ],
+  );
+
+  const sendGoalControlPrompt = useCallback(
+    async (text: string) => {
+      if (!isServerThread || activeThreadId === null || activeThread == null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Start the thread first",
+            description: "Send a message before managing its Goal.",
+          }),
+        );
+        return;
+      }
+      if (isSendBusy || isConnecting || sendInFlightRef.current || threadDetailLoading) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Goal command not sent",
+            description: "Finish the current action, then try again.",
+          }),
+        );
+        return;
+      }
+      const sendCtx = composerRef.current?.getSendContext();
+      const modelSelection = sendCtx?.selectedModelSelection ?? activeThread.modelSelection;
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      markGoalCommandInFlight(routeThreadKey, true);
+      try {
+        const startResult = await startThreadTurn({
+          environmentId,
+          input: {
+            threadId: activeThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text,
+              attachments: [],
+            },
+            modelSelection,
+            runtimeMode,
+            interactionMode,
+            createdAt: new Date().toISOString(),
+          },
+        });
+        if (startResult._tag === "Failure") {
+          if (!isAtomCommandInterrupted(startResult)) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Goal command failed",
+                description: chatActionErrorMessage(squashAtomCommandFailure(startResult)),
+              }),
+            );
+          }
+          return;
+        }
+        clearUsageLimitsFor(routeThreadKey);
+      } finally {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+        markGoalCommandInFlight(routeThreadKey, false);
+      }
+    },
+    [
+      activeThread,
+      activeThreadId,
+      beginLocalDispatch,
+      clearUsageLimitsFor,
+      composerRef,
+      environmentId,
+      interactionMode,
+      isConnecting,
+      isSendBusy,
+      isServerThread,
+      markGoalCommandInFlight,
+      resetLocalDispatch,
+      routeThreadKey,
+      runtimeMode,
+      startThreadTurn,
+      threadDetailLoading,
+    ],
+  );
+
+  const handleGoalStripPause = useCallback(() => {
+    if (selectedProvider === "codex") {
+      void runCodexGoalCommand({ action: "set", status: "paused" });
+      return;
+    }
+    void sendGoalControlPrompt(composeGoalControlPrompt("pause"));
+  }, [runCodexGoalCommand, selectedProvider, sendGoalControlPrompt]);
+
+  const handleGoalStripResume = useCallback(() => {
+    if (selectedProvider === "codex") {
+      void runCodexGoalCommand({ action: "set", status: "active" });
+      return;
+    }
+    void sendGoalControlPrompt(composeGoalControlPrompt("resume"));
+  }, [runCodexGoalCommand, selectedProvider, sendGoalControlPrompt]);
+
+  const handleGoalStripEdit = useCallback(() => {
+    const objective = (codexGoal?.objective ?? promptGoal?.objective ?? "").trim();
+    composerRef.current?.applyPendingSlashCommand({ name: "goal", hint: "objective" }, objective);
+  }, [codexGoal?.objective, composerRef, promptGoal?.objective]);
+
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
@@ -6474,7 +6776,8 @@ export default function ChatView(props: ChatViewProps) {
       !clientSettingsHydrated ||
       threadDetailLoading ||
       sendInFlightRef.current ||
-      feedbackUploadsInFlightRef.current.has(routeThreadKey)
+      feedbackUploadsInFlightRef.current.has(routeThreadKey) ||
+      goalCommandsInFlightRef.current.has(routeThreadKey)
     ) {
       notifyDirectAnnotationAttached();
       return;
@@ -6525,6 +6828,7 @@ export default function ChatView(props: ChatViewProps) {
       elementContexts: composerElementContexts,
       previewAnnotations: sendContextPreviewAnnotations,
       reviewComments: composerReviewComments,
+      slashCommand,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -6565,7 +6869,7 @@ export default function ChatView(props: ChatViewProps) {
             },
           ]
         : sendContextPreviewAnnotations;
-    const promptForSend = promptRef.current;
+    const { send: promptForSend } = resolveComposerPromptForSend(slashCommand, promptRef.current);
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -6579,6 +6883,7 @@ export default function ChatView(props: ChatViewProps) {
         composerElementContexts.length +
         composerPreviewAnnotations.length +
         composerReviewComments.length,
+      slashCommandActive: slashCommand !== null,
     });
     const spawnCommand =
       composerImages.length === 0 &&
@@ -6673,6 +6978,33 @@ export default function ChatView(props: ChatViewProps) {
         feedbackUploadsInFlightRef.current.delete(routeThreadKey);
       });
 
+      return;
+    }
+    const isUnadornedCodexCommand =
+      ctxSelectedProvider === "codex" &&
+      !directAnnotation &&
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerElementContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0;
+    const codexGoalCommand = isUnadornedCodexCommand ? parseCodexGoalCommand(trimmed) : null;
+    if (codexGoalCommand !== null) {
+      if (codexGoalCommand.action === "invalid") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Invalid Goal command",
+            description: codexGoalCommand.message,
+          }),
+        );
+        return;
+      }
+      await runCodexGoalCommand(codexGoalCommand, {
+        clearDraft: true,
+        composedPrompt: promptRef.current,
+      });
       return;
     }
     if (
@@ -7246,6 +7578,175 @@ export default function ChatView(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+
+  useEffect(() => {
+    if (isWorking || sendInFlightRef.current) {
+      return;
+    }
+    if (promptRef.current.trim().length > 0 || composerImagesRef.current.length > 0) {
+      return;
+    }
+    const queued = usePromptQueueStore.getState().dequeue(routeThreadKey);
+    if (!queued) {
+      return;
+    }
+    composerRef.current?.applyQueuedItem(queued);
+    void onSendRef.current();
+  }, [isWorking, routeThreadKey]);
+
+  const onSendInNewThread = useCallback(async () => {
+    if (
+      !activeThread ||
+      !activeProject ||
+      !isServerThread ||
+      isConnecting ||
+      activeEnvironmentUnavailable ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+    const sendCtx = composerRef.current?.getSendContext();
+    if (!sendCtx?.providerAvailable) {
+      return;
+    }
+    const { send: promptForSend } = resolveComposerPromptForSend(
+      sendCtx.slashCommand,
+      promptRef.current,
+    );
+    if (!promptForSend) {
+      return;
+    }
+    const outgoingMessageText = formatOutgoingPrompt({
+      provider: sendCtx.selectedProvider,
+      model: sendCtx.selectedModel,
+      models: sendCtx.selectedProviderModels,
+      effort: sendCtx.selectedPromptEffort,
+      text: promptForSend,
+    });
+    if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    const nextThreadId = newThreadId();
+    const nextThreadTitle = truncate(promptForSend);
+    sendInFlightRef.current = true;
+    beginLocalDispatch({ preparingWorktree: false });
+    const finish = () => {
+      sendInFlightRef.current = false;
+      resetLocalDispatch();
+    };
+
+    promptRef.current = "";
+    clearComposerDraftContent(composerDraftTarget);
+    composerRef.current?.resetCursorState();
+
+    const createResult = await createThread({
+      environmentId,
+      input: {
+        threadId: nextThreadId,
+        projectId: activeProject.id,
+        title: nextThreadTitle,
+        modelSelection: sendCtx.selectedModelSelection,
+        runtimeMode,
+        interactionMode,
+        branch: activeThreadBranch,
+        worktreePath: activeThread.worktreePath,
+        createdAt,
+      },
+    });
+    let failure: AtomCommandResult<unknown, unknown> | null =
+      createResult._tag === "Failure" ? createResult : null;
+
+    if (failure === null) {
+      const startResult = await startThreadTurn({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text: outgoingMessageText,
+            attachments: [],
+          },
+          modelSelection: sendCtx.selectedModelSelection,
+          titleSeed: nextThreadTitle,
+          runtimeMode,
+          interactionMode,
+          createdAt,
+        },
+      });
+      failure = startResult._tag === "Failure" ? startResult : null;
+    }
+
+    if (failure === null) {
+      const startedResult = await settlePromise(() =>
+        waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+      );
+      failure = startedResult._tag === "Failure" ? startedResult : null;
+    }
+
+    if (failure === null) {
+      const navigateResult = await settlePromise(() =>
+        navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: activeThread.environmentId,
+            threadId: nextThreadId,
+          },
+        }),
+      );
+      failure = navigateResult._tag === "Failure" ? navigateResult : null;
+    }
+
+    if (failure !== null) {
+      const cleanupResult = await deleteThread({
+        environmentId,
+        input: { threadId: nextThreadId },
+      });
+      if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+        console.warn(
+          "Failed to clean up new thread after start failure.",
+          squashAtomCommandFailure(cleanupResult),
+        );
+      }
+      if (!isAtomCommandInterrupted(failure)) {
+        const error = squashAtomCommandFailure(failure);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not start a new thread",
+            description:
+              error instanceof Error
+                ? error.message
+                : "An error occurred while creating the new thread.",
+          }),
+        );
+      }
+    }
+    finish();
+  }, [
+    activeEnvironmentUnavailable,
+    activeProject,
+    activeThread,
+    activeThreadBranch,
+    beginLocalDispatch,
+    clearComposerDraftContent,
+    composerDraftTarget,
+    createThread,
+    deleteThread,
+    environmentId,
+    interactionMode,
+    isConnecting,
+    isServerThread,
+    navigate,
+    resetLocalDispatch,
+    runtimeMode,
+    startThreadTurn,
+  ]);
 
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
@@ -8233,14 +8734,24 @@ export default function ChatView(props: ChatViewProps) {
     addFiles: (files) => composerRef.current?.addDroppedFiles(files),
   });
 
+  const providerChromeDriver = resolveProviderChromeDriver(
+    activeProviderStatus?.driver ?? selectedProvider,
+  );
+
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+    <div
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+      {...(providerChromeEnabled && providerChromeDriver
+        ? { "data-provider-chrome": providerChromeDriver }
+        : {})}
+    >
       {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
+        data-chat-column=""
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
@@ -8326,6 +8837,21 @@ export default function ChatView(props: ChatViewProps) {
                   dismissThreadErrorBannerForSession(threadErrorBannerKey);
                   setThreadErrorBannerDismissTick((tick) => tick + 1);
                 }}
+                onSignIn={
+                  activeProviderInstanceId
+                    ? () => openProviderSetup(activeProviderInstanceId)
+                    : undefined
+                }
+                onReconnect={
+                  isServerThread && activeThreadId !== null && activeThreadEnvironmentId !== null
+                    ? () => {
+                        void stopThreadSession({
+                          environmentId: activeThreadEnvironmentId,
+                          input: { threadId: activeThreadId },
+                        });
+                      }
+                    : undefined
+                }
               />
             </div>
             {/* Messages Wrapper */}
@@ -8417,7 +8943,7 @@ export default function ChatView(props: ChatViewProps) {
                 ref={attachDraftHeroTransitionGroupRef}
                 className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
-                <div className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl">
+                <div className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-[var(--provider-chrome-column,48rem)]">
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
@@ -8436,6 +8962,33 @@ export default function ChatView(props: ChatViewProps) {
                           activeProjectTitle={activeProject?.title ?? null}
                         />
                       </div>
+                    </div>
+                  ) : null}
+                  {promptQueue.length > 0 ? (
+                    <div className="relative z-0 mx-auto w-full">
+                      <ComposerPromptQueue
+                        items={promptQueue}
+                        onUpdate={(id, patch) => {
+                          const item = promptQueue.find((entry) => entry.id === id);
+                          if (patch.images) {
+                            const nextIds = new Set(patch.images.map((image) => image.id));
+                            for (const image of item?.images ?? []) {
+                              if (!nextIds.has(image.id)) {
+                                revokeBlobPreviewUrl(image.previewUrl);
+                              }
+                            }
+                          }
+                          updateQueuedPrompt(routeThreadKey, id, patch);
+                        }}
+                        onRemove={(id) => {
+                          const item = promptQueue.find((entry) => entry.id === id);
+                          for (const image of item?.images ?? []) {
+                            revokeBlobPreviewUrl(image.previewUrl);
+                          }
+                          removeQueuedPrompt(routeThreadKey, id);
+                        }}
+                        onExpandImage={onExpandTimelineImage}
+                      />
                     </div>
                   ) : null}
                   <div
@@ -8481,6 +9034,19 @@ export default function ChatView(props: ChatViewProps) {
                             }
                             isPreparingWorktree={isPreparingWorktree}
                             bannerItems={composerBannerItems}
+                            goalStrip={
+                              composerGoalStripModel === null ? null : (
+                                <GoalStripBar
+                                  model={composerGoalStripModel}
+                                  expanded={goalStripExpanded}
+                                  busy={goalCommandThreadKeysInFlight.has(routeThreadKey)}
+                                  onToggle={() => setGoalStripExpanded((open) => !open)}
+                                  onPause={handleGoalStripPause}
+                                  onResume={handleGoalStripResume}
+                                  onEdit={handleGoalStripEdit}
+                                />
+                              )
+                            }
                             // With attachments or contexts aboard the pick just inserts the
                             // text, so it sends as a prompt like the typed path would.
                             onUsageLimitsCommand={
@@ -8542,6 +9108,7 @@ export default function ChatView(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onSendInNewThread={onSendInNewThread}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption

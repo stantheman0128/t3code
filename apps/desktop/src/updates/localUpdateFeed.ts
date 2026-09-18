@@ -13,7 +13,7 @@ export const LOCAL_UPDATE_FEED_PORT = 47821;
 export const LOCAL_UPDATE_FEED_URL = `http://${LOCAL_UPDATE_FEED_HOST}:${LOCAL_UPDATE_FEED_PORT}`;
 export const LOCAL_UPDATE_FEED_MANIFEST_NAME = "latest.yml";
 
-export class LocalUpdateFeedListenError extends Schema.TaggedErrorClass<LocalUpdateFeedListenError>()(
+export class LocalUpdateFeedListenError extends Schema.TaggedError<LocalUpdateFeedListenError>()(
   "LocalUpdateFeedListenError",
   {
     cause: Schema.Defect(),
@@ -149,6 +149,43 @@ export async function handleLocalUpdateFeedRequest(
   }
 }
 
+export async function listenLocalUpdateFeedServer(
+  server: Http.Server,
+  host: string,
+  preferredPort: number,
+): Promise<void> {
+  try {
+    await listenOnce(server, preferredPort, host);
+  } catch (cause) {
+    if (!isAddressInUse(cause)) {
+      throw cause;
+    }
+    await listenOnce(server, 0, host);
+  }
+}
+
+function isAddressInUse(cause: unknown): boolean {
+  return (
+    typeof cause === "object" && cause !== null && "code" in cause && cause.code === "EADDRINUSE"
+  );
+}
+
+function listenOnce(server: Http.Server, port: number, host: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (cause: Error) => {
+      server.off("listening", onListening);
+      reject(cause);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
+}
+
 export const startLocalUpdateFeedServer = (
   rootDir: string,
 ): Effect.Effect<string, LocalUpdateFeedListenError, Scope.Scope> =>
@@ -160,8 +197,11 @@ export const startLocalUpdateFeedServer = (
             const next = Http.createServer((request, response) => {
               void handleLocalUpdateFeedRequest(rootDir, request, response);
             });
-            next.once("error", reject);
-            next.listen(0, LOCAL_UPDATE_FEED_HOST, () => resolve(next));
+            void listenLocalUpdateFeedServer(
+              next,
+              LOCAL_UPDATE_FEED_HOST,
+              LOCAL_UPDATE_FEED_PORT,
+            ).then(() => resolve(next), reject);
           }),
         catch: (cause) => new LocalUpdateFeedListenError({ cause }),
       }),

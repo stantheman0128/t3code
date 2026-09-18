@@ -728,6 +728,9 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
         ["grok-4.5", false],
       ]);
       expect(snapshot.message).toContain("ACP initialize failed");
+      expect(snapshot.slashCommands.map((command) => command.name)).toEqual(
+        expect.arrayContaining(["goal", "goal status", "workflow", "compact", "loop"]),
+      );
     }),
   );
 

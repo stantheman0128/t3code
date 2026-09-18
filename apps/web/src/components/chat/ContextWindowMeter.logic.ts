@@ -1,8 +1,15 @@
-import type { ModelSelection, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import type {
+  ModelSelection,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderUsageLimits,
+  ServerProviderUsageLimits,
+} from "@t3tools/contracts";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
   isClaudeResumeCompactionQuestion,
 } from "@t3tools/shared/claudeCompaction";
+import { remainingPercent } from "@t3tools/shared/usageLimits";
 import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,
@@ -107,6 +114,33 @@ export function formatContextWindowCompactionMessage(
   return modelDisplayName
     ? `Context for ${modelDisplayName} compacts automatically when needed.`
     : "Context compacts automatically when needed.";
+}
+
+/**
+ * Compact composer bars still speak remaining percent. Provider snapshots
+ * store used percent, so this is the one place the ring converts them.
+ */
+export function composerPlanUsageLimits(
+  limits: ServerProviderUsageLimits | null | undefined,
+  planLabel?: string | null,
+): ProviderUsageLimits | null {
+  if (!limits || limits.unavailable || limits.windows.length === 0) {
+    return null;
+  }
+  return {
+    status: "available",
+    ...(planLabel ? { planLabel } : {}),
+    observedAt: limits.checkedAt,
+    windows: limits.windows.map((window) => ({
+      id: window.id,
+      label: window.label,
+      remainingPercent: remainingPercent(window),
+      resetsAt: window.resetsAt ?? null,
+      ...(window.windowDurationMins !== undefined
+        ? { durationMinutes: window.windowDurationMins }
+        : {}),
+    })),
+  };
 }
 
 /**

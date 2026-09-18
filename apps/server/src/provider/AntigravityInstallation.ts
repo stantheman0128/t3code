@@ -43,6 +43,7 @@ import {
 const DRIVER = ProviderDriverKind.make("antigravity");
 const DOWNLOAD_TIMEOUT = "45 minutes";
 const VALIDATION_TIMEOUT = "90 seconds";
+export const DEFAULT_ANTIGRAVITY_INSTALL_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const FREE_SPACE_MARGIN = 256 * 1024 * 1024;
 const RECORD_MAX_BYTES = 8 * 1024;
 const RELEASE_RECORD = ".install-complete.json";
@@ -119,6 +120,7 @@ export class AntigravityInstallation extends Context.Service<
 export interface AntigravityInstallationOptions {
   readonly baseDir: string;
   readonly releaseAsset?: AntigravityReleaseAsset | null;
+  readonly retryBackoffMs?: number;
   readonly validate?: (
     executable: AntigravityExecutable,
     expectedVersion: string,
@@ -289,6 +291,8 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
   const activePath = path.join(managedDirectory, "active.json");
   const gate = yield* Semaphore.make(1);
   const leases = new Map<string, number>();
+  const retryBackoffMs = options.retryBackoffMs ?? DEFAULT_ANTIGRAVITY_INSTALL_RETRY_BACKOFF_MS;
+  let lastFailureAtMs: number | undefined;
   let running: { readonly operationId: string; readonly fiber: Fiber.Fiber<void> } | undefined;
   const state = yield* SubscriptionRef.make<ProviderInstallState>({
     driver: DRIVER,
@@ -786,6 +790,24 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(state);
         if (isRunning(current)) return current;
+        const nowMs = yield* Clock.currentTimeMillis;
+        if (
+          retryBackoffMs > 0 &&
+          lastFailureAtMs !== undefined &&
+          nowMs - lastFailureAtMs < retryBackoffMs
+        ) {
+          const waitSeconds = Math.max(
+            1,
+            Math.ceil((retryBackoffMs - (nowMs - lastFailureAtMs)) / 1000),
+          );
+          const waited: ProviderInstallState = {
+            ...current,
+            phase: "failed",
+            message: `Last Antigravity install failed. Wait ${waitSeconds}s before downloading again.`,
+          };
+          yield* SubscriptionRef.set(state, waited);
+          return waited;
+        }
         if (!releaseAsset) {
           return yield* installationError(
             "start",
@@ -807,23 +829,33 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         yield* SubscriptionRef.set(state, next);
         const work = install(releaseAsset).pipe(
           Effect.onExit((exit) =>
-            Exit.isFailure(exit)
-              ? SubscriptionRef.update(state, (value) => {
-                  if (value.operationId !== operationId || value.phase === "succeeded")
-                    return value;
-                  const error = Cause.findErrorOption(exit.cause);
-                  const cancelled = Cause.hasInterruptsOnly(exit.cause);
-                  return {
-                    ...value,
-                    phase: cancelled ? "cancelled" : "failed",
-                    message: cancelled
-                      ? "Installation cancelled. The previous runtime is unchanged."
-                      : Option.isSome(error)
-                        ? error.value.detail
-                        : "Could not finish the Antigravity installation. Check disk space and directory access.",
-                  } satisfies ProviderInstallState;
-                })
-              : Effect.void,
+            Effect.gen(function* () {
+              if (Exit.isSuccess(exit)) {
+                lastFailureAtMs = undefined;
+                return;
+              }
+              const cancelled = Cause.hasInterruptsOnly(exit.cause);
+              if (cancelled) {
+                lastFailureAtMs = undefined;
+              } else {
+                lastFailureAtMs = yield* Clock.currentTimeMillis;
+              }
+              yield* SubscriptionRef.update(state, (value) => {
+                if (value.operationId !== operationId || value.phase === "succeeded") {
+                  return value;
+                }
+                const error = Cause.findErrorOption(exit.cause);
+                return {
+                  ...value,
+                  phase: cancelled ? "cancelled" : "failed",
+                  message: cancelled
+                    ? "Installation cancelled. The previous runtime is unchanged."
+                    : Option.isSome(error)
+                      ? error.value.detail
+                      : "Could not finish the Antigravity installation. Check disk space and directory access.",
+                } satisfies ProviderInstallState;
+              });
+            }),
           ),
           Effect.ignoreCause,
           Effect.ensuring(
@@ -889,6 +921,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
             }
           }
           yield* fs.remove(managedDirectory, { recursive: true, force: true });
+          lastFailureAtMs = undefined;
           yield* SubscriptionRef.update(
             state,
             (current) =>

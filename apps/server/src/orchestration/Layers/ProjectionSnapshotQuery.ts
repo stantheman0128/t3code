@@ -1270,6 +1270,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         turn_id AS "turnId",
         role,
         text,
+        thinking,
         attachments_json AS "attachments",
         is_streaming AS "isStreaming",
         created_at AS "createdAt",

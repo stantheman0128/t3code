@@ -258,6 +258,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
       // Codex and Claude do. Without it an environment that only runs
       // Antigravity would keep classifying against a stale disk cache.
       const probe = Effect.gen(function* () {
+        yield* Effect.log("Antigravity health probe starting.", { instanceId });
         yield* modelManifest.refreshInBackground;
         const processScope = yield* Scope.make();
         yield* Effect.addFinalizer((exit) => Scope.close(processScope, exit));

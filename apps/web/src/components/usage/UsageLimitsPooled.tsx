@@ -1,7 +1,6 @@
 import {
-  collectLimitAccounts,
+  collectLimitDriverCatalog,
   collectLimitNotices,
-  collectLimitPools,
   formatDuration,
   formatResetsIn,
   type LimitAccount,
@@ -10,6 +9,7 @@ import {
   type LimitPoolWindow,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { formatUsagePercent, usageFillPercent } from "@t3tools/shared/usageFormat";
 import { TicketIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -146,6 +146,7 @@ function SegmentPopover({
   readonly onRedeem: () => void;
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
+  const percentDisplay = usePrimarySettings((settings) => settings.usagePercentDisplay);
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
   const where =
@@ -180,7 +181,9 @@ function SegmentPopover({
         ) : null}
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
-        <Row label="Left">{remaining}%</Row>
+        <Row label={percentDisplay === "used" ? "Used" : "Left"}>
+          {usageFillPercent(remaining, percentDisplay)}%
+        </Row>
         {window.resetsAt ? (
           <Row label="Resets">
             {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
@@ -233,7 +236,10 @@ function PoolSegment({
   readonly index: number;
 }) {
   const [open, setOpen] = useState(false);
+  const percentDisplay = usePrimarySettings((settings) => settings.usagePercentDisplay);
   const remaining = remainingPercent(window);
+  const fillPercent = usageFillPercent(remaining, percentDisplay);
+  const percentLabel = formatUsagePercent(remaining, percentDisplay);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   return (
@@ -244,7 +250,7 @@ function PoolSegment({
           <button
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
-            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${percentLabel}${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
@@ -252,16 +258,15 @@ function PoolSegment({
         {/* Translucent so the label reads over the fill for any provider colour and theme. */}
         <div
           aria-hidden
-          className="absolute inset-y-0 left-0 rounded-md opacity-35"
-          style={{ width: `${remaining}%`, backgroundColor: color }}
+          className="absolute inset-y-0 left-0 rounded-md opacity-80"
+          style={{ width: `${fillPercent}%`, backgroundColor: color }}
         />
-        {/* The spent share is hatched, not blank: it is what the countdown restores. */}
-        {remaining < 100 && reset ? (
+        {fillPercent < 100 && reset ? (
           <div
             aria-hidden
             className="absolute inset-y-0 right-0 opacity-20"
             style={{
-              width: `${100 - remaining}%`,
+              width: `${100 - fillPercent}%`,
               backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
             }}
           />
@@ -274,7 +279,9 @@ function PoolSegment({
         </span>
         <div className="relative hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
           <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
-          <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
+          <span className="shrink-0 font-semibold text-foreground tabular-nums">
+            {percentLabel}
+          </span>
           {/* Countdown and badge get their own plate: fill and hatching run under them otherwise. */}
           <span className="ms-auto flex shrink-0 items-center gap-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 text-[11px] text-foreground tabular-nums">
             {resetsIn?.replace("resets in ", "↻ ") ?? ""}
@@ -339,6 +346,8 @@ function LegendRow({
   readonly index: number;
 }) {
   const remaining = remainingPercent(window);
+  const percentDisplay = usePrimarySettings((settings) => settings.usagePercentDisplay);
+  const percentLabel = formatUsagePercent(remaining, percentDisplay);
   const resetsIn = formatResetsIn(window, now);
   const credits = account.limits.resetCredits?.availableCount ?? 0;
   return (
@@ -349,14 +358,14 @@ function LegendRow({
       <span className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-[10px] leading-none font-semibold text-foreground/80 tabular-nums">
         <span
           aria-hidden
-          className="absolute inset-0 rounded-sm opacity-35"
+          className="absolute inset-0 rounded-sm opacity-80"
           style={{ backgroundColor: color }}
         />
         <span className="sr-only">Segment </span>
         <span className="relative">{index}</span>
       </span>
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
-      <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
+      <span className="shrink-0 font-semibold text-foreground tabular-nums">{percentLabel}</span>
       <span className="ms-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
         {resetsIn?.replace("resets in ", "↻ ") ?? ""}
         {credits ? (
@@ -484,15 +493,19 @@ function PoolWindowCard({
 }) {
   // The soonest reset that hands anything back; an untouched account resets to no effect.
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const percentDisplay = usePrimarySettings((settings) => settings.usagePercentDisplay);
+  const headlinePercent = percentDisplay === "used" ? pool.usedPercent : pool.remainingPercent;
   return (
     <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
       <div className="flex flex-col gap-1">
         <span className="text-sm font-medium text-foreground">{pool.label}</span>
         <span className="flex items-baseline gap-2">
           <span className="text-3xl font-semibold text-foreground tabular-nums">
-            {pool.remainingPercent}%
+            {headlinePercent}%
           </span>
-          <span className="text-sm text-muted-foreground">left</span>
+          <span className="text-sm text-muted-foreground">
+            {percentDisplay === "used" ? "used" : "left"}
+          </span>
           {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
         </span>
         {nextRefill ? (
@@ -529,6 +542,31 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   );
 }
 
+function DriverNoticeSection({
+  driver,
+  notice,
+}: {
+  readonly driver: LimitPool["driver"];
+  readonly notice: string;
+}) {
+  const label = getDriverOption(driver)?.label ?? String(driver);
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <ProviderInstanceIcon
+          driverKind={driver}
+          displayName={label}
+          indicatorBackground="var(--background)"
+          className="size-5"
+          iconClassName="size-4 text-foreground/80"
+        />
+        {label}
+      </h2>
+      <p className="text-sm text-muted-foreground">{notice}</p>
+    </section>
+  );
+}
+
 /**
  * Accounts pooled per provider: what is open across all of them, who resets
  * next, and how much of the pool that hands back. Answers "can I keep going"
@@ -538,21 +576,31 @@ export function UsageLimitsPooled({
   presentations,
   now,
 }: {
-  readonly presentations: Parameters<typeof collectLimitAccounts>[0];
+  readonly presentations: Parameters<typeof collectLimitDriverCatalog>[0];
   readonly now: number;
 }) {
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now);
-  const notices = collectLimitNotices(presentations);
+  const catalog = collectLimitDriverCatalog(presentations, now);
+  const notices = collectLimitNotices(presentations).filter((notice) =>
+    catalog.every((entry) => entry.notice === null || !notice.endsWith(entry.notice)),
+  );
   return (
     <div className="flex flex-col gap-8">
-      {pools.length === 0 ? (
+      {catalog.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No provider on the selected environments reports subscription limits.
+          No enabled providers on the selected environments.
         </p>
       ) : null}
-      {pools.map((pool) => (
-        <PoolSection key={pool.driver} pool={pool} now={now} />
-      ))}
+      {catalog.map((entry) =>
+        entry.pool ? (
+          <PoolSection key={entry.driver} pool={entry.pool} now={now} />
+        ) : (
+          <DriverNoticeSection
+            key={entry.driver}
+            driver={entry.driver}
+            notice={entry.notice ?? "No subscription limits for this provider."}
+          />
+        ),
+      )}
       <LimitNotices notices={notices} />
     </div>
   );

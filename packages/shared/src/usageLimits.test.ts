@@ -15,12 +15,14 @@ import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
   collectLimitAccounts,
+  collectLimitDriverCatalog,
   collectLimitNotices,
   collectLimitPools,
   collectLimitSources,
   collectLimitsGroups,
   elapsedShare,
   formatResetsIn,
+  limitBarColor,
   limitsNotice,
   paceOf,
   providersWithLimits,
@@ -1194,5 +1196,51 @@ describe("isUsageLimitsCommand", () => {
     expect(isUsageLimitsCommand("/usage-limits explain")).toBe(false);
     expect(isUsageLimitsCommand("Explain /usage-limits")).toBe(false);
     expect(isUsageLimitsCommand("/usage")).toBe(false);
+  });
+});
+
+describe("limitBarColor", () => {
+  it("gives each known driver a distinct brand colour", () => {
+    expect(limitBarColor(ProviderDriverKind.make("codex"))).toBe("#10a37f");
+    expect(limitBarColor(ProviderDriverKind.make("claudeAgent"))).toBe("#d97757");
+    expect(limitBarColor(ProviderDriverKind.make("cursor"))).toBe("#f54e00");
+    expect(limitBarColor(ProviderDriverKind.make("grok"))).toBe("#38bdf8");
+    expect(limitBarColor(ProviderDriverKind.make("grokbot"))).toBe("#a78bfa");
+    expect(limitBarColor(ProviderDriverKind.make("opencode"))).toBe("#84cc16");
+    expect(limitBarColor(ProviderDriverKind.make("antigravity"))).toBe("#8b5cf6");
+  });
+});
+
+describe("collectLimitDriverCatalog", () => {
+  it("lists enabled drivers that publish windows and those that do not", () => {
+    const limits = { checkedAt: "2026-09-03T11:00:00.000Z", windows: [window] };
+    const input = new Map([
+      [
+        EnvironmentId.make("env-a"),
+        {
+          entry: { target: { label: "Laptop" } },
+          serverConfig: {
+            providers: [
+              provider({ usageLimits: limits }),
+              provider({
+                instanceId: ProviderInstanceId.make("grokbot"),
+                driver: ProviderDriverKind.make("grokbot"),
+              }),
+              provider({
+                instanceId: ProviderInstanceId.make("off"),
+                driver: ProviderDriverKind.make("cursor"),
+                enabled: false,
+              }),
+            ],
+          },
+        },
+      ],
+    ]);
+    const catalog = collectLimitDriverCatalog(input as never, now);
+    expect(catalog.map((entry) => entry.driver)).toEqual(["codex", "grokbot"]);
+    expect(catalog[0]?.pool?.windows.length).toBeGreaterThan(0);
+    expect(catalog[0]?.notice).toBeNull();
+    expect(catalog[1]?.pool).toBeNull();
+    expect(catalog[1]?.notice).toBe("No subscription limits for this provider.");
   });
 });

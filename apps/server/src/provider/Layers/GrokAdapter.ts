@@ -2309,6 +2309,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 currentModelId: ctx.currentModelId,
                 availableModelIds: ctx.availableModelIds,
               });
+              const requestedTurnReasoningEffort = requestedGrokReasoningEffort(
+                turnModelSelection,
+                advertisedTurnEfforts,
+              );
               const turnSelection = yield* applyGrokAcpModelSelection({
                 runtime: ctx.acp,
                 useConfigModelOption: grokSettings.useGrokbotBackend,
@@ -2316,10 +2320,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 availableModelIds: ctx.availableModelIds,
                 requestedModelId: requestedTurnModelId,
                 currentReasoningEffort: ctx.currentReasoningEffort,
-                requestedReasoningEffort: requestedGrokReasoningEffort(
-                  turnModelSelection,
-                  advertisedTurnEfforts,
-                ),
+                requestedReasoningEffort: requestedTurnReasoningEffort,
                 currentFastMode: ctx.currentFastMode,
                 requestedFastMode: requestedGrokFastMode(turnModelSelection),
                 mapError: (cause) =>
@@ -2380,8 +2381,23 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     } satisfies EffectAcpSchema.ContentBlock;
                   }),
               );
-              const promptParts = prependTraditionalChineseInstruction({
-                parts: [...(text ? [{ type: "text" as const, text }] : []), ...imagePromptParts],
+              const userPromptParts = [
+                ...(text ? [{ type: "text" as const, text }] : []),
+                ...imagePromptParts,
+              ] satisfies ReadonlyArray<EffectAcpSchema.ContentBlock>;
+              if (userPromptParts.length === 0) {
+                return yield* new ProviderAdapterValidationError({
+                  provider: PROVIDER,
+                  operation: "sendTurn",
+                  issue: "Turn requires non-empty text or attachments.",
+                });
+              }
+
+              // Keep saved prompts as the user turn. Fold the language rule
+              // into the runtime block so session/prompt stays
+              // [user parts..., runtime_info] like the other ACP adapters.
+              const languageInjection = prependTraditionalChineseInstruction({
+                parts: [] as Array<EffectAcpSchema.ContentBlock>,
                 alreadyInjected: ctx.languageInstructionInjected,
                 userText: text,
                 makeTextPart: (instruction) =>
@@ -2390,24 +2406,21 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     text: instruction,
                   }) satisfies EffectAcpSchema.ContentBlock,
               });
-              ctx.languageInstructionInjected = promptParts.injected;
-
-              if (promptParts.parts.length === 0) {
-                return yield* new ProviderAdapterValidationError({
-                  provider: PROVIDER,
-                  operation: "sendTurn",
-                  issue: "Turn requires non-empty text or attachments.",
-                });
-              }
+              ctx.languageInstructionInjected = languageInjection.injected;
 
               const displayModel = currentModelId
                 ? resolveGrokAcpBaseModelId(currentModelId)
                 : undefined;
-              const runtimeInstructions = buildRuntimeInstructions({
-                harness: "Grok",
-                model: displayModel,
-                reasoningEffort: normalizeGrokReasoningEffort(requestedTurnReasoningEffort),
-              });
+              const runtimeInstructions = [
+                ...languageInjection.parts.flatMap((part) =>
+                  part.type === "text" && part.text.trim().length > 0 ? [part.text] : [],
+                ),
+                buildRuntimeInstructions({
+                  harness: "Grok",
+                  model: displayModel,
+                  reasoningEffort: normalizeGrokReasoningEffort(requestedTurnReasoningEffort),
+                }),
+              ].join("\n");
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;
               }
@@ -2462,7 +2475,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 acp: ctx.acp,
                 acpSessionId: ctx.acpSessionId,
                 displayModel,
-                promptParts: promptParts.parts,
+                promptParts: userPromptParts,
                 runtimeInstructions,
                 turnId,
                 promptEpoch,

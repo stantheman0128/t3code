@@ -7,7 +7,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
 
 // Match the duration-220 exit transition before removing a dismissed notice.
-const DISMISS_TRANSITION_MS = 220;
+export const DISMISS_TRANSITION_MS = 220;
 
 export interface ComposerBannerStackItem {
   readonly id: string;
@@ -20,6 +20,9 @@ export interface ComposerBannerStackItem {
   readonly actions?: ReactNode;
   readonly dismissLabel?: string;
   readonly onDismiss?: () => void;
+  readonly onActivate?: () => void;
+  readonly activateLabel?: string;
+  readonly expanded?: boolean;
 }
 
 export type ComposerBannerStackContent = Pick<
@@ -148,6 +151,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         {hasStack ? (
           <div
             ref={noticesRef}
+            data-banner-stack-rest=""
             className="relative z-20 min-h-3"
             onPointerEnter={(event) => {
               if (event.pointerType === "touch") return;
@@ -270,7 +274,21 @@ function ComposerBannerStackAlert({
       variant={item.variant}
       density="comfortable"
     >
-      <ComposerBanner.Row layout="wrap-actions-narrow">
+      <ComposerBanner.Row
+        layout="wrap-actions-narrow"
+        {...(item.onActivate
+          ? {
+              render: (
+                <button
+                  type="button"
+                  aria-label={item.activateLabel}
+                  aria-expanded={item.expanded}
+                  onClick={item.onActivate}
+                />
+              ),
+            }
+          : {})}
+      >
         <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
           {item.icon}
         </ComposerBanner.Icon>
@@ -284,33 +302,39 @@ function ComposerBannerStackAlert({
             {item.title}
           </span>
           {item.description ? (
-            <>
-              <span className="min-w-0 shrink-[9999] truncate text-muted-foreground @max-[400px]:sr-only">
+            item.onActivate ? (
+              <span className="min-w-0 shrink-[9999] truncate text-muted-foreground">
                 {item.description}
               </span>
-              <Popover>
-                <PopoverTrigger
-                  openOnHover
-                  render={
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label="Show notice details"
-                      className="hidden flex-none text-muted-foreground hover:text-foreground @max-[400px]:inline-flex"
-                    />
-                  }
-                >
-                  <InfoIcon className="size-3.5" />
-                </PopoverTrigger>
-                <PopoverPopup
-                  tooltipStyle
-                  side="top"
-                  className="max-w-72 whitespace-normal text-pretty"
-                >
+            ) : (
+              <>
+                <span className="min-w-0 shrink-[9999] truncate text-muted-foreground @max-[400px]:sr-only">
                   {item.description}
-                </PopoverPopup>
-              </Popover>
-            </>
+                </span>
+                <Popover>
+                  <PopoverTrigger
+                    openOnHover
+                    render={
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label="Show notice details"
+                        className="hidden flex-none text-muted-foreground hover:text-foreground @max-[400px]:inline-flex"
+                      />
+                    }
+                  >
+                    <InfoIcon className="size-3.5" />
+                  </PopoverTrigger>
+                  <PopoverPopup
+                    tooltipStyle
+                    side="top"
+                    className="max-w-72 whitespace-normal text-pretty"
+                  >
+                    {item.description}
+                  </PopoverPopup>
+                </Popover>
+              </>
+            )
           ) : null}
         </ComposerBanner.Content>
         {item.actions || item.onDismiss ? (

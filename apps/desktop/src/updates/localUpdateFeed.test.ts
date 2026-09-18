@@ -1,3 +1,4 @@
+import * as Http from "node:http";
 import * as NodeFs from "node:fs/promises";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
@@ -8,6 +9,7 @@ import * as Option from "effect/Option";
 
 import {
   LOCAL_UPDATE_FEED_DIR_NAME,
+  listenLocalUpdateFeedServer,
   resolveLocalUpdateFeedDirectory,
   resolveLocalUpdateFeedFilePath,
   shouldBindLocalUpdateFeed,
@@ -112,6 +114,61 @@ describe("localUpdateFeed", () => {
           return response.status;
         });
         assert.equal(missing, 404);
+      }),
+    ),
+  );
+
+  it.effect("falls back to an ephemeral port when the preferred feed port is taken", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const blocker = yield* Effect.acquireRelease(
+          Effect.tryPromise(
+            () =>
+              new Promise<Http.Server>((resolve, reject) => {
+                const server = Http.createServer();
+                server.once("error", reject);
+                server.listen(0, "127.0.0.1", () => resolve(server));
+              }),
+          ),
+          (server) =>
+            Effect.promise(
+              () =>
+                new Promise<void>((resolve) => {
+                  server.close(() => resolve());
+                }),
+            ),
+        );
+        const blockerAddress = blocker.address();
+        if (!blockerAddress || typeof blockerAddress === "string") {
+          assert.fail("blocker did not bind a TCP port");
+          return;
+        }
+
+        const fallback = yield* Effect.acquireRelease(
+          Effect.tryPromise(
+            () =>
+              new Promise<Http.Server>((resolve, reject) => {
+                const server = Http.createServer();
+                void listenLocalUpdateFeedServer(server, "127.0.0.1", blockerAddress.port).then(
+                  () => resolve(server),
+                  reject,
+                );
+              }),
+          ),
+          (server) =>
+            Effect.promise(
+              () =>
+                new Promise<void>((resolve) => {
+                  server.close(() => resolve());
+                }),
+            ),
+        );
+        const fallbackAddress = fallback.address();
+        if (!fallbackAddress || typeof fallbackAddress === "string") {
+          assert.fail("fallback did not bind a TCP port");
+          return;
+        }
+        assert.notEqual(fallbackAddress.port, blockerAddress.port);
       }),
     ),
   );

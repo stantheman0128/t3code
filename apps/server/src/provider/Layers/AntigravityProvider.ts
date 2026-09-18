@@ -8,17 +8,27 @@ import {
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import type { AcpSessionRuntimeStartResult } from "../acp/AcpSessionRuntime.ts";
+import {
+  DEFAULT_ANTIGRAVITY_HEALTH_PROBE_FAILURE_BACKOFF_MS,
+  DEFAULT_ANTIGRAVITY_HEALTH_PROBE_TTL_MS,
+  shouldSkipAntigravityHealthProbe,
+  shouldSkipFailedAntigravityHealthProbe,
+} from "../antigravityAcpLifecycle.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
@@ -122,6 +132,8 @@ interface AntigravityProviderOptions {
     EffectAcpSchema.InitializeResponse,
     EffectAcpErrors.AcpError | ProviderSetupError
   >;
+  readonly healthProbeCacheTtl?: Duration.Input;
+  readonly healthProbeFailureBackoff?: Duration.Input;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
   /** Auth type and label published once a session authenticates. */
@@ -168,8 +180,21 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   const getSnapshot = SubscriptionRef.get(metadata).pipe(
     Effect.flatMap((state) => options.stampIdentity(state.draft)),
   );
+  const healthProbeTtlMs =
+    options.healthProbeCacheTtl === undefined
+      ? DEFAULT_ANTIGRAVITY_HEALTH_PROBE_TTL_MS
+      : Duration.toMillis(Duration.fromInputUnsafe(options.healthProbeCacheTtl));
+  const healthProbeFailureBackoffMs =
+    options.healthProbeFailureBackoff === undefined
+      ? DEFAULT_ANTIGRAVITY_HEALTH_PROBE_FAILURE_BACKOFF_MS
+      : Duration.toMillis(Duration.fromInputUnsafe(options.healthProbeFailureBackoff));
+  const lastHealthProbeRef = yield* Ref.make<{
+    readonly atMs: number;
+    readonly ok: boolean;
+  } | null>(null);
+  const healthProbeLock = yield* Semaphore.make(1);
 
-  const checkProvider = Effect.fn("checkAntigravityProvider")(function* () {
+  const runHealthCheck = Effect.fn("checkAntigravityProvider")(function* () {
     if (!settings.enabled) return yield* getSnapshot;
     const before = yield* SubscriptionRef.get(metadata);
     const result = yield* options.probe.pipe(
@@ -231,7 +256,47 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         },
       } satisfies AntigravityProviderState;
     });
+    const nowMs = yield* Clock.currentTimeMillis;
+    yield* Ref.set(lastHealthProbeRef, {
+      atMs: nowMs,
+      ok: initialized !== undefined || missingInstallation,
+    });
     return yield* options.stampIdentity(next.draft);
+  });
+
+  const checkProvider = Effect.fn("checkAntigravityProviderCached")(function* () {
+    if (!settings.enabled) return yield* getSnapshot;
+    return yield* healthProbeLock.withPermits(1)(
+      Effect.gen(function* () {
+        const nowMs = yield* Clock.currentTimeMillis;
+        const last = yield* Ref.get(lastHealthProbeRef);
+        if (
+          last?.ok === true &&
+          shouldSkipAntigravityHealthProbe({
+            nowMs,
+            lastProbeAtMs: last.atMs,
+            lastProbeCompleted: true,
+            ttlMs: healthProbeTtlMs,
+            failureBackoffMs: healthProbeFailureBackoffMs,
+          })
+        ) {
+          yield* Effect.log("Antigravity health probe skipped.", { reason: "success-ttl" });
+          return yield* getSnapshot;
+        }
+        if (
+          last?.ok === false &&
+          shouldSkipFailedAntigravityHealthProbe({
+            nowMs,
+            lastFailureAtMs: last.atMs,
+            failureBackoffMs: healthProbeFailureBackoffMs,
+          })
+        ) {
+          yield* Effect.log("Antigravity health probe skipped.", { reason: "failure-backoff" });
+          return yield* getSnapshot;
+        }
+        return yield* runHealthCheck();
+      }),
+    );
   });
 
   const maintenanceCapabilities =

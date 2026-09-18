@@ -4,6 +4,13 @@ import { Button } from "../ui/button";
 import { CircleAlertIcon, XIcon } from "lucide-react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
+const AUTH_EXPIRY_ERROR_PATTERN =
+  /401|expired credentials|unauthenticated|auth_kind=none|no auth context|invalid or expired|not authenticated|not logged in/i;
+
+export function isProviderAuthExpiryError(error: string | null | undefined): boolean {
+  return typeof error === "string" && AUTH_EXPIRY_ERROR_PATTERN.test(error);
+}
+
 export function getThreadErrorBannerKey(threadKey: string, error: string | null): string | null {
   return error === null ? null : `${threadKey}\u0000${error}`;
 }
@@ -36,11 +43,16 @@ export function isThreadErrorBannerDismissedForSession(bannerKey: string | null)
 export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   error,
   onDismiss,
+  onReconnect,
+  onSignIn,
 }: {
   error: string | null;
   onDismiss?: () => void;
+  onReconnect?: () => void;
+  onSignIn?: () => void;
 }) {
   if (!error) return null;
+  const authExpired = isProviderAuthExpiryError(error);
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
       <Alert
@@ -57,6 +69,20 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
               {error}
             </TooltipPopup>
           </Tooltip>
+          {authExpired ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {onSignIn ? (
+                <Button size="xs" variant="outline" onClick={onSignIn}>
+                  Sign in
+                </Button>
+              ) : null}
+              {onReconnect ? (
+                <Button size="xs" variant="outline" onClick={onReconnect}>
+                  Reconnect
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </AlertDescription>
         {onDismiss && (
           <AlertAction>

@@ -6,12 +6,12 @@ import type {
   ServerProvider,
   ServerProviderResetCredits,
   ServerProviderUsageWindow,
-  UsageProviderKind,
 } from "@t3tools/contracts";
 import {
   elapsedShare,
   formatDuration,
   formatResetsIn,
+  limitBarColor,
   limitsNotice,
   paceOf,
   remainingPercent,
@@ -24,19 +24,10 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useProviderColors } from "./usageProviders";
 
 const PACE_LABEL = { ahead: "ahead of pace", on: "on pace", under: "under pace" } as const;
 
 type Driver = ServerProvider["driver"];
-
-/** The series colour the usage chart uses for this driver, so the two views read as one. */
-function useBarColor(driver: Driver): string | null {
-  const colors = useProviderColors();
-  const kind: UsageProviderKind | null =
-    driver === "codex" ? "codex" : driver === "claudeAgent" ? "claude" : null;
-  return kind ? colors[kind] : null;
-}
 
 /**
  * One window as a bar spanning its whole duration: the fill is quota left,
@@ -46,7 +37,7 @@ function useBarColor(driver: Driver): string | null {
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
-  readonly color: string | null;
+  readonly color: string;
   readonly now: number;
 }) {
   const { window, now } = props;
@@ -73,10 +64,7 @@ function WindowRow(props: {
                   ? "h-full rounded-full bg-amber-500"
                   : "h-full rounded-full bg-foreground"
             }
-            style={[
-              { flex: remaining },
-              remaining > 30 && props.color ? { backgroundColor: props.color } : null,
-            ]}
+            style={[{ flex: remaining }, remaining > 30 ? { backgroundColor: props.color } : null]}
           />
           <View style={{ flex: 100 - remaining }} />
         </View>
@@ -136,7 +124,7 @@ export function AccountLimits(props: {
   readonly footer?: ReactNode;
 }) {
   const { limits, now, dense = false } = props;
-  const color = useBarColor(props.driver);
+  const color = limitBarColor(props.driver);
   if (!limits) return null;
   const notice = limitsNotice(limits);
   const padding = dense ? "px-4 py-3" : "p-4";

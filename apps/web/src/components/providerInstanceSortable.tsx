@@ -3,7 +3,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { HTMLAttributes, ReactNode } from "react";
 
-import { animatePinnedLayoutChanges } from "./Sidebar.logic";
+import { animateSidebarLayoutChanges } from "./Sidebar.logic";
 import type { ProviderInstanceId } from "@t3tools/contracts";
 import { cn } from "../lib/utils";
 
@@ -39,7 +39,7 @@ export function SortableProviderInstanceItem({
   const { setNodeRef, transform, transition, listeners, isDragging } = useSortable({
     id,
     disabled,
-    animateLayoutChanges: animatePinnedLayoutChanges,
+    animateLayoutChanges: animateSidebarLayoutChanges,
   });
   return (
     <div

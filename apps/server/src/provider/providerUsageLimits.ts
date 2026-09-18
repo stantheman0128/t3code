@@ -64,6 +64,62 @@ export function makeUnavailableUsageLimits(input: {
   };
 }
 
+function legacyWindowKind(window: ProviderUsageLimitWindow): ServerProviderUsageWindow["kind"] {
+  const durationMinutes = window.durationMinutes;
+  if (durationMinutes !== undefined) {
+    if (durationMinutes >= 30 * 24 * 60) return "monthly";
+    if (durationMinutes >= 7 * 24 * 60) return "weekly";
+    return "session";
+  }
+
+  const id = window.id.toLowerCase();
+  const label = window.label.toLowerCase();
+  if (id.includes("month") || label.includes("month")) return "monthly";
+  if (id.startsWith("seven_day") || id.includes("week") || label.includes("week")) {
+    return "weekly";
+  }
+  if (
+    id === "five_hour" ||
+    id === "rolling" ||
+    id.includes("session") ||
+    label.includes("session") ||
+    /(^|\s)5h($|\s)/.test(label)
+  ) {
+    return "session";
+  }
+  return "other";
+}
+
+/**
+ * Bridge providers that still collect the fork's remaining-quota shape onto
+ * the current server wire contract. Keeping the conversion at the snapshot
+ * boundary prevents one legacy provider from invalidating the whole config.
+ */
+export function legacyUsageLimitsToServerUsageLimits(input: {
+  readonly checkedAt: string;
+  readonly limits: ProviderUsageLimits;
+}): ServerProviderUsageLimits {
+  if (input.limits.status === "unsupported") {
+    return makeUnavailableUsageLimits({ checkedAt: input.checkedAt, reason: "unsupported" });
+  }
+  if (input.limits.windows.length === 0) {
+    return makeUnavailableUsageLimits({ checkedAt: input.checkedAt, reason: "probeFailed" });
+  }
+  return makeUsageLimits({
+    checkedAt: input.checkedAt,
+    windows: input.limits.windows.map((window) => ({
+      id: window.id,
+      kind: legacyWindowKind(window),
+      label: window.label,
+      usedPercent: clampPercent(100 - window.remainingPercent),
+      ...(window.resetsAt ? { resetsAt: window.resetsAt } : {}),
+      ...(window.durationMinutes !== undefined
+        ? { windowDurationMins: window.durationMinutes }
+        : {}),
+    })),
+  });
+}
+
 /**
  * Fold a sparse runtime update into the limits a provider currently
  * publishes. Windows upsert by `id`; a window the update omits keeps its

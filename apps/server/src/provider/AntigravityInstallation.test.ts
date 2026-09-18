@@ -134,6 +134,7 @@ interface HarnessOptions {
   readonly fileSystem?: FileSystem.FileSystem;
   readonly validate?: AntigravityInstallationOptions["validate"];
   readonly useDefaultValidation?: boolean;
+  readonly retryBackoffMs?: number;
 }
 
 const makeHarness = Effect.fn("test.makeAntigravityInstallation")(function* (
@@ -172,6 +173,7 @@ const makeHarness = Effect.fn("test.makeAntigravityInstallation")(function* (
   const installation = yield* makeAntigravityInstallation({
     baseDir,
     releaseAsset: asset,
+    retryBackoffMs: options.retryBackoffMs ?? 0,
     ...(options.useDefaultValidation
       ? {}
       : {
@@ -694,6 +696,23 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
         expect((yield* terminalState(installation)).phase).toBe("succeeded");
         expect(requests).toHaveLength(1);
       }),
+  );
+
+  it.effect("does not download again until the install retry backoff elapses", () =>
+    Effect.gen(function* () {
+      const { installation, requests } = yield* makeHarness({
+        asset: { ...releaseAsset(), sha256: "2".repeat(64) },
+        retryBackoffMs: 60_000,
+      });
+      yield* installation.start;
+      expect((yield* terminalState(installation)).phase).toBe("failed");
+      expect(requests).toHaveLength(1);
+
+      const retry = yield* installation.start;
+      expect(retry.phase).toBe("failed");
+      expect(retry.message).toContain("Wait");
+      expect(requests).toHaveLength(1);
+    }),
   );
 
   // Real posix executables in a real temp dir, resolved by a linux-mocked

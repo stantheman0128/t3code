@@ -329,6 +329,8 @@ it.layer(layer)("AntigravityAdapter", (it) => {
             makeAntigravityAcpRuntime({
               ...input,
               childProcessSpawner,
+              forceKillAfter: "1 second",
+              gracefulShutdownWait: "0 millis",
               spawn: {
                 command: process.execPath,
                 args: [mockAgentPath],

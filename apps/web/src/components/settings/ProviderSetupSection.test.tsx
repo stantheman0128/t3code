@@ -25,6 +25,7 @@ const setup = vi.hoisted(() => ({
   cancelInstall: vi.fn(),
   removeInstall: vi.fn(),
   confirm: vi.fn(),
+  openExternal: vi.fn(),
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -34,6 +35,7 @@ vi.mock("react", async (importOriginal) => {
     ...actual,
     useRef: reactHookHarness.useRef,
     useState: reactHookHarness.useState,
+    useEffect: () => undefined,
   };
 });
 
@@ -70,10 +72,13 @@ vi.mock("../../state/query", () => ({
 }));
 
 vi.mock("../../localApi", () => ({
-  ensureLocalApi: () => ({ dialogs: { confirm: setup.confirm } }),
+  ensureLocalApi: () => ({
+    dialogs: { confirm: setup.confirm },
+    shell: { openExternal: setup.openExternal },
+  }),
 }));
 
-import { ProviderSetupSection } from "./ProviderSetupSection";
+import { ProviderSetupSection, shouldAutoOpenGoogleSignIn } from "./ProviderSetupSection";
 
 const environmentId = EnvironmentId.make("remote-google");
 const instanceId = ProviderInstanceId.make("antigravity_work");
@@ -217,6 +222,7 @@ describe("Antigravity setup", () => {
       command.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
     }
     setup.confirm.mockReset().mockResolvedValue(false);
+    setup.openExternal.mockReset().mockResolvedValue(undefined);
   });
 
   it("waits for verified auth after submitting a callback to the selected environment", async () => {
@@ -384,4 +390,31 @@ describe("Antigravity setup", () => {
       expect(setup.startAuth).not.toHaveBeenCalled();
     },
   );
+
+  it("opens each Google sign-in URL once when the waiting link arrives", () => {
+    expect(
+      shouldAutoOpenGoogleSignIn({
+        usesBrowser: true,
+        authorizationUrl: "https://accounts.google.com/o/oauth2/auth",
+        flowId: "flow-1",
+        lastOpenedFlowId: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoOpenGoogleSignIn({
+        usesBrowser: true,
+        authorizationUrl: "https://accounts.google.com/o/oauth2/auth",
+        flowId: "flow-1",
+        lastOpenedFlowId: "flow-1",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoOpenGoogleSignIn({
+        usesBrowser: false,
+        authorizationUrl: "https://accounts.google.com/o/oauth2/auth",
+        flowId: "flow-1",
+        lastOpenedFlowId: null,
+      }),
+    ).toBe(false);
+  });
 });

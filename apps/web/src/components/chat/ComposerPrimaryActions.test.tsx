@@ -125,19 +125,20 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).not.toContain("stage-nightly");
   });
 
-  it("only renders stop while running when Enter-to-send is available", () => {
+  it("only renders stop while running when the busy-send picker is hidden", () => {
     const markup = renderRunningActions(false, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
+    expect(markup).not.toContain('aria-label="Queue, steer, or start a new thread"');
   });
 
-  it("renders send alongside stop while running when Enter-to-send is unavailable", () => {
+  it("renders Queue, Steer, and New thread beside stop while running", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send message"');
-    expect(markup).toContain('type="submit"');
+    expect(markup).toContain('aria-label="Queue, steer, or start a new thread"');
+    expect(markup).toContain('data-chat-send=""');
+    expect(markup).toContain('aria-haspopup="menu"');
   });
 
   it("keeps stop as the only action while running with an empty composer", () => {

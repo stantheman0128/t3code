@@ -23,6 +23,8 @@ type NewTaskDraftRouteParams = {
   readonly modelInstanceId?: string | string[];
   readonly model?: string | string[];
   readonly title?: string | string[];
+  /** Set by Add Project when this draft opens while the project's clone runs. */
+  readonly cloning?: string | string[];
   readonly pendingTaskId?: string | string[];
   readonly draftId?: string | string[];
   readonly incomingShareId?: string | string[];
@@ -54,6 +56,7 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
         ? params.modelInstanceId[0]
         : params.modelInstanceId,
       model: Array.isArray(params.model) ? params.model[0] : params.model,
+      cloning: (Array.isArray(params.cloning) ? params.cloning[0] : params.cloning) === "1",
     }),
     [params],
   );

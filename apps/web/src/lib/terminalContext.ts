@@ -1,6 +1,6 @@
-import { type ThreadId } from "@t3tools/contracts";
-
-import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
+import type { ThreadId } from "@t3tools/contracts";
+import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+import { toKindScopedComposerContextId } from "./composerContextReferences";
 
 export interface TerminalContextSelection {
   terminalId: string;
@@ -14,6 +14,21 @@ export interface TerminalContextDraft extends TerminalContextSelection {
   id: string;
   threadId: ThreadId;
   createdAt: string;
+}
+
+/** Legacy ordinal placeholder from drafts saved before context references. Migration only. */
+export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
+
+export interface TerminalContextReferenceSource {
+  id: string;
+  terminalLabel: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+export interface ParsedTerminalContextEntry {
+  header: string;
+  body: string;
 }
 
 export interface ExtractedTerminalContexts {
@@ -34,18 +49,20 @@ export interface DisplayedUserMessageState {
    * block (if any). Stripped from `visibleText` so the raw block doesn't
    * leak into the user's bubble.
    */
-  elementContexts: ParsedElementContextEntry[];
+  elementContexts: ParsedTerminalContextEntry[];
 }
-
-export interface ParsedTerminalContextEntry {
-  header: string;
-  body: string;
-}
-
-export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
 
 const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
   /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
+
+/** The canonical inline link that stands for this context in the prompt. */
+export function formatTerminalContextReference(context: TerminalContextReferenceSource): string {
+  return formatComposerContextReference({
+    kind: "terminal",
+    contextId: toKindScopedComposerContextId("terminal", context.id),
+    label: formatTerminalContextLabel(context),
+  });
+}
 
 export function normalizeTerminalContextText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
@@ -110,6 +127,20 @@ export function formatInlineTerminalContextLabel(selection: {
       ? `${selection.lineStart}`
       : `${selection.lineStart}-${selection.lineEnd}`;
   return `@${terminalLabel}:${range}`;
+}
+
+/** Binds legacy U+FFFC placeholders to contexts in array order; leftover placeholders vanish. */
+export function migrateLegacyTerminalContextPlaceholders(
+  prompt: string,
+  contexts: ReadonlyArray<TerminalContextReferenceSource>,
+): string {
+  if (!prompt.includes(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)) return prompt;
+  let index = 0;
+  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, () => {
+    const context = contexts[index];
+    index += 1;
+    return context ? formatTerminalContextReference(context) : "";
+  });
 }
 
 function buildTerminalContextBodyLines(selection: TerminalContextSelection): string[] {
@@ -216,18 +247,20 @@ export function stripLanguageInstructionFromUserText(text: string): string {
 
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
   // Order matters: send-time appends `<terminal_context>` first, then
-  // `<element_context>` last. Strip element first so the (now-trailing)
+  // `<element_context>` last. Strip a trailing element block so the (now-trailing)
   // terminal block can be matched by `extractTrailingTerminalContexts`.
-  const visiblePrompt = stripLanguageInstructionFromUserText(prompt);
-  const extractedElement = extractTrailingElementContexts(visiblePrompt);
-  const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
+  const visiblePrompt = stripLanguageInstructionFromUserText(prompt).replace(
+    /\n*<element_context>\n[\s\S]*?\n<\/element_context>\s*$/,
+    "",
+  );
+  const extractedTerminal = extractTrailingTerminalContexts(visiblePrompt);
   return {
     visibleText: extractedTerminal.promptText,
     copyText: stripLanguageInstructionFromUserText(prompt),
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,
-    elementContexts: extractedElement.contexts,
+    elementContexts: [],
   };
 }
 

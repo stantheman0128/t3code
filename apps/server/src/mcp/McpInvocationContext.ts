@@ -9,7 +9,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview" | "session" | "pull-requests";
+export type McpCapability = "preview" | "session" | "device" | "pull-requests";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;

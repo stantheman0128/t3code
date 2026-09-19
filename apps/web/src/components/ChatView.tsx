@@ -8740,7 +8740,10 @@ export default function ChatView(props: ChatViewProps) {
 
   return (
     <div
-      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+      className={cn(
+        "relative flex min-h-0 min-w-0 flex-1 overflow-hidden",
+        providerChromeEnabled && providerChromeDriver ? null : "bg-background",
+      )}
       {...(providerChromeEnabled && providerChromeDriver
         ? { "data-provider-chrome": providerChromeDriver }
         : {})}

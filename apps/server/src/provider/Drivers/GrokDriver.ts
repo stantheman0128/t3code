@@ -19,6 +19,7 @@ import {
   enrichGrokSnapshot,
 } from "../Layers/GrokProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
+import { readGrokUsageLimits } from "../Layers/grokUsageLimits.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -148,11 +149,21 @@ export function createGrokFamilyDriver(spec: {
           processEnv,
           projectRoot,
         ).pipe(
+          Effect.flatMap((snapshot) =>
+            effectiveConfig.enabled &&
+            snapshot.installed &&
+            snapshot.auth.status === "authenticated"
+              ? readGrokUsageLimits(processEnv).pipe(
+                  Effect.map((usageLimits) => ({ ...snapshot, usageLimits })),
+                )
+              : Effect.succeed(snapshot),
+          ),
           Effect.map(stampIdentity),
-          Effect.provideService(Crypto.Crypto, crypto),
-          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(HttpClient.HttpClient, httpClient),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
+          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         );
 
         const snapshotSettings = makeProviderSnapshotSettingsSource(

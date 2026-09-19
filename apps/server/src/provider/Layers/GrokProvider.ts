@@ -5,8 +5,9 @@ import {
   type ServerProvider,
   type ServerProviderAuth,
   type ServerProviderModel,
+  type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
-import type * as EffectAcpSchema from "effect-acp/schema";
+import * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -16,6 +17,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -56,6 +58,7 @@ import { discoverGrokSkills } from "../Drivers/GrokSkills.ts";
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
+  supportsConversationRollback: false,
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
   requiresNewThreadForModelChange: false,
@@ -585,6 +588,60 @@ const runGrokCliCommand = (
     );
   });
 
+const decodeAvailableCommands = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown));
+const decodeAvailableCommand = Schema.decodeUnknownOption(EffectAcpSchema.AvailableCommand);
+
+export function grokSlashCommandsFromInitialize(
+  initialized: EffectAcpSchema.InitializeResponse,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const commands = decodeAvailableCommands(initialized._meta?.availableCommands);
+  const byName = new Map<string, ServerProviderSlashCommand>([
+    [COMPACT_SLASH_COMMAND.name, COMPACT_SLASH_COMMAND],
+  ]);
+  for (const entry of Option.getOrElse(commands, () => [])) {
+    const decoded = decodeAvailableCommand(entry);
+    if (Option.isNone(decoded)) continue;
+    const command = decoded.value;
+    const name = command.name.trim();
+    // Permission changes must go through T3 so the client and provider agree.
+    if (!name || name.toLowerCase() === "always-approve") continue;
+    // Grok advertises /context, but its ACP handler completes without emitting output.
+    if (name.toLowerCase() === "context") continue;
+    const description = command.description.trim();
+    const hint = command.input?.hint.trim();
+    byName.set(name, {
+      name,
+      ...(description ? { description } : {}),
+      ...(hint ? { input: { hint } } : {}),
+    });
+  }
+  return [...byName.values()];
+}
+
+/**
+ * Reads model and command metadata from `initialize._meta`. This never calls `authenticate`
+ * or `session/new`, so it cannot open a browser login or boot the workspace's MCP servers.
+ */
+const discoverGrokMetadataViaAcpInitialize = (
+  grokSettings: GrokSettings,
+  environment: NodeJS.ProcessEnv,
+) =>
+  Effect.gen(function* () {
+    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const acp = yield* makeGrokAcpRuntime({
+      grokSettings,
+      environment,
+      childProcessSpawner,
+      cwd: process.cwd(),
+      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+    });
+    const initialized = yield* acp.initialize();
+    return {
+      models: buildGrokModelsFromSessionModelState(sessionModelStateFromInitialize(initialized)),
+      slashCommands: grokSlashCommandsFromInitialize(initialized),
+    };
+  }).pipe(Effect.scoped);
+
 export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(function* (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
@@ -805,11 +862,12 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         ? { status: "unauthenticated" }
         : (loginAuth ?? { status: "unknown" });
 
-  const acpExit = yield* discoverGrokModelsViaAcpInitialize(grokSettings, environment).pipe(
+  const acpExit = yield* discoverGrokMetadataViaAcpInitialize(grokSettings, environment).pipe(
     Effect.timeoutOption(GROK_ACP_INITIALIZE_TIMEOUT_MS),
     Effect.exit,
   );
-  const acpModels = Exit.isSuccess(acpExit) ? Option.getOrElse(acpExit.value, () => []) : [];
+  const acpMetadata = Exit.isSuccess(acpExit) ? Option.getOrUndefined(acpExit.value) : undefined;
+  const acpModels = acpMetadata?.models ?? [];
   const acpFailed = Exit.isFailure(acpExit) || Option.isNone(acpExit.value);
   if (acpFailed) {
     yield* Effect.logWarning("Grok ACP initialize probe failed or timed out.", {

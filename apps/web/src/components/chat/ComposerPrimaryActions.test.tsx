@@ -44,7 +44,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent: boolean) {
+function renderRunningActions(hasSendableContent: boolean, showSendWhileRunning = false) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -142,9 +142,9 @@ describe("ComposerPrimaryActions", () => {
   });
 
   it("keeps stop as the only action while running with an empty composer", () => {
-    const markup = renderRunningActions(true, false);
+    const markup = renderRunningActions(false, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
+    expect(markup).not.toContain('aria-label="Queue, steer, or start a new thread"');
   });
 });

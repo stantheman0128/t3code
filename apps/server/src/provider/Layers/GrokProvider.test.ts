@@ -694,7 +694,11 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
   // A stand-in for the Grok CLI: `--version` and `models` print canned text,
   // and `agent stdio` execs the mock ACP agent so `initialize` returns model metadata.
-  const writeFakeGrokCli = (input: { readonly modelsOutput: string; readonly acp: boolean }) =>
+  const writeFakeGrokCli = (input: {
+    readonly modelsOutput: string;
+    readonly acp: boolean;
+    readonly hangAfterModelsMs?: number;
+  }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-probe-" });
@@ -710,6 +714,11 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
           'if (process.argv[2] === "models") {',
           // @effect-diagnostics-next-line preferSchemaOverJson:off
           `  process.stdout.write(${JSON.stringify(input.modelsOutput)});`,
+          ...(input.hangAfterModelsMs === undefined
+            ? []
+            : [
+                `  await new Promise((resolve) => setTimeout(resolve, ${input.hangAfterModelsMs}));`,
+              ]),
           "  process.exit(0);",
           "}",
           'if (process.argv[2] !== "agent") process.exit(1);',
@@ -769,6 +778,29 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.auth.status).toBe("unauthenticated");
       expect(snapshot.message).toContain("grok login");
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6"]);
+    }),
+  );
+
+  it.effect("reads grok models output before the CLI worker finishes exiting", () =>
+    Effect.gen(function* () {
+      const startedAt = Date.now();
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const grokPath = yield* writeFakeGrokCli({
+            modelsOutput: LOGGED_IN_MODELS_OUTPUT,
+            acp: false,
+            hangAfterModelsMs: 20_000,
+          });
+          return yield* checkGrokProviderStatus(
+            decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
+            { ...process.env, XAI_API_KEY: "" },
+          );
+        }),
+      );
+
+      expect(snapshot.auth.status).toBe("authenticated");
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-4.5"]);
+      expect(Date.now() - startedAt).toBeLessThan(8_000);
     }),
   );
 

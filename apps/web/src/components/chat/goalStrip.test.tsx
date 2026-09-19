@@ -65,6 +65,7 @@ function renderGoalStrip(input: {
         onPause={() => {}}
         onResume={() => {}}
         onEdit={() => {}}
+        onStop={() => {}}
       />,
     ),
   };
@@ -139,7 +140,7 @@ describe("resolveComposerGoalBanner", () => {
 });
 
 describe("GoalStripBar", () => {
-  it("keeps Pause, Resume, and Edit off the expand control", () => {
+  it("keeps Pause, Resume, Edit, and Stop off the expand control", () => {
     const active = renderGoalStrip({ expanded: false });
     const paused = renderGoalStrip({ paused: true });
     const elapsed = formatPromptGoalElapsedLabel({
@@ -152,22 +153,28 @@ describe("GoalStripBar", () => {
     expect(active.markup).toContain("Goal active");
     expect(active.markup).toContain("D-sequence claims C1, C2, and C5.");
     expect(active.markup).toContain('aria-label="Pause goal"');
-    expect(active.markup).toContain(">Pause</button>");
+    expect(active.markup).not.toContain(">Pause</button>");
     expect(active.markup).toContain('aria-label="Edit goal"');
-    expect(active.markup).toContain(">Edit</button>");
+    expect(active.markup).not.toContain(">Edit</button>");
+    expect(active.markup).toContain('aria-label="Stop goal"');
+    expect(active.markup).not.toContain(">Stop</button>");
     expect(active.markup).not.toContain('aria-label="Resume goal"');
+    expect(active.markup).toContain("px-3");
     expect(active.markup).toContain('aria-label="Show full goal"');
 
     expect(paused.model?.status).toBe("paused");
     expect(paused.markup).toContain("Goal paused");
     expect(paused.markup).toContain('aria-label="Resume goal"');
-    expect(paused.markup).toContain(">Resume</button>");
+    expect(paused.markup).not.toContain(">Resume</button>");
     expect(paused.markup).not.toContain('aria-label="Pause goal"');
     expect(paused.markup).toContain('aria-label="Edit goal"');
 
     const expanded = renderGoalStrip({ phase: "running", expanded: true });
     expect(expanded.markup).toContain("Goal running");
     expect(expanded.markup).toContain("running");
+    expect(expanded.markup).toContain('data-goal-running-indicator=""');
+    expect(expanded.markup).not.toContain("visible-animate-spin");
+    expect(expanded.markup).not.toContain("animate-spin");
     expect(elapsed).toBe("12m");
     expect(expanded.markup).toContain("12m");
   });

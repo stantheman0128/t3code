@@ -320,7 +320,28 @@ function AgentActivityLog({
         </p>
       );
     }
-    return null;
+    const watching = isWatchAgent(agent);
+    return (
+      <div
+        className={cn(
+          "space-y-1.5 text-[.7rem] text-muted-foreground",
+          fillHeight && "flex min-h-0 flex-1 flex-col justify-center px-1",
+        )}
+      >
+        <p>
+          {watching
+            ? watchStatusText(agent, live, 0)
+            : live
+              ? "Still working. No output yet."
+              : "No result recorded."}
+        </p>
+        {agent.outputFile ? (
+          <p className="break-all font-mono text-[.65rem]" title={agent.outputFile}>
+            Log: {shortAgentOutputPath(agent.outputFile)}
+          </p>
+        ) : null}
+      </div>
+    );
   }
 
   const liveThought = live

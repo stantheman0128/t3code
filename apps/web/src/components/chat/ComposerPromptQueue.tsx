@@ -65,28 +65,29 @@ function QueueThumbnails({
   return (
     <span className="flex shrink-0 flex-wrap items-center gap-1" data-user-message-edit-ignore="">
       {visible.map((image) => {
-        const preview = expandImage ? buildExpandedImagePreview(images, image.id) : null;
-        const thumb =
-          !preview || !expandImage ? (
-            <img
-              src={image.previewUrl}
-              alt={image.name}
-              className={cn(sizeClass, "rounded-md object-cover")}
-            />
-          ) : (
-            <button
-              type="button"
-              className={cn(sizeClass, "cursor-zoom-in overflow-hidden rounded-md")}
-              aria-label={`Preview ${image.name}`}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
+        const thumb = !expandImage ? (
+          <img
+            src={image.previewUrl}
+            alt={image.name}
+            className={cn(sizeClass, "rounded-md object-cover")}
+          />
+        ) : (
+          <button
+            type="button"
+            className={cn(sizeClass, "cursor-zoom-in overflow-hidden rounded-md")}
+            aria-label={`Preview ${image.name}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const preview = buildExpandedImagePreview(images, image.id);
+              if (preview) {
                 expandImage(preview);
-              }}
-            >
-              <img src={image.previewUrl} alt={image.name} className="size-full object-cover" />
-            </button>
-          );
+              }
+            }}
+          >
+            <img src={image.previewUrl} alt={image.name} className="size-full object-cover" />
+          </button>
+        );
 
         if (!editing || !onRemoveImage) {
           return (
@@ -312,17 +313,21 @@ function QueueItemCard({
           <span className="w-4 shrink-0 pt-0.5 text-center font-mono text-[10px] text-muted-foreground tabular-nums">
             {index + 1}
           </span>
-          <button
-            type="button"
-            className="min-w-0 flex-1 space-y-1.5 rounded-md text-left"
-            aria-label={`Edit queued follow-up ${index + 1}`}
-            onClick={onBeginEdit}
-          >
-            <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm leading-5 text-foreground/90">
-              {item.prompt.trim() || <span className="text-muted-foreground">Photo follow-up</span>}
-            </p>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <button
+              type="button"
+              className="min-w-0 w-full rounded-md text-left"
+              aria-label={`Edit queued follow-up ${index + 1}`}
+              onClick={onBeginEdit}
+            >
+              <p className="line-clamp-1 break-all text-sm leading-5 text-foreground/90">
+                {item.prompt.trim() || (
+                  <span className="text-muted-foreground">Photo follow-up</span>
+                )}
+              </p>
+            </button>
             <QueueThumbnails images={item.images} compact onExpandImage={onExpandImage} />
-          </button>
+          </div>
           <div className="flex shrink-0 items-center gap-0.5" data-user-message-edit-ignore="">
             <Button
               type="button"

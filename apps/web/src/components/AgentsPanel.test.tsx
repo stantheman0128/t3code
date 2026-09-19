@@ -422,6 +422,40 @@ describe("AgentsPanel", () => {
     expect(html).toContain("Watching. New events show up here as they fire.");
   });
 
+  it("opened monitor session with no events is not a blank pane", () => {
+    const model: AgentPanelModel = {
+      workflows: [],
+      background: [
+        agent({
+          id: "mon-empty-session",
+          kind: "monitor",
+          status: "running",
+          title: "Watch only T3-parented cmd/taskkill flashes",
+          error: null,
+          result: null,
+          usage: null,
+          recentActivity: [],
+        }),
+      ],
+      directAgents: [],
+      runningCount: 1,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 0,
+      totalTokens: 0,
+      hasAgents: true,
+      liveCount: 1,
+    };
+
+    const html = renderToStaticMarkup(
+      <AgentsPanel model={model} initialFocusedAgentId="mon-empty-session" />,
+    );
+    expect(html).toContain("Back to agents");
+    expect(html).toContain("Monitoring");
+    expect(html).toContain("Watching. New events show up here as they fire.");
+    expect(html).not.toContain("No agents yet");
+  });
+
   it("offers Open session on a Direct spawn row", () => {
     const model: AgentPanelModel = {
       workflows: [],

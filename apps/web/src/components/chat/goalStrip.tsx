@@ -1,4 +1,4 @@
-import { TargetIcon } from "lucide-react";
+import { PauseIcon, PencilIcon, PlayIcon, SquareIcon, TargetIcon } from "lucide-react";
 import type { CodexGoal, CodexGoalStatus } from "@t3tools/contracts";
 import {
   buildGoalStripContent,
@@ -120,6 +120,7 @@ export function GoalStripBar({
   onPause,
   onResume,
   onEdit,
+  onStop,
 }: {
   readonly model: ComposerGoalStripModel;
   readonly expanded: boolean;
@@ -128,6 +129,7 @@ export function GoalStripBar({
   readonly onPause: () => void;
   readonly onResume: () => void;
   readonly onEdit: () => void;
+  readonly onStop: () => void;
 }) {
   const content = buildGoalStripContent({
     title: model.title,
@@ -140,15 +142,28 @@ export function GoalStripBar({
   const showResume = model.status === "paused";
 
   return (
-    <ComposerBanner.Root data-composer-goal-strip="true" density="comfortable" variant="info">
+    <ComposerBanner.Root
+      data-composer-goal-strip="true"
+      density="comfortable"
+      variant="info"
+      className="px-3 sm:px-3.5"
+    >
       <ComposerBanner.Row layout="wrap-actions-narrow">
         <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
-          <TargetIcon />
+          {model.running ? (
+            <span
+              data-goal-running-indicator=""
+              className="size-1.5 rounded-full bg-foreground/70"
+              aria-hidden
+            />
+          ) : (
+            <TargetIcon />
+          )}
         </ComposerBanner.Icon>
         <ComposerBanner.Content>
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-1 rounded-[0.5rem] text-start focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+            className="flex min-w-0 flex-1 items-center gap-1 rounded-[0.5rem] ps-0.5 text-start focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             aria-expanded={expanded}
             aria-label={content.activateLabel}
             onClick={onToggle}
@@ -163,10 +178,10 @@ export function GoalStripBar({
             )}
           </button>
         </ComposerBanner.Content>
-        <ComposerBanner.Actions>
+        <ComposerBanner.Actions className="gap-0.5 pe-0.5">
           {showPause ? (
             <Button
-              size="micro"
+              size="icon-micro"
               variant="ghost-muted"
               disabled={busy}
               aria-label="Pause goal"
@@ -176,12 +191,12 @@ export function GoalStripBar({
                 onPause();
               }}
             >
-              Pause
+              <PauseIcon className="size-3" aria-hidden />
             </Button>
           ) : null}
           {showResume ? (
             <Button
-              size="micro"
+              size="icon-micro"
               variant="ghost-muted"
               disabled={busy}
               aria-label="Resume goal"
@@ -191,11 +206,11 @@ export function GoalStripBar({
                 onResume();
               }}
             >
-              Resume
+              <PlayIcon className="size-3" aria-hidden />
             </Button>
           ) : null}
           <Button
-            size="micro"
+            size="icon-micro"
             variant="ghost-muted"
             disabled={busy}
             aria-label="Edit goal"
@@ -205,13 +220,26 @@ export function GoalStripBar({
               onEdit();
             }}
           >
-            Edit
+            <PencilIcon className="size-3" aria-hidden />
+          </Button>
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            disabled={busy}
+            aria-label="Stop goal"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onStop();
+            }}
+          >
+            <SquareIcon className="size-3" aria-hidden />
           </Button>
         </ComposerBanner.Actions>
       </ComposerBanner.Row>
       {expanded ? (
         <ComposerBanner.Children>
-          <p className="whitespace-pre-wrap text-muted-foreground">{content.body}</p>
+          <p className="whitespace-pre-wrap ps-0.5 text-muted-foreground">{content.body}</p>
         </ComposerBanner.Children>
       ) : null}
     </ComposerBanner.Root>

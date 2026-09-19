@@ -160,6 +160,36 @@ describe("local-update-feed", () => {
     assert.deepStrictEqual(calls, ["quit", "force", "install", "relaunch"]);
   });
 
+  it("retries a locked-file NSIS failure after force-killing leftovers", async () => {
+    const calls: string[] = [];
+    let installs = 0;
+    const result = await bootstrapLocalWindowsNsisInstall({
+      installerPath: "C:\\i.exe",
+      appExePath: "C:\\t3.exe",
+      deps: {
+        listPids: async () => (installs === 0 ? [] : [9]),
+        requestQuit: async () => undefined,
+        waitForExit: async () => true,
+        forceKill: async () => {
+          calls.push("force");
+        },
+        runInstaller: async () => {
+          installs += 1;
+          calls.push(`install-${installs}`);
+          return installs === 1 ? 1 : 0;
+        },
+        relaunch: async () => {
+          calls.push("relaunch");
+        },
+        sleep: async () => undefined,
+      },
+    });
+
+    assert.equal(result.installerExitCode, 0);
+    assert.isTrue(result.forceKilled);
+    assert.deepStrictEqual(calls, ["install-1", "force", "install-2", "relaunch"]);
+  });
+
   it("rejects a non-zero silent installer exit", async () => {
     let thrown: unknown;
     try {

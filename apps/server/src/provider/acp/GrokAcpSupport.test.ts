@@ -1,3 +1,5 @@
+import * as NodePath from "node:path";
+
 import { describe, expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -17,6 +19,7 @@ import {
   parseGrokAcpModelMeta,
   requestedGrokFastMode,
   resolveGrokAcpBaseModelId,
+  withGrokCliHomeEnvironment,
 } from "./GrokAcpSupport.ts";
 
 describe("isGrokBotPickerModelId", () => {
@@ -81,9 +84,32 @@ describe("grokAcpSpawnArgs", () => {
   });
 });
 
+describe("withGrokCliHomeEnvironment", () => {
+  it("fills HOME and GROK_HOME from USERPROFILE when HOME is missing", () => {
+    const env = withGrokCliHomeEnvironment({
+      USERPROFILE: "C:\\Users\\ada",
+      XAI_API_KEY: "secret",
+    });
+    expect(env.HOME).toBe("C:\\Users\\ada");
+    expect(env.GROK_HOME?.replaceAll("/", "\\")).toBe("C:\\Users\\ada\\.grok");
+    expect(env.XAI_API_KEY).toBe("secret");
+  });
+
+  it("keeps an explicit HOME and GROK_HOME", () => {
+    const env = withGrokCliHomeEnvironment({
+      HOME: "/custom/home",
+      GROK_HOME: "/custom/grok",
+      USERPROFILE: "C:\\Users\\ada",
+    });
+    expect(env.HOME).toBe("/custom/home");
+    expect(env.GROK_HOME).toBe("/custom/grok");
+  });
+});
+
 describe("buildGrokAcpSpawnInput", () => {
   it("passes the T3 Code referrer through Grok OAuth env", () => {
     const spawn = buildGrokAcpSpawnInput({ binaryPath: "/usr/local/bin/grok" }, "/tmp/project", {
+      HOME: "/home/ada",
       XAI_API_KEY: "secret",
       GROK_OAUTH2_REFERRER: "other-client",
     });
@@ -93,6 +119,8 @@ describe("buildGrokAcpSpawnInput", () => {
       args: ["agent", "stdio"],
       cwd: "/tmp/project",
       env: {
+        HOME: "/home/ada",
+        GROK_HOME: NodePath.join("/home/ada", ".grok"),
         XAI_API_KEY: "secret",
         GROK_OAUTH2_REFERRER: "t3code",
       },

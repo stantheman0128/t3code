@@ -139,8 +139,9 @@ export interface LocalNsisBootstrapResult {
 }
 
 const QUIT_WAIT_MS = 20_000;
-const POST_QUIT_SETTLE_MS = 1_000;
+const POST_QUIT_SETTLE_MS = 3_000;
 const POST_INSTALL_SETTLE_MS = 2_000;
+const INSTALL_ATTEMPTS = 3;
 
 export async function bootstrapLocalWindowsNsisInstall(input: {
   readonly installerPath: string;
@@ -160,7 +161,23 @@ export async function bootstrapLocalWindowsNsisInstall(input: {
     await input.deps.sleep(POST_QUIT_SETTLE_MS);
   }
 
-  const installerExitCode = await input.deps.runInstaller(input.installerPath);
+  // NSIS fails with a locked exe when Chromium/crashpad is still exiting.
+  // Retry after another close pass instead of treating the first non-zero as final.
+  let installerExitCode = 1;
+  for (let attempt = 1; attempt <= INSTALL_ATTEMPTS; attempt++) {
+    installerExitCode = await input.deps.runInstaller(input.installerPath);
+    if (installerExitCode === 0) {
+      break;
+    }
+    const leftover = await input.deps.listPids();
+    if (leftover.length > 0) {
+      await input.deps.forceKill(leftover);
+      forceKilled = true;
+    }
+    if (attempt < INSTALL_ATTEMPTS) {
+      await input.deps.sleep(POST_QUIT_SETTLE_MS);
+    }
+  }
   if (installerExitCode !== 0) {
     throw new Error(`Silent NSIS install failed with exit code ${installerExitCode}.`);
   }

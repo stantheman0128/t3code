@@ -19,6 +19,7 @@ import {
   type ProviderOptionSelection,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import { appendPreviewAnnotationPrompt } from "./lib/previewAnnotation";
 import {
   collectAssistantCitations,
   serializeAssistantCitation,
@@ -3389,6 +3390,13 @@ describe("composerDraftStore attachment references", () => {
     });
     expect(draft.prompt).toContain("t3-context://v1/preview-annotation/");
     expect(draft.prompt).toContain(prompt);
+    // The composer sends migrated picks through annotations, with no legacy draft field.
+    expect(draft).not.toHaveProperty("elementContexts");
+    const outgoing = draft.previewAnnotations.reduce(appendPreviewAnnotationPrompt, draft.prompt);
+    expect(outgoing).toContain(element.selector);
+    expect(outgoing).toContain(element.htmlPreview);
+    expect(outgoing).toContain(element.styles);
+    expect(outgoing.match(/<element_context>/g)).toHaveLength(1);
   });
 
   it("appends chips for persisted files that predate references", () => {

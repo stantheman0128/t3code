@@ -2789,7 +2789,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // Keep blockmap-based differential downloads enabled while changing the
     // installed file topology. The optimization is in the payload shape, not
     // in trading update bandwidth for install speed.
-    buildConfig.nsis = { differentialPackage: true };
+    buildConfig.nsis = {
+      differentialPackage: true,
+      // Never wipe ~/.t3 on uninstall/reinstall. Local packs overlay the same
+      // per-user directory; wiping userdata looks like a failed reinstall.
+      deleteAppDataOnUninstall: false,
+    };
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",

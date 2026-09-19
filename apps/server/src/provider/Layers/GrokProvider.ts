@@ -9,15 +9,19 @@ import {
 } from "@t3tools/contracts";
 import * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -26,6 +30,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -47,6 +52,7 @@ import {
   makeGrokAcpRuntime,
   parseGrokAcpModelMeta,
   resolveGrokAcpBaseModelId,
+  withGrokCliHomeEnvironment,
 } from "../acp/GrokAcpSupport.ts";
 import {
   grokWorkflowHomeDirFromEnvironment,
@@ -498,11 +504,23 @@ function displayNameFromGrokModelSlug(slug: string): string {
 }
 
 const grokAcpProbeEnvironment = (environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
-  ...environment,
+  ...withGrokCliHomeEnvironment(environment),
   CI: environment.CI ?? "1",
   NO_BROWSER: environment.NO_BROWSER ?? "1",
   BROWSER: environment.BROWSER ?? "",
 });
+
+function summarizeGrokAcpCause(cause: Cause.Cause<unknown>): string | undefined {
+  const squashed = Cause.squash(cause);
+  if (squashed instanceof Error) {
+    const message = squashed.message.trim();
+    return message.length > 0 ? message.slice(0, 240) : squashed.name;
+  }
+  if (typeof squashed === "object" && squashed !== null && "_tag" in squashed) {
+    return String((squashed as { _tag: unknown })._tag);
+  }
+  return undefined;
+}
 
 const discoverGrokModelsViaAcp = (
   grokSettings: GrokSettings,
@@ -559,34 +577,52 @@ const runGrokVersionCommand = (
 ) =>
   Effect.gen(function* () {
     const command = grokCommandFromSettings(grokSettings);
+    const env = grokAcpProbeEnvironment(environment);
     const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], {
-      env: environment,
+      env,
     });
     return yield* spawnAndCollect(
       command,
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: environment,
+        env,
         shell: spawnCommand.shell,
       }),
     );
   });
 
-const runGrokCliCommand = (
-  grokSettings: GrokSettings,
-  args: ReadonlyArray<string>,
-  environment: NodeJS.ProcessEnv,
-) =>
+/**
+ * `grok models` prints the listing quickly, then waits ~12s for an internal
+ * worker to exit. Health probes must not wait for that shutdown.
+ */
+const runGrokModelsListing = (grokSettings: GrokSettings, environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
     const command = grokSettings.binaryPath || "grok";
-    const spawnCommand = yield* resolveSpawnCommand(command, args, { env: environment });
-    return yield* spawnAndCollect(
-      command,
+    const env = grokAcpProbeEnvironment(environment);
+    const spawnCommand = yield* resolveSpawnCommand(command, ["models"], { env });
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const child = yield* spawner.spawn(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: environment,
+        env,
         shell: spawnCommand.shell,
       }),
     );
-  });
+    const listing = yield* Deferred.make<GrokModelsCliOutput>();
+    const stdout = yield* Ref.make("");
+    yield* Stream.runForEach(child.stderr, () => Effect.void).pipe(Effect.forkScoped);
+    yield* Stream.runForEach(child.stdout, (chunk) =>
+      Effect.gen(function* () {
+        const next = yield* Ref.updateAndGet(
+          stdout,
+          (current) => current + Buffer.from(chunk).toString("utf8"),
+        );
+        const parsed = parseGrokModelsCliOutput(next);
+        if (parsed.authenticated !== null) {
+          yield* Deferred.succeed(listing, parsed).pipe(Effect.ignore);
+        }
+      }),
+    ).pipe(Effect.forkScoped);
+    return yield* Deferred.await(listing);
+  }).pipe(Effect.scoped);
 
 const decodeAvailableCommands = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown));
 const decodeAvailableCommand = Schema.decodeUnknownOption(EffectAcpSchema.AvailableCommand);
@@ -630,7 +666,7 @@ const discoverGrokMetadataViaAcpInitialize = (
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const acp = yield* makeGrokAcpRuntime({
       grokSettings,
-      environment,
+      environment: grokAcpProbeEnvironment(environment),
       childProcessSpawner,
       cwd: process.cwd(),
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
@@ -829,28 +865,21 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   }
 
   // `grok models` reports login state and model slugs without starting the agent.
-  const modelsResult = yield* runGrokCliCommand(grokSettings, ["models"], environment).pipe(
+  const modelsResult = yield* runGrokModelsListing(grokSettings, environment).pipe(
     Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
     Effect.result,
   );
-  // Only a clean exit is parsed. Failed invocations print help or error text that
-  // must not be read as model slugs or as a login verdict.
-  const modelsOutput =
-    Result.isSuccess(modelsResult) &&
-    Option.isSome(modelsResult.success) &&
-    modelsResult.success.value.code === 0
+  const cliModels: GrokModelsCliOutput =
+    Result.isSuccess(modelsResult) && Option.isSome(modelsResult.success)
       ? modelsResult.success.value
-      : undefined;
-  const cliModels: GrokModelsCliOutput = modelsOutput
-    ? parseGrokModelsCliOutput(`${modelsOutput.stdout}\n${modelsOutput.stderr}`)
-    : { authenticated: null, models: [] };
-  if (!modelsOutput) {
+      : { authenticated: null, models: [] };
+  if (cliModels.authenticated === null) {
     yield* Effect.logWarning("Grok CLI model listing failed or timed out.", {
       errorTag: Result.isFailure(modelsResult)
         ? modelsResult.failure._tag
         : Option.isNone(modelsResult.success)
           ? "Timeout"
-          : `ExitCode${modelsResult.success.value.code}`,
+          : "Unparsed",
     });
   }
 
@@ -872,6 +901,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
   if (acpFailed) {
     yield* Effect.logWarning("Grok ACP initialize probe failed or timed out.", {
       errorTag: Exit.isFailure(acpExit) ? causeErrorTag(acpExit.cause) : "Timeout",
+      ...(Exit.isFailure(acpExit) ? { detail: summarizeGrokAcpCause(acpExit.cause) } : {}),
     });
   }
 

@@ -1,3 +1,6 @@
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import {
   type GrokSettings,
   type ModelCapabilities,
@@ -109,6 +112,23 @@ export interface GrokAcpSelection {
   readonly fastMode: boolean | undefined;
 }
 
+/**
+ * Grok CLI looks up `$HOME` / `$GROK_HOME`. Windows Electron often has
+ * USERPROFILE only; without these the CLI warns and ACP initialize can die.
+ */
+export function withGrokCliHomeEnvironment(
+  environment: NodeJS.ProcessEnv | undefined,
+): NodeJS.ProcessEnv {
+  const source = environment ?? {};
+  const home = source.HOME?.trim() || source.USERPROFILE?.trim() || NodeOS.homedir();
+  const grokHome = source.GROK_HOME?.trim() || (home ? NodePath.join(home, ".grok") : "");
+  return {
+    ...source,
+    ...(home.length > 0 ? { HOME: home } : {}),
+    ...(grokHome.length > 0 ? { GROK_HOME: grokHome } : {}),
+  };
+}
+
 export function buildGrokAcpSpawnInput(
   grokSettings: GrokAcpRuntimeGrokSettings | null | undefined,
   cwd: string,
@@ -134,12 +154,13 @@ export function buildGrokAcpSpawnInput(
       args.push("--reasoning-effort", spawnEffort);
     }
   }
+  const env = withGrokCliHomeEnvironment(environment);
   return {
     command: grokSettings?.binaryPath || "grok",
     args,
     cwd,
     env: {
-      ...environment,
+      ...env,
       [GROK_OAUTH2_REFERRER_ENV]: T3_CODE_OAUTH_REFERRER,
     },
   };

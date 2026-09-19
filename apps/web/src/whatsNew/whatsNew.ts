@@ -11,6 +11,14 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.107",
+    title: "What's new in 0.0.107",
+    highlights: [
+      "Queued follow-ups stay on one line until you open them. The Goal strip has more inset, icon actions, Stop, and a still status dot while running.",
+      "Opening a monitor in Agents no longer shows a blank pane. Grok's health check no longer treats a slow `grok models` exit as a failed login.",
+    ],
+  },
+  {
     version: "0.0.106",
     title: "What's new in 0.0.106",
     highlights: [

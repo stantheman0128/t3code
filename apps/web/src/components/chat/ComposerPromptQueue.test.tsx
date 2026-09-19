@@ -39,7 +39,7 @@ describe("ComposerPromptQueue", () => {
     expect(markup).toContain("then ship it");
     expect(markup).toContain("shot.png");
     expect(markup).toContain("blob:shot.png");
-    expect(markup).toContain("line-clamp-3");
+    expect(markup).toContain("line-clamp-1");
     expect(markup).toContain("chat-composer-drawer-attached");
     expect(markup).toContain("bg-[var(--chat-composer-glass-surface,var(--card))]");
     expect(markup).not.toContain("chat-composer-drawer-surface");
@@ -86,7 +86,7 @@ describe("ComposerPromptQueue", () => {
     expect(markup).toContain("Preview hero.png");
   });
 
-  it("keeps a long queued prompt to three lines until edit", () => {
+  it("keeps a long queued prompt to one line until edit", () => {
     const longPrompt = Array.from(
       { length: 12 },
       (_, index) => `Line ${index + 1} of a long follow-up`,
@@ -101,7 +101,8 @@ describe("ComposerPromptQueue", () => {
     );
 
     expect(markup).toContain("Line 1 of a long follow-up");
-    expect(markup).toContain("line-clamp-3");
+    expect(markup).toContain("line-clamp-1");
+    expect(markup).not.toContain("line-clamp-3");
     expect(markup).not.toContain("max-h-40 min-h-16");
     expect(markup).toContain('data-editing="false"');
   });

@@ -2798,10 +2798,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
-      // Resource editing downloads winCodeSign from GitHub. Local unsigned
-      // packs skip it so a flaky GitHub timeout cannot block NSIS. Signed
-      // releases still edit the executable.
-      signAndEditExecutable: signed,
+      // Icon and ProductName come from rcedit in winCodeSign. That is resource
+      // editing, not Authenticode. Unsigned local packs still need it or the
+      // taskbar shows Electron's atom. Download uses
+      // ELECTRON_BUILDER_BINARIES_MIRROR, not a paid cert.
+      signAndEditExecutable: true,
     };
     if (signed) {
       winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
@@ -3781,6 +3782,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     delete buildEnv.APPLE_API_KEY;
     delete buildEnv.APPLE_API_KEY_ID;
     delete buildEnv.APPLE_API_ISSUER;
+  }
+  if (options.platform === "win") {
+    buildEnv.ELECTRON_BUILDER_BINARIES_MIRROR =
+      buildEnv.ELECTRON_BUILDER_BINARIES_MIRROR?.trim() ||
+      "https://npmmirror.com/mirrors/electron-builder-binaries/";
   }
 
   if (hostPlatform === "win32") {

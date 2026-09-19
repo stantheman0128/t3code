@@ -11,6 +11,13 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.108",
+    title: "What's new in 0.0.108",
+    highlights: [
+      "Local unsigned Windows builds stamp the T3 icon and product name onto the EXE. No signing certificate required.",
+    ],
+  },
+  {
     version: "0.0.107",
     title: "What's new in 0.0.107",
     highlights: [

@@ -1923,7 +1923,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it.effect("skips executable resource editing for unsigned Windows builds", () =>
+  it.effect("edits Windows executable resources even for unsigned local builds", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig(
         "win",
@@ -1937,7 +1937,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       const win = config.win as Record<string, unknown>;
       assert.equal(win.icon, "icon.ico");
-      assert.equal(win.signAndEditExecutable, false);
+      assert.equal(win.signAndEditExecutable, true);
       assert.notProperty(win, "azureSignOptions");
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );

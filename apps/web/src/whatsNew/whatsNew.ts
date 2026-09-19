@@ -11,6 +11,14 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.106",
+    title: "What's new in 0.0.106",
+    highlights: [
+      "Official T3 from 9/10 through 9/19 is on this fork.",
+      "Appearance has Provider chrome. Turn it on, then switch Claude, Codex, or Cursor: the chat column follows that product's type, composer, motion ladder, and one status actor. Sidebar stays T3.",
+    ],
+  },
+  {
     version: "0.0.105",
     title: "What's new in 0.0.105",
     highlights: [

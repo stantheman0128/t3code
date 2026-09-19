@@ -220,6 +220,30 @@ export function pullRequestPanelContext(
     : "page";
 }
 
+/**
+ * Whether the pull request on a right-panel surface is the thread's own one. Repository and
+ * number are not enough: one environment can hold two checkouts of the same repository under
+ * different projects, and the other project's checkout is somebody else's branch.
+ */
+export function isThreadOwnPullRequest(
+  thread: {
+    readonly projectId: string | null;
+    readonly repository: string | null;
+    readonly number: number | null;
+  },
+  surface: {
+    readonly projectId: string;
+    readonly repository: string;
+    readonly number: number;
+  },
+): boolean {
+  return (
+    thread.projectId === surface.projectId &&
+    thread.repository === surface.repository &&
+    thread.number === surface.number
+  );
+}
+
 /** Names where a pull-request task will land, without letting each surface guess independently. */
 export function pullRequestHandoffLabels(inThisThread: boolean) {
   return inThisThread

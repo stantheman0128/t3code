@@ -27,6 +27,8 @@ import {
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   filterSharedServerPatch,
+  findSharedSettingsMismatches,
+  pickSharedServerSettings,
   splitSharedServerPatch,
   supportsSharedSettingsSync,
 } from "@t3tools/client-runtime/state/shared-settings";
@@ -489,6 +491,64 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   );
 
   return updateSettings;
+}
+
+export function useSharedSettingsSync() {
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  const primaryCapabilities = primaryEnvironment?.serverConfig?.environment.capabilities;
+  const primarySettings =
+    primaryEnvironment !== null && supportsSharedSettingsSync(primaryEnvironment)
+      ? (primaryEnvironment.serverConfig?.settings ?? null)
+      : null;
+  const { environments } = useEnvironments();
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
+
+  const mismatches = useMemo(
+    () =>
+      findSharedSettingsMismatches({
+        primaryEnvironmentId,
+        primarySettings,
+        primaryCapabilities,
+        environments: environments.map((environment) => ({
+          environmentId: environment.environmentId,
+          label: environment.label,
+          syncEligible: supportsSharedSettingsSync(environment),
+          settings: environment.serverConfig?.settings ?? null,
+          capabilities: environment.serverConfig?.environment.capabilities,
+        })),
+      }),
+    [environments, primaryEnvironmentId, primarySettings, primaryCapabilities],
+  );
+
+  const applyToAll = useCallback(() => {
+    if (primarySettings === null) {
+      return;
+    }
+    const patch = pickSharedServerSettings(primarySettings, primaryCapabilities);
+    for (const mismatch of mismatches) {
+      const target = environments.find(
+        (candidate) => candidate.environmentId === mismatch.environmentId,
+      );
+      void persistServerSettings({
+        environmentId: mismatch.environmentId,
+        input: {
+          patch: filterSharedServerPatch(
+            patch,
+            target?.serverConfig?.environment.capabilities,
+            target?.serverConfig?.settings,
+            primarySettings,
+            false,
+          ),
+        },
+      });
+    }
+  }, [environments, mismatches, persistServerSettings, primarySettings, primaryCapabilities]);
+
+  return { mismatches, applyToAll };
 }
 
 export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {

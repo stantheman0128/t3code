@@ -110,3 +110,8 @@ export const primaryServerEnvironmentThemesAtom = Atom.make(
   (get): ReadonlyArray<EnvironmentTheme> =>
     get(primaryServerConfigAtom)?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES,
 ).pipe(Atom.withLabel("web-primary-server-environment-themes"));
+
+export const primaryServerObservabilityAtom = Atom.make(
+  (get): ServerConfig["observability"] | null =>
+    get(primaryServerConfigAtom)?.observability ?? null,
+).pipe(Atom.withLabel("web-primary-server-observability"));

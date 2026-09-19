@@ -2664,6 +2664,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     productName: resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
+    ...(process.env.T3CODE_ELECTRON_DIST?.trim()
+      ? { electronDist: process.env.T3CODE_ELECTRON_DIST.trim() }
+      : {}),
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
       ...(platform === "mac"

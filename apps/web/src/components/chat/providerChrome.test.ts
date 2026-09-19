@@ -52,10 +52,12 @@ describe("provider chrome wiring", () => {
     expect(view).not.toContain("<<<<<<<");
   });
 
-  it("exposes the Appearance switch and restores the default off state", () => {
+  it("keeps fork style profiles off the Appearance panel", () => {
     const settings = readWebSrc("components/settings/SettingsPanels.tsx");
-    expect(settings).toContain('searchableSetting("provider-chrome")');
-    expect(settings).toContain('aria-label="Provider chrome"');
+    const search = readWebSrc("components/settings/settingsSearch.ts");
+    expect(settings).not.toContain('searchableSetting("provider-chrome")');
+    expect(settings).not.toContain('aria-label="Provider chrome"');
+    expect(search).not.toContain('id: "provider-chrome"');
     expect(settings).toContain("providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome");
     expect(settings).not.toContain("<<<<<<<");
   });
@@ -80,6 +82,7 @@ describe("provider chrome wiring", () => {
     expect(css).toContain('[data-provider-chrome="cursor"] [data-provider-status-actor]');
 
     expect(css).toContain("[data-provider-chrome] :is(.live-tool-shine");
+    expect(css).toContain("[data-provider-chrome] [data-live-working-spinner]");
     expect(css).toContain("[data-provider-chrome] [data-banner-stack-rest]");
     expect(css).toContain('[data-slot="composer-shell"]');
     expect(css).not.toContain("Anthropicons");
@@ -94,6 +97,7 @@ describe("provider chrome wiring", () => {
     expect(surface).toContain("--provider-chrome-radius,22px");
     expect(timeline).toContain("data-user-bubble");
     expect(timeline).toContain("data-provider-status-actor");
+    expect(timeline).toContain("data-live-working-spinner");
     expect(timeline).toContain("data-assistant-thinking");
     expect(timeline).not.toContain("<<<<<<<");
   });

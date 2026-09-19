@@ -26,6 +26,7 @@ import {
   deriveMessagesTimelineRowsWithState,
   liveWorkEntryLabel,
   normalizeCompactToolLabel,
+  isCompactSlashPrompt,
   resolveAssistantMessageCopyState,
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
@@ -1355,6 +1356,174 @@ describe("deriveMessagesTimelineRows", () => {
         label: "Compacted context 899K → 19K tokens",
       },
     ]);
+  });
+
+  it("recognizes compact slash prompts", () => {
+    expect(isCompactSlashPrompt("/compact")).toBe(true);
+    expect(isCompactSlashPrompt("/compact keep the goal")).toBe(true);
+    expect(isCompactSlashPrompt("/compact-extra")).toBe(false);
+    expect(isCompactSlashPrompt("please /compact")).toBe(false);
+  });
+
+  it("hides Grok compact recap tools and duplicate separators on a /compact turn", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-compact",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: MessageId.make("user-compact"),
+            role: "user",
+            text: "/compact",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "dump-updates",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "dump-updates",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "Received 17 updates",
+            tone: "info",
+          },
+        },
+        {
+          id: "dump-command",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "dump-command",
+            createdAt: "2026-01-01T00:00:02Z",
+            label: "[34m~/apps/server$ tsgo --noEmit",
+            tone: "tool",
+            itemType: "command_execution",
+            command: "tsgo --noEmit",
+            toolLifecycleStatus: "completed",
+          },
+        },
+        {
+          id: "compact-a",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:03Z",
+          entry: {
+            id: "compact-a",
+            createdAt: "2026-01-01T00:00:03Z",
+            label: "Compacted context 403K → 31.9K tokens",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          },
+        },
+        {
+          id: "compact-b",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:04Z",
+          entry: {
+            id: "compact-b",
+            createdAt: "2026-01-01T00:00:04Z",
+            label: "Context compacted",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["message", "context-compaction"]);
+    expect(rows[1]).toMatchObject({
+      kind: "context-compaction",
+      label: "Compacted context 403K → 31.9K tokens",
+    });
+  });
+
+  it("keeps real tools before auto-compact and collapses duplicate separators", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-work",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: MessageId.make("user-work"),
+            role: "user",
+            text: "Run the tests",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "real-tool",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "real-tool",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "Run tests",
+            tone: "tool",
+            itemType: "command_execution",
+            command: "pnpm test",
+            toolLifecycleStatus: "completed",
+          },
+        },
+        {
+          id: "auto-a",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "auto-a",
+            createdAt: "2026-01-01T00:00:02Z",
+            label: "Compacted context 400K → 28.8K tokens",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          },
+        },
+        {
+          id: "dump-mid",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:03Z",
+          entry: {
+            id: "dump-mid",
+            createdAt: "2026-01-01T00:00:03Z",
+            label: "Received 7 updates",
+            tone: "info",
+          },
+        },
+        {
+          id: "auto-b",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:04Z",
+          entry: {
+            id: "auto-b",
+            createdAt: "2026-01-01T00:00:04Z",
+            label: "Context compacted",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["message", "work", "context-compaction"]);
+    expect(rows[1]).toMatchObject({ kind: "work" });
+    expect(rows[2]).toMatchObject({
+      kind: "context-compaction",
+      label: "Compacted context 400K → 28.8K tokens",
+    });
   });
 
   it("keeps subagent spawn rows outside turn folds even after they settle", () => {

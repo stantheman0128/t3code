@@ -535,9 +535,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
         ? ["Panel animations"]
         : []),
-      ...(settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome
-        ? ["Provider chrome"]
-        : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
         ? ["Environment identification"]
@@ -1267,30 +1264,6 @@ export function AppearanceSettingsPanel() {
                 </SelectItem>
               </SelectPopup>
             </Select>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("provider-chrome")}
-          description="Match the active provider's chat method: type, density, composer, icons, motion ladder, and one status actor. Sidebar and title bar stay T3. Switch the provider to see it."
-          resetAction={
-            settings.providerChrome !== DEFAULT_UNIFIED_SETTINGS.providerChrome ? (
-              <SettingResetButton
-                label="provider chrome"
-                onClick={() =>
-                  updateSettings({
-                    providerChrome: DEFAULT_UNIFIED_SETTINGS.providerChrome,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.providerChrome}
-              onCheckedChange={(checked) => updateSettings({ providerChrome: Boolean(checked) })}
-              aria-label="Provider chrome"
-            />
           }
         />
 

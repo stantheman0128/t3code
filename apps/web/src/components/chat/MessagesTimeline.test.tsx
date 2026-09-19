@@ -1599,6 +1599,74 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Working for");
     expect(markup).toContain("Running pnpm");
+    expect(markup).toContain('data-live-working-spinner=""');
+  });
+
+  it("collapses a /compact recap dump to one compacted-context row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "user-compact",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("user-compact"),
+              role: "user",
+              text: "/compact",
+              turnId: null,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+            },
+          },
+          {
+            id: "dump-command",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:29.000Z",
+            entry: {
+              id: "dump-command",
+              createdAt: "2026-03-17T19:12:29.000Z",
+              label: "[34m~/apps/server$ tsgo --noEmit",
+              tone: "tool",
+              itemType: "command_execution",
+              command: "tsgo --noEmit",
+              toolLifecycleStatus: "completed",
+            },
+          },
+          {
+            id: "compact-keep",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:30.000Z",
+            entry: {
+              id: "compact-keep",
+              createdAt: "2026-03-17T19:12:30.000Z",
+              label: "Compacted context 403K → 31.9K tokens",
+              tone: "info",
+              sourceActivityKind: "context-compaction",
+            },
+          },
+          {
+            id: "compact-dup",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:31.000Z",
+            entry: {
+              id: "compact-dup",
+              createdAt: "2026-03-17T19:12:31.000Z",
+              label: "Context compacted",
+              tone: "info",
+              sourceActivityKind: "context-compaction",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("/compact");
+    expect(markup).toContain("Compacted context 403K → 31.9K tokens");
+    expect(markup).not.toContain("tsgo --noEmit");
+    expect(markup).not.toContain("Context compacted");
   });
 
   it("scopes a live row failure to the tool named by the row", () => {

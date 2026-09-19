@@ -231,11 +231,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["left used remaining quota context window"],
   },
   {
-    id: "provider-chrome",
-    title: "Provider chrome",
-    to: "/settings/appearance",
-  },
-  {
     id: "tool-call-density",
     title: "Tool call density",
     to: "/settings/appearance",

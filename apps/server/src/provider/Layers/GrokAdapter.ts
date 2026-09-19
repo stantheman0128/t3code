@@ -135,6 +135,8 @@ import {
   grokQueueChangedEvents,
   grokScheduledTaskEvents,
   grokSessionRecapEvents,
+  grokShouldProjectToolCall,
+  isGrokCompactSlashPrompt,
   parseXAiAutoCompact,
   parseXAiBackgroundTask,
   parseXAiHookExecution,
@@ -215,6 +217,10 @@ interface GrokSessionContext {
   lastKnownProposedPlanTurnId: TurnId | undefined;
   /** True after enter_plan_mode until the turn ends or exit_plan_mode resolves. */
   planModeActive: boolean;
+  /** True while `/compact` or auto-compact is rewriting history. Drop tool rows. */
+  compacting: boolean;
+  /** Manual `/compact` keeps suppression until the turn settles. */
+  compactSlashPrompt: boolean;
   activeTurnId: TurnId | undefined;
   /** Turns already interrupted; late prompt RPCs must not resurrect them. */
   interruptedTurnIds: Set<TurnId>;
@@ -810,6 +816,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
       ctx.activeToolCallIds.clear();
       ctx.livenessUpdatesInFlight = 0;
       ctx.promptResponsesReady = 0;
+      ctx.compacting = false;
+      ctx.compactSlashPrompt = false;
       return turnId === undefined ? Effect.void : signalTurnLiveness(ctx, turnId);
     };
 
@@ -1533,6 +1541,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               }
               const compact = parseXAiAutoCompact(params);
               if (compact) {
+                if (compact.kind === "started") {
+                  ctx.compacting = true;
+                } else if (!ctx.compactSlashPrompt) {
+                  ctx.compacting = false;
+                }
                 const specs = grokAutoCompactEvents(
                   compact,
                   ctx.lastKnownTokenUsage,
@@ -1986,6 +1999,8 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             lastKnownProposedPlanMarkdown: undefined,
             lastKnownProposedPlanTurnId: undefined,
             planModeActive: false,
+            compacting: false,
+            compactSlashPrompt: false,
             activeTurnId: undefined,
             interruptedTurnIds: new Set(),
             promptsInFlight: 0,
@@ -2047,7 +2062,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 }
 
                 const notificationTurnId = resolveNotificationTurnId(ctx);
-                if (event._tag === "ToolCallUpdated" && !ctx.stopped) {
+                if (
+                  event._tag === "ToolCallUpdated" &&
+                  !ctx.stopped &&
+                  grokShouldProjectToolCall(ctx.compacting)
+                ) {
                   for (const taskEvent of buildGrokBackgroundTaskEvents({
                     tasks: ctx.backgroundTasks,
                     toolCallId: event.toolCall.toolCallId,
@@ -2139,6 +2158,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     );
                     return;
                   case "ChildSessionToolCallUpdated": {
+                    if (!grokShouldProjectToolCall(ctx.compacting)) {
+                      return;
+                    }
                     yield* emitGrokChildToolProgress({
                       ctx,
                       turnId: notificationTurnId,
@@ -2159,6 +2181,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     return;
                   }
                   case "ToolCallUpdated": {
+                    if (!grokShouldProjectToolCall(ctx.compacting)) {
+                      return;
+                    }
                     yield* publishGrokSessionOccupancy(ctx, notificationTurnId, event.rawPayload);
                     yield* emitGrokChildToolProgress({
                       ctx,
@@ -2401,6 +2426,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               });
 
               const text = input.input?.trim();
+              if (isGrokCompactSlashPrompt(text)) {
+                ctx.compacting = true;
+                ctx.compactSlashPrompt = true;
+              }
               // Grok ingests images only. Generic files reach the agent
               // through the path line ProviderService puts in the prompt.
               const imagePromptParts = yield* Effect.forEach(
@@ -2739,6 +2768,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               };
               const remainingPrompts = Math.max(0, ctx.promptsInFlight - 1);
               ctx.promptsInFlight = remainingPrompts;
+              if (remainingPrompts === 0) {
+                ctx.compacting = false;
+                ctx.compactSlashPrompt = false;
+              }
 
               // Only the last remaining prompt settles the turn. A steer-
               // superseded prompt resolving while another is in flight or

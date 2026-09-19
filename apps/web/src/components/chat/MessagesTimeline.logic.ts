@@ -580,6 +580,94 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
   return entry.kind === "work" ? (entry.entry.turnId ?? null) : null;
 }
 
+/** Manual `/compact` is a full turn. Grok streams history as fake tool rows. */
+export function isCompactSlashPrompt(text: string | null | undefined): boolean {
+  return /^\/compact(?:\s|$)/i.test(text?.trim() ?? "");
+}
+
+function compactionLabelRank(label: string): number {
+  if (/compacted context\s+.+\s+→\s+.+/i.test(label)) return 2;
+  if (/context compacted/i.test(label)) return 1;
+  return 0;
+}
+
+function pickKeptCompactionEntry(
+  entries: ReadonlyArray<Extract<TimelineEntry, { kind: "work" }>>,
+): Extract<TimelineEntry, { kind: "work" }> | undefined {
+  let kept: Extract<TimelineEntry, { kind: "work" }> | undefined;
+  for (const entry of entries) {
+    if (entry.entry.sourceActivityKind !== "context-compaction") continue;
+    if (
+      kept === undefined ||
+      compactionLabelRank(entry.entry.label) >= compactionLabelRank(kept.entry.label)
+    ) {
+      kept = entry;
+    }
+  }
+  return kept;
+}
+
+/**
+ * Hide Grok compact recap dumps. A `/compact` turn keeps one compaction
+ * separator. Auto-compact on a normal turn keeps real tools outside the
+ * compact burst and still collapses duplicate separators.
+ */
+export function compactRecapHiddenWorkEntryIds(
+  timelineEntries: ReadonlyArray<TimelineEntry>,
+): ReadonlySet<string> {
+  const hidden = new Set<string>();
+
+  type Segment = {
+    slash: boolean;
+    work: Array<Extract<TimelineEntry, { kind: "work" }>>;
+  };
+
+  const flush = (segment: Segment) => {
+    const compaction = segment.work.filter(
+      (entry) => entry.entry.sourceActivityKind === "context-compaction",
+    );
+    const kept = pickKeptCompactionEntry(compaction);
+
+    if (segment.slash) {
+      for (const entry of segment.work) {
+        if (entry.id !== kept?.id) hidden.add(entry.id);
+      }
+      return;
+    }
+
+    if (compaction.length <= 1) return;
+
+    const firstAt = compaction[0]?.createdAt;
+    const lastAt = compaction[compaction.length - 1]?.createdAt;
+    if (firstAt === undefined || lastAt === undefined) return;
+
+    for (const entry of segment.work) {
+      if (entry.id === kept?.id) continue;
+      if (entry.entry.sourceActivityKind === "context-compaction") {
+        hidden.add(entry.id);
+        continue;
+      }
+      if (entry.createdAt >= firstAt && entry.createdAt <= lastAt) {
+        hidden.add(entry.id);
+      }
+    }
+  };
+
+  let segment: Segment = { slash: false, work: [] };
+  for (const entry of timelineEntries) {
+    if (entry.kind === "message" && entry.message.role === "user") {
+      flush(segment);
+      segment = { slash: isCompactSlashPrompt(entry.message.text), work: [] };
+      continue;
+    }
+    if (entry.kind === "work") {
+      segment.work.push(entry);
+    }
+  }
+  flush(segment);
+  return hidden;
+}
+
 /**
  * A promptless provider restart replaces the native turn without adding a
  * user message. Keep every provider turn since the latest user message in one
@@ -1012,20 +1100,29 @@ export function deriveMessagesTimelineRows(input: {
     unsettledTurnId !== null &&
     entry.toolLifecycleStatus === "inProgress" &&
     entry.turnId === unsettledTurnId;
+  const compactHiddenWorkEntryIds = compactRecapHiddenWorkEntryIds(input.timelineEntries);
+  const latestUserEntry = input.timelineEntries[lastUserMessageIndex(input.timelineEntries)];
+  const latestUserIsCompactSlash =
+    latestUserEntry?.kind === "message" &&
+    latestUserEntry.message.role === "user" &&
+    isCompactSlashPrompt(latestUserEntry.message.text);
   const activeToolEntries: Array<Extract<TimelineEntry, { kind: "work" }>> = [];
-  for (let index = input.timelineEntries.length - 1; index >= activeTurnHeaderIndex; index -= 1) {
-    const entry = input.timelineEntries[index]!;
-    if (
-      !entryBelongsToActiveTurn(entry, index) ||
-      entry.kind !== "work" ||
-      entry.entry.questionAnswer !== undefined ||
-      entry.entry.sourceActivityKind === "context-compaction" ||
-      entry.entry.tone === "error"
-    ) {
-      break;
+  if (!latestUserIsCompactSlash) {
+    for (let index = input.timelineEntries.length - 1; index >= activeTurnHeaderIndex; index -= 1) {
+      const entry = input.timelineEntries[index]!;
+      if (
+        !entryBelongsToActiveTurn(entry, index) ||
+        entry.kind !== "work" ||
+        compactHiddenWorkEntryIds.has(entry.id) ||
+        entry.entry.questionAnswer !== undefined ||
+        entry.entry.sourceActivityKind === "context-compaction" ||
+        entry.entry.tone === "error"
+      ) {
+        break;
+      }
+      activeToolEntries.unshift(entry);
+      if (workEntryDisplayIndicatesToolFailure(entry.entry)) break;
     }
-    activeToolEntries.unshift(entry);
-    if (workEntryDisplayIndicatesToolFailure(entry.entry)) break;
   }
   const visibleActiveToolEntries = omitSupersededLifecycleMarkers(
     activeToolEntries.filter((entry) => workEntryIsVisibleInGroup(entry.entry, true)),
@@ -1152,24 +1249,35 @@ export function deriveMessagesTimelineRows(input: {
         cursor += 1;
       }
       scannedActivityThrough = cursor - 1;
-      if (entries.some((entry) => entry.kind === "message")) {
+      const visibleActivityEntries =
+        compactHiddenWorkEntryIds.size === 0
+          ? entries
+          : entries.filter(
+              (entry) => entry.kind !== "work" || !compactHiddenWorkEntryIds.has(entry.id),
+            );
+      if (visibleActivityEntries.length === 0) {
+        index = cursor - 1;
+        continue;
+      }
+      if (visibleActivityEntries.some((entry) => entry.kind === "message")) {
         const active =
           input.isWorking &&
           activityTurnId === unsettledTurnId &&
           cursor === input.timelineEntries.length &&
           !latestToolFailed &&
           (latestVisibleToolEntry === undefined || latestToolKeepsActivityLive);
+        const groupAnchor = visibleActivityEntries[0] ?? timelineEntry;
         const groupId =
-          timelineEntry.kind === "work"
-            ? workGroupId(timelineEntry.id, timelineEntry.entry)
-            : `activity-group:${timelineEntry.id}`;
+          groupAnchor.kind === "work"
+            ? workGroupId(groupAnchor.id, groupAnchor.entry)
+            : `activity-group:${groupAnchor.id}`;
         nextRows.push({
           kind: "activity-group",
           id: active ? LIVE_ACTIVITY_ROW_ID : groupId,
-          createdAt: timelineEntry.createdAt,
+          createdAt: groupAnchor.createdAt,
           turnId: activityTurnId,
           groupId,
-          entries,
+          entries: visibleActivityEntries,
           expanded: input.expandedWorkGroupIds?.has(groupId) ?? false,
           active,
         });
@@ -1180,6 +1288,10 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (activeWorkEntryIds.has(timelineEntry.id)) {
+      continue;
+    }
+
+    if (timelineEntry.kind === "work" && compactHiddenWorkEntryIds.has(timelineEntry.id)) {
       continue;
     }
 
@@ -1228,6 +1340,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.questionAnswer !== undefined ||
           nextEntry.entry.sourceActivityKind === "context-compaction" ||
           nextEntry.entry.tone === "error" ||
+          compactHiddenWorkEntryIds.has(nextEntry.id) ||
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)

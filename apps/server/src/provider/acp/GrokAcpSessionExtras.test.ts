@@ -9,6 +9,8 @@ import {
   grokQueueChangedEvents,
   grokScheduledTaskEvents,
   grokSessionRecapEvents,
+  grokShouldProjectToolCall,
+  isGrokCompactSlashPrompt,
   parseXAiAutoCompact,
   parseXAiBackgroundTask,
   parseXAiHookExecution,
@@ -20,6 +22,14 @@ import {
 } from "./GrokAcpSessionExtras.ts";
 
 describe("GrokAcpSessionExtras", () => {
+  it("treats /compact as a slash prompt that should hide recap tools", () => {
+    expect(isGrokCompactSlashPrompt("/compact")).toBe(true);
+    expect(isGrokCompactSlashPrompt("/compact keep diffs")).toBe(true);
+    expect(isGrokCompactSlashPrompt("/compact-extra")).toBe(false);
+    expect(grokShouldProjectToolCall(true)).toBe(false);
+    expect(grokShouldProjectToolCall(false)).toBe(true);
+  });
+
   it("maps hook_execution runs onto hook.started then hook.completed", () => {
     const parsed = parseXAiHookExecution({
       update: {

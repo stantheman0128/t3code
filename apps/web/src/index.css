@@ -2762,6 +2762,16 @@ html:not([data-interface-animations="true"])
   display: none;
 }
 
+[data-live-working-spinner] {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+[data-provider-chrome] [data-live-working-spinner] {
+  display: none;
+}
+
 [data-provider-status-actor] {
   display: none;
   flex-shrink: 0;

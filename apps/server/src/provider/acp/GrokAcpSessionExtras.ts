@@ -12,6 +12,15 @@ import { extractGrokTokenUsage } from "./XAiAcpExtension.ts";
 /** Complete PromptUsage only. Incomplete bills must not become $0. */
 const GROK_COST_USD_TICKS_PER_DOLLAR = 10_000_000_000;
 
+/** Manual `/compact` is a visible Grok turn that otherwise dumps history as tools. */
+export function isGrokCompactSlashPrompt(text: string | null | undefined): boolean {
+  return /^\/compact(?:\s|$)/i.test(text?.trim() ?? "");
+}
+
+export function grokShouldProjectToolCall(compacting: boolean): boolean {
+  return !compacting;
+}
+
 function grokCompleteCostUsd(usage: Record<string, unknown>): number | null {
   if (
     usage.usageIsIncomplete === true ||

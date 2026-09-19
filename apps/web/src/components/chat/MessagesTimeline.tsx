@@ -92,6 +92,7 @@ import {
   EyeIcon,
   GlobeIcon,
   HammerIcon,
+  LoaderCircleIcon,
   MessageCircleIcon,
   Minimize2Icon,
   MousePointerClickIcon,
@@ -1809,11 +1810,11 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+      <div className="flex h-6 min-w-0 items-center px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
         <span
           key={isPreparingWorktree ? "setup" : isCompacting ? "compacting" : "working"}
-          ref={isPreparingWorktree || isCompacting ? observeVisibleAnimation : undefined}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
+          ref={observeVisibleAnimation}
+          className="relative inline-flex shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
         >
           {isPreparingWorktree ? (
             <>
@@ -1829,10 +1830,14 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
             </>
           ) : row.createdAt ? (
             <>
+              <LiveWorkingSpinner />
               Working for <WorkingTimer createdAt={row.createdAt} />
             </>
           ) : (
-            "Working..."
+            <>
+              <LiveWorkingSpinner />
+              Working...
+            </>
           )}
         </span>
       </div>
@@ -1858,6 +1863,17 @@ function CompactingLabel() {
       <Minimize2Icon aria-hidden="true" className="size-3" />
       Compacting…
     </span>
+  );
+}
+
+function LiveWorkingSpinner() {
+  return (
+    <LoaderCircleIcon
+      ref={observeVisibleAnimation}
+      data-live-working-spinner=""
+      aria-hidden="true"
+      className="size-3 shrink-0 motion-safe:visible-animate-spin"
+    />
   );
 }
 
@@ -2198,6 +2214,7 @@ function LiveActivityContent({
         </span>
       ) : null}
       <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
+      {active ? <LiveWorkingSpinner /> : null}
       {active ? <span data-provider-status-actor="" aria-hidden="true" /> : null}
       {showTrailingFailureMark ? (
         <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />

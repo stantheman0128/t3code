@@ -187,6 +187,20 @@ import {
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
+import {
+  ComposerContextActionsContext,
+  composerContextRecordsFromDraft,
+} from "../composerContextPresentation";
+import {
+  collectInlineContextIds,
+  insertInlineContextReference,
+} from "~/lib/composerContextReferences";
+import { reviewCommentContextId, terminalContextReference } from "~/lib/composerContextRecords";
+import { useRightPanelStore } from "../../rightPanelStore";
+import {
+  reconcileAttachmentContextReferences,
+  type RetainedAttachmentContextPayloads,
+} from "./composerContextUndo";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
@@ -1283,7 +1297,7 @@ export interface ChatComposerHandle {
     value: string;
     cursor: number;
     expandedCursor: number;
-    terminalContextIds: string[];
+    contextIds: string[];
   };
   /** Reset composer cursor/trigger/highlight after external prompt mutations (e.g. onSend). */
   resetCursorState: (options?: {
@@ -1628,6 +1642,43 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [composerImages, composerPreviewAnnotations]);
   const nonPersistedComposerImageIds = attachmentDraft.nonPersistedImageIds;
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
+  const composerContextRecords = useMemo(
+    () =>
+      composerContextRecordsFromDraft({
+        terminalContexts: composerTerminalContexts,
+        reviewComments: composerReviewComments,
+        previewAnnotations: composerPreviewAnnotations,
+        images: composerImages,
+        files: composerFiles,
+        uploadsByImageId,
+      }),
+    [
+      composerFiles,
+      composerImages,
+      composerPreviewAnnotations,
+      composerReviewComments,
+      composerTerminalContexts,
+      uploadsByImageId,
+    ],
+  );
+  const composerContextActions = useMemo(
+    () => ({
+      expandImage: (imageId: string) => {
+        const preview = buildExpandedImagePreview(composerImages, imageId);
+        if (preview) onExpandImage(preview);
+      },
+      expandVideo: (fileId: string) => {
+        const file = composerFiles.find((candidate) => candidate.id === fileId);
+        if (!file) return;
+        const preview = buildExpandedImagePreview([file], file.id);
+        if (preview) onExpandImage(preview);
+      },
+      openFile: () => {},
+      openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
+      openPullRequest: () => {},
+    }),
+    [composerFiles, composerImages, onExpandImage, routeThreadRef],
+  );
   const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
   const fileStagingLimit = fileAttachmentStagingLimit({
     attachmentUploadsCapabilityKnown,
@@ -1681,6 +1732,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const removeComposerDraftReviewComment = useComposerDraftStore(
     (store) => store.removeReviewComment,
+  );
+  const addComposerDraftReviewComment = useComposerDraftStore((store) => store.addReviewComment);
+  const addComposerDraftPreviewAnnotation = useComposerDraftStore(
+    (store) => store.addPreviewAnnotation,
   );
   const clearComposerDraftPersistedAttachments = useComposerDraftStore(
     (store) => store.clearPersistedAttachments,
@@ -2830,13 +2885,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsComposerScrollCollapsed(false);
   }, [setIsComposerScrollCollapsed]);
 
+  /**
+   * Payloads for chips the prompt no longer references. History undo restores the
+   * reference text but knows nothing about the draft records behind it, so a delete keeps its
+   * payload here and an undo puts it back rather than leaving a dangling chip.
+   */
+  const removedContextPayloadsRef = useRef<{
+    terminals: Map<string, TerminalContextDraft>;
+    reviewComments: Map<string, ReviewCommentContext>;
+  }>({ terminals: new Map(), reviewComments: new Map() });
+  const removedAttachmentContextPayloadsRef = useRef<RetainedAttachmentContextPayloads>({
+    files: new Map(),
+    previewAnnotations: new Map(),
+  });
+
   const onPromptChange = useCallback(
     (
       nextPrompt: string,
       nextCursor: number,
       expandedCursor: number,
       cursorAdjacentToMention: boolean,
-      terminalContextIds: string[],
+      contextIds: string[],
     ) => {
       expandComposerForEditorChange();
       if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
@@ -2862,11 +2931,73 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (promptHistoryPositionRef.current?.recalled !== nextPrompt) {
         promptHistoryPositionRef.current = null;
       }
-      if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
-        setComposerDraftTerminalContexts(
-          composerDraftTarget,
-          syncTerminalContextsByIds(composerTerminalContexts, terminalContextIds),
-        );
+      const referenced = new Set(contextIds);
+      const retained = removedContextPayloadsRef.current;
+
+      const liveTerminalIds = new Set<string>(
+        composerTerminalContexts.map((context) => terminalContextReference(context).contextId),
+      );
+      const restoredTerminals = [...referenced].flatMap((contextId) => {
+        if (liveTerminalIds.has(contextId)) return [];
+        const context = retained.terminals.get(contextId);
+        return context ? [context] : [];
+      });
+      const nextTerminals = [
+        ...composerTerminalContexts.filter((context) =>
+          referenced.has(terminalContextReference(context).contextId),
+        ),
+        ...restoredTerminals,
+      ];
+      for (const context of composerTerminalContexts) {
+        const contextId = terminalContextReference(context).contextId;
+        if (!referenced.has(contextId)) retained.terminals.set(contextId, context);
+      }
+      if (
+        nextTerminals.length !== composerTerminalContexts.length ||
+        restoredTerminals.length > 0
+      ) {
+        setComposerDraftTerminalContexts(composerDraftTarget, nextTerminals);
+      }
+
+      for (const comment of composerReviewComments) {
+        const contextId = reviewCommentContextId(comment.id);
+        if (!referenced.has(contextId)) {
+          retained.reviewComments.set(contextId, comment);
+          removeComposerDraftReviewComment(composerDraftTarget, comment.id);
+        }
+      }
+      const liveReviewIds = new Set<string>(
+        composerReviewComments.map((comment) => reviewCommentContextId(comment.id)),
+      );
+      for (const contextId of referenced) {
+        if (liveReviewIds.has(contextId)) continue;
+        const comment = retained.reviewComments.get(contextId);
+        if (comment) {
+          addComposerDraftReviewComment(composerDraftTarget, comment, { appendReference: false });
+        }
+      }
+
+      const attachmentChanges = reconcileAttachmentContextReferences({
+        referencedContextIds: referenced,
+        files: composerFiles,
+        images: composerImages,
+        previewAnnotations: composerPreviewAnnotations,
+        retained: removedAttachmentContextPayloadsRef.current,
+      });
+      for (const annotationId of attachmentChanges.annotationIdsToRemove) {
+        removeComposerDraftPreviewAnnotation(composerDraftTarget, annotationId);
+      }
+      for (const restored of attachmentChanges.annotationsToRestore) {
+        if (restored.image) addComposerDraftImages(attachmentDraftTarget, [restored.image]);
+        addComposerDraftPreviewAnnotation(composerDraftTarget, restored.annotation, {
+          appendReference: false,
+        });
+      }
+      for (const fileId of attachmentChanges.filesToRemove) {
+        removeComposerDraftFile(attachmentDraftTarget, fileId);
+      }
+      if (attachmentChanges.filesToRestore.length > 0) {
+        addComposerDraftFiles(attachmentDraftTarget, attachmentChanges.filesToRestore);
       }
       setComposerCursor(nextCursor);
       setComposerTrigger(
@@ -2883,6 +3014,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerDraftTarget,
       composerTerminalContexts,
       setComposerDraftTerminalContexts,
+      composerReviewComments,
+      composerPreviewAnnotations,
+      composerImages,
+      composerFiles,
+      removeComposerDraftReviewComment,
+      removeComposerDraftPreviewAnnotation,
+      removeComposerDraftFile,
+      addComposerDraftReviewComment,
+      addComposerDraftPreviewAnnotation,
+      addComposerDraftImages,
+      addComposerDraftFiles,
+      attachmentDraftTarget,
     ],
   );
 
@@ -2966,7 +3109,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     value: string;
     cursor: number;
     expandedCursor: number;
-    terminalContextIds: string[];
+    contextIds: string[];
   } => {
     const editorSnapshot = composerEditorRef.current?.readSnapshot();
     if (editorSnapshot) {
@@ -2976,9 +3119,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       value: promptRef.current,
       cursor: composerCursor,
       expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
-      terminalContextIds: composerTerminalContexts.map((context) => context.id),
+      contextIds: collectInlineContextIds(promptRef.current),
     };
-  }, [composerCursor, composerTerminalContexts, promptRef]);
+  }, [composerCursor, promptRef]);
 
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
@@ -5058,15 +5201,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       addTerminalContext: (selection: TerminalContextSelection) => {
         if (!activeThread || isChoiceOnlyPendingQuestion) return;
-        const snapshot = composerEditorRef.current?.readSnapshot() ?? {
-          value: promptRef.current,
-          cursor: composerCursor,
-          expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
-          terminalContextIds: composerTerminalContexts.map((context) => context.id),
+        const snapshot = readComposerSnapshot();
+        const context = {
+          id: randomUUID(),
+          threadId: activeThread.id,
+          createdAt: new Date().toISOString(),
+          ...selection,
         };
-        const insertion = insertInlineTerminalContextPlaceholder(
+        const insertion = insertInlineContextReference(
           snapshot.value,
           snapshot.expandedCursor,
+          terminalContextReference(context),
         );
         const nextCollapsedCursor = collapseExpandedComposerCursor(
           insertion.prompt,
@@ -5075,13 +5220,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const inserted = insertComposerDraftTerminalContext(
           composerDraftTarget,
           insertion.prompt,
-          {
-            id: randomUUID(),
-            threadId: activeThread.id,
-            createdAt: new Date().toISOString(),
-            ...selection,
-          },
-          insertion.contextIndex,
+          context,
+          composerTerminalContexts.length,
         );
         if (!inserted) return;
         promptRef.current = insertion.prompt;
@@ -5930,75 +6070,78 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : "pr-12"),
                 )}
               >
-                <ComposerPromptEditor
-                  editorRef={composerEditorRef}
-                  value={
-                    isComposerApprovalState
-                      ? ""
-                      : activePendingProgress
-                        ? activePendingProgress.customAnswer
-                        : prompt
-                  }
-                  cursor={composerCursor}
-                  terminalContexts={
-                    !isComposerApprovalState && pendingUserInputs.length === 0
-                      ? composerTerminalContexts
-                      : []
-                  }
-                  skills={selectedProviderSkills}
-                  {...(pendingSlashCommand !== null &&
-                  !isComposerApprovalState &&
-                  pendingUserInputs.length === 0
-                    ? {
-                        prefix: (
-                          <ComposerPendingSlashCommandChip
-                            command={pendingSlashCommand}
-                            onRemove={() => setPendingSlashCommand(null)}
-                          />
-                        ),
-                      }
-                    : {})}
-                  containerClassName={cn(isComposerResting && "min-w-0 flex-1")}
-                  className={cn(
-                    showMobilePendingAnswerActions && "max-sm:pb-11",
-                    isComposerResting &&
-                      "max-h-8 min-h-8 overflow-hidden whitespace-pre! leading-8",
-                  )}
-                  placeholderClassName={cn(
-                    isComposerResting &&
-                      "flex items-center overflow-hidden whitespace-nowrap leading-8",
-                  )}
-                  onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
-                  onChange={onPromptChange}
-                  onVisibleSelectionChange={expandComposerForEditorChange}
-                  onCommandKeyDown={onComposerCommandKey}
-                  onPageScrollKeyDown={onPageScrollKeyDown}
-                  onPageScrollKeyUp={onPageScrollKeyUp}
-                  onPageScrollRelease={onPageScrollRelease}
-                  onCitationSubmitAndSend={submitCitationAndSend}
-                  onPaste={onComposerPaste}
-                  placeholder={resolveComposerEditorPlaceholder({
-                    approvalDetail: activePendingApproval?.detail,
-                    isComposerApprovalState,
-                    isPendingAnswer: Boolean(activePendingProgress),
-                    isChoiceOnlyPendingQuestion,
-                    isPlanFollowUp: Boolean(showPlanFollowUpPrompt && activeProposedPlan),
-                    projectSelectionRequired,
-                    showProviderUnavailable,
-                    isDisconnected: phase === "disconnected",
-                    isRunning: phase === "running",
-                    lastTurnInterrupted: activeThread?.latestTurn?.state === "interrupted",
-                    queuedCount: promptQueue.length,
-                    pendingSlashCommand,
-                  })}
-                  disabled={
-                    isConnecting ||
-                    isComposerApprovalState ||
-                    projectSelectionRequired ||
-                    isChoiceOnlyPendingQuestion ||
-                    activePendingIsResponding
-                  }
-                />
+                <ComposerContextActionsContext value={composerContextActions}>
+                  <ComposerPromptEditor
+                    editorRef={composerEditorRef}
+                    richTextEnabled={settings.composerRichTextEnabled}
+                    value={
+                      isComposerApprovalState
+                        ? ""
+                        : activePendingProgress
+                          ? activePendingProgress.customAnswer
+                          : prompt
+                    }
+                    cursor={composerCursor}
+                    contextRecords={
+                      !isComposerApprovalState && pendingUserInputs.length === 0
+                        ? composerContextRecords
+                        : composerContextRecordsFromDraft({ terminalContexts: [] })
+                    }
+                    skills={selectedProviderSkills}
+                    {...(pendingSlashCommand !== null &&
+                    !isComposerApprovalState &&
+                    pendingUserInputs.length === 0
+                      ? {
+                          prefix: (
+                            <ComposerPendingSlashCommandChip
+                              command={pendingSlashCommand}
+                              onRemove={() => setPendingSlashCommand(null)}
+                            />
+                          ),
+                        }
+                      : {})}
+                    containerClassName={cn(isComposerResting && "min-w-0 flex-1")}
+                    className={cn(
+                      showMobilePendingAnswerActions && "max-sm:pb-11",
+                      isComposerResting &&
+                        "max-h-8 min-h-8 overflow-hidden whitespace-pre! leading-8",
+                      isComposerApprovalState && "min-h-8",
+                    )}
+                    placeholderClassName={cn(
+                      isComposerResting &&
+                        "flex items-center overflow-hidden whitespace-nowrap leading-8",
+                    )}
+                    onChange={onPromptChange}
+                    onVisibleSelectionChange={expandComposerForEditorChange}
+                    onCommandKeyDown={onComposerCommandKey}
+                    onPageScrollKeyDown={onPageScrollKeyDown}
+                    onPageScrollKeyUp={onPageScrollKeyUp}
+                    onPageScrollRelease={onPageScrollRelease}
+                    onCitationSubmitAndSend={submitCitationAndSend}
+                    onPaste={onComposerPaste}
+                    placeholder={resolveComposerEditorPlaceholder({
+                      approvalDetail: activePendingApproval?.detail,
+                      isComposerApprovalState,
+                      isPendingAnswer: Boolean(activePendingProgress),
+                      isChoiceOnlyPendingQuestion,
+                      isPlanFollowUp: Boolean(showPlanFollowUpPrompt && activeProposedPlan),
+                      projectSelectionRequired,
+                      showProviderUnavailable,
+                      isDisconnected: phase === "disconnected",
+                      isRunning: phase === "running",
+                      lastTurnInterrupted: activeThread?.latestTurn?.state === "interrupted",
+                      queuedCount: promptQueue.length,
+                      pendingSlashCommand,
+                    })}
+                    disabled={
+                      isConnecting ||
+                      isComposerApprovalState ||
+                      projectSelectionRequired ||
+                      isChoiceOnlyPendingQuestion ||
+                      activePendingIsResponding
+                    }
+                  />
+                </ComposerContextActionsContext>
                 {isComposerResting ? collapsedComposerImagePreviews : null}
                 {showMobilePendingAnswerActions ? (
                   <div

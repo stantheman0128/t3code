@@ -102,6 +102,19 @@ describe("ContextWindowMeter", () => {
     expect(markup).toContain("No context usage yet.");
   });
 
+  it("centers a larger ring inside the circular hover target", () => {
+    const markup = renderToStaticMarkup(<ContextWindowMeter usage={usage} />);
+
+    expect(markup).toContain("rounded-full");
+    expect(markup).toContain("before:rounded-full");
+    expect(markup).toContain("[&amp;_svg]:m-0");
+    expect(markup).toContain("size-6");
+    expect(markup).toContain("origin-center");
+    expect(markup).not.toContain("size-5");
+    expect(markup).not.toContain("transform-gpu");
+    expect(markup).not.toContain("mx-0!");
+  });
+
   it("explains why the compact action is disabled", () => {
     const markup = renderToStaticMarkup(
       <ContextWindowMeter

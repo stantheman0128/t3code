@@ -58,7 +58,7 @@ export function ContextWindowMeter(props: {
           <Button
             size="icon-sm"
             variant="ghost-muted"
-            className="size-7 rounded-full hover:text-muted-foreground data-pressed:text-muted-foreground"
+            className="size-7 rounded-full p-0 before:rounded-full [&_svg]:m-0 hover:text-muted-foreground data-pressed:text-muted-foreground"
             aria-label={
               usage && usage.maxTokens !== null && usagePercentLabel
                 ? `Context window ${usagePercentLabel}`
@@ -69,34 +69,28 @@ export function ContextWindowMeter(props: {
                     : "Context window"
             }
           >
-            <span className="relative flex size-5 items-center justify-center">
-              <svg
-                viewBox="0 0 24 24"
-                className="-rotate-90 absolute inset-0 size-full transform-gpu mx-0!"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="12"
-                  cy="12"
-                  r={radius}
-                  fill="none"
-                  stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"
-                  strokeWidth="3"
-                />
-                <circle
-                  cx="12"
-                  cy="12"
-                  r={radius}
-                  fill="none"
-                  stroke={usageColor}
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={dashOffset}
-                  className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
-                />
-              </svg>
-            </span>
+            <svg viewBox="0 0 24 24" className="size-6 origin-center -rotate-90" aria-hidden="true">
+              <circle
+                cx="12"
+                cy="12"
+                r={radius}
+                fill="none"
+                stroke="color-mix(in oklab, var(--color-muted-foreground) 24%, transparent)"
+                strokeWidth="3"
+              />
+              <circle
+                cx="12"
+                cy="12"
+                r={radius}
+                fill="none"
+                stroke={usageColor}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={dashOffset}
+                className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
+              />
+            </svg>
           </Button>
         }
       />

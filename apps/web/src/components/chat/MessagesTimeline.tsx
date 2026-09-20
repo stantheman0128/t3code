@@ -1868,12 +1868,13 @@ function CompactingLabel() {
 
 function LiveWorkingSpinner() {
   return (
-    <LoaderCircleIcon
-      ref={observeVisibleAnimation}
+    <span
       data-live-working-spinner=""
+      className="inline-flex shrink-0 items-center"
       aria-hidden="true"
-      className="size-3 shrink-0 motion-safe:visible-animate-spin"
-    />
+    >
+      <LoaderCircleIcon className="size-3 shrink-0 motion-safe:animate-working-spin" />
+    </span>
   );
 }
 

@@ -38,6 +38,14 @@ describe("T3 desktop UI/UX surfaces cited in the competitor comparison", () => {
     expect(css).toContain("transition: height 200ms linear");
   });
 
+  it("spins the Working dashed circle in the sidebar and the live Working row", () => {
+    const sidebar = readWebSrc("components/Sidebar.tsx");
+    const timeline = readWebSrc("components/chat/MessagesTimeline.tsx");
+    expect(sidebar).toContain("motion-safe:animate-working-spin");
+    expect(timeline).toContain("motion-safe:animate-working-spin");
+    expect(timeline).toContain('<span data-live-working-spinner=""');
+  });
+
   it("keeps the send control scale hover on the real primary actions", () => {
     const actions = readWebSrc("components/chat/ComposerPrimaryActions.tsx");
     expect(actions).toContain("hover:scale-105");

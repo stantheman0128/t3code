@@ -1600,6 +1600,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Working for");
     expect(markup).toContain("Running pnpm");
     expect(markup).toContain('data-live-working-spinner=""');
+    expect(markup).toContain("animate-working-spin");
   });
 
   it("collapses a /compact recap dump to one compacted-context row", () => {

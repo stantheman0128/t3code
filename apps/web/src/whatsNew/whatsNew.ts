@@ -11,6 +11,13 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.111",
+    title: "What's new in 0.0.111",
+    highlights: [
+      "Grok auto-compact also collapses to one Context compacted line. Recap dumps like Received N updates no longer fill the thread.",
+    ],
+  },
+  {
     version: "0.0.110",
     title: "What's new in 0.0.110",
     highlights: [

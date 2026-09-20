@@ -591,6 +591,19 @@ function compactionLabelRank(label: string): number {
   return 0;
 }
 
+function isCompactRecapWorkEntry(entry: WorkLogEntry): boolean {
+  const label = entry.label.trim();
+  if (/^received \d+ updates?$/i.test(label)) return true;
+  if (/^context compacted$/i.test(label)) return true;
+  if (label.startsWith("{") || label.startsWith("[")) return true;
+  return (
+    entry.tone === "info" &&
+    entry.command === undefined &&
+    entry.sourceActivityKind !== "context-compaction" &&
+    !workLogEntryIsToolLike(entry)
+  );
+}
+
 function pickKeptCompactionEntry(
   entries: ReadonlyArray<Extract<TimelineEntry, { kind: "work" }>>,
 ): Extract<TimelineEntry, { kind: "work" }> | undefined {
@@ -609,8 +622,8 @@ function pickKeptCompactionEntry(
 
 /**
  * Hide Grok compact recap dumps. A `/compact` turn keeps one compaction
- * separator. Auto-compact on a normal turn keeps real tools outside the
- * compact burst and still collapses duplicate separators.
+ * separator. Auto-compact keeps real tools from before the compact burst,
+ * then one separator; recap rows and anything after the first compact hide.
  */
 export function compactRecapHiddenWorkEntryIds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
@@ -626,30 +639,25 @@ export function compactRecapHiddenWorkEntryIds(
     const compaction = segment.work.filter(
       (entry) => entry.entry.sourceActivityKind === "context-compaction",
     );
+    if (!segment.slash && compaction.length === 0) return;
     const kept = pickKeptCompactionEntry(compaction);
-
-    if (segment.slash) {
-      for (const entry of segment.work) {
-        if (entry.id !== kept?.id) hidden.add(entry.id);
-      }
-      return;
-    }
-
-    if (compaction.length <= 1) return;
-
     const firstAt = compaction[0]?.createdAt;
-    const lastAt = compaction[compaction.length - 1]?.createdAt;
-    if (firstAt === undefined || lastAt === undefined) return;
 
     for (const entry of segment.work) {
       if (entry.id === kept?.id) continue;
+      if (segment.slash) {
+        hidden.add(entry.id);
+        continue;
+      }
       if (entry.entry.sourceActivityKind === "context-compaction") {
         hidden.add(entry.id);
         continue;
       }
-      if (entry.createdAt >= firstAt && entry.createdAt <= lastAt) {
+      if (firstAt !== undefined && entry.createdAt >= firstAt) {
         hidden.add(entry.id);
+        continue;
       }
+      if (isCompactRecapWorkEntry(entry.entry)) hidden.add(entry.id);
     }
   };
 

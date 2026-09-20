@@ -1543,8 +1543,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               if (compact) {
                 if (compact.kind === "started") {
                   ctx.compacting = true;
-                } else if (!ctx.compactSlashPrompt) {
-                  ctx.compacting = false;
                 }
                 const specs = grokAutoCompactEvents(
                   compact,

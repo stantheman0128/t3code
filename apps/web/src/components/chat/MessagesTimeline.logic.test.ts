@@ -1526,6 +1526,85 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
+  it("hides auto-compact recap dumps even when there is only one compact separator", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-work",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: MessageId.make("user-auto-compact"),
+            role: "user",
+            text: "Keep packing",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "dump-updates",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "dump-updates",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "Received 17 updates",
+            tone: "info",
+          },
+        },
+        {
+          id: "auto-one",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "auto-one",
+            createdAt: "2026-01-01T00:00:02Z",
+            label: "Compacted context 351K → 21.8K tokens",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          },
+        },
+        {
+          id: "dump-json",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:03Z",
+          entry: {
+            id: "dump-json",
+            createdAt: "2026-01-01T00:00:03Z",
+            label: '{"waiting": true, "reason": "commit_capacity"}',
+            tone: "tool",
+            itemType: "command_execution",
+            command: '{"waiting": true, "reason": "commit_capacity"}',
+            toolLifecycleStatus: "completed",
+          },
+        },
+        {
+          id: "dump-more",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:04Z",
+          entry: {
+            id: "dump-more",
+            createdAt: "2026-01-01T00:00:04Z",
+            label: "Received 2 updates",
+            tone: "info",
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["message", "context-compaction"]);
+    expect(rows[1]).toMatchObject({
+      kind: "context-compaction",
+      label: "Compacted context 351K → 21.8K tokens",
+    });
+  });
+
   it("keeps subagent spawn rows outside turn folds even after they settle", () => {
     const firstMessage: ChatMessage = {
       id: MessageId.make("assistant-first-entry"),

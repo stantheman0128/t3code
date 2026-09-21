@@ -58,6 +58,22 @@ export const GROK_SESSION_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashComma
     description: "Ask a side question without interrupting the current turn",
     input: { hint: "question" },
   },
+  {
+    name: "tasks",
+    description: "List Grok background tasks, subagents, and scheduled work",
+  },
+  {
+    name: "queue",
+    description: "Show prompts waiting behind the current Grok turn",
+  },
+  {
+    name: "memory",
+    description: "Browse Grok cross-session memory",
+  },
+  {
+    name: "dream",
+    description: "Consolidate Grok cross-session memory",
+  },
 ];
 
 export const GROK_GOAL_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [

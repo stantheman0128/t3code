@@ -1964,7 +1964,14 @@ function ActivityGroupTimelineRow({
           toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}
           failed={failed}
           active={row.active}
-          shimmer={thinking}
+          shineLabel={thinking}
+        />
+        <ChevronRightIcon
+          aria-hidden
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground/80 transition-transform",
+            row.expanded && "rotate-90",
+          )}
         />
       </button>
       {row.expanded ? <div className="mt-2">{details}</div> : null}
@@ -1978,7 +1985,7 @@ function ThinkingTimelineRow() {
   return (
     <div className="min-h-7" data-assistant-thinking="">
       {isPreparingWorktree || isCompacting ? null : (
-        <LiveActivityRow label="Thinking" iconName="brain" active shimmer />
+        <LiveActivityRow label="Thinking" iconName="brain" active shineLabel />
       )}
     </div>
   );
@@ -2027,11 +2034,12 @@ function ReasoningTraceBlock({
             <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-[1.8] opacity-70" />
           </span>
           <span
-            ref={streaming ? observeVisibleAnimation : undefined}
-            className="relative min-w-0 flex-1 truncate text-secondary-label"
+            className={cn(
+              "relative min-w-0 flex-1 truncate",
+              streaming ? "thinking-label-run" : "text-secondary-label",
+            )}
           >
             {headerText}
-            {streaming ? <ActivityShimmerOverlay>{headerText}</ActivityShimmerOverlay> : null}
           </span>
           <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
             <ChevronRightIcon
@@ -2409,6 +2417,7 @@ function LiveActivityRow({
   failed = false,
   active = false,
   shimmer = false,
+  shineLabel = false,
 }: {
   label: string;
   iconName?: WorkEntryIconName;
@@ -2416,12 +2425,13 @@ function LiveActivityRow({
   failed?: boolean;
   active?: boolean;
   shimmer?: boolean;
+  shineLabel?: boolean;
 }) {
   const animated = active && !failed;
-  const showShimmer = animated && shimmer;
+  const showShimmer = animated && shimmer && !shineLabel;
   return (
     <div
-      ref={animated ? observeVisibleAnimation : undefined}
+      ref={animated && !shineLabel ? observeVisibleAnimation : undefined}
       className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
     >
       <LiveActivityContent
@@ -2430,7 +2440,8 @@ function LiveActivityRow({
         toolIcon={toolIcon}
         failed={failed}
         announceFailure={failed}
-        active={animated && !shimmer}
+        active={animated && !shimmer && !shineLabel}
+        shineLabel={shineLabel && !failed}
       />
       {showShimmer ? (
         <ActivityShimmerOverlay>
@@ -2449,6 +2460,7 @@ function LiveActivityContent({
   announceFailure = false,
   active = false,
   highlighted = false,
+  shineLabel = false,
 }: {
   label: string;
   iconName: WorkEntryIconName | undefined;
@@ -2457,6 +2469,7 @@ function LiveActivityContent({
   announceFailure?: boolean;
   active?: boolean;
   highlighted?: boolean;
+  shineLabel?: boolean;
 }) {
   const showTrailingFailureMark =
     failed && iconName !== undefined && !toolIconAcceptsTint(iconName, toolIcon);
@@ -2486,7 +2499,14 @@ function LiveActivityContent({
           />
         </span>
       ) : null}
-      <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          shineLabel ? "thinking-label-run" : active && "live-tool-shine",
+        )}
+      >
+        {label}
+      </span>
       {active ? <LiveWorkingSpinner /> : null}
       {active ? <span data-provider-status-actor="" aria-hidden="true" /> : null}
       {showTrailingFailureMark ? (

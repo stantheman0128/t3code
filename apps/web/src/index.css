@@ -587,11 +587,37 @@ html[data-performance-bar] [data-slot="toast-viewport"][data-position*="bottom"]
   margin-left: var(--live-activity-focus-width);
 }
 
-/* Live Thinking must actually sweep. The overlay defaults to paused until
-   IntersectionObserver fires; this row is small and often stays paused. */
-[data-assistant-thinking] .live-activity-focus,
-[data-assistant-thinking] .live-activity-focus-counter {
-  animation-play-state: running;
+@keyframes thinking-label-run {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Direct text sweep. Does not use --visible-animation-state, which stays paused. */
+.thinking-label-run {
+  background-image: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--color-muted-foreground) 55%, transparent) 0%,
+    var(--color-foreground) 42%,
+    color-mix(in oklab, var(--color-muted-foreground) 55%, transparent) 84%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-label-run 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-label-run {
+    animation: none;
+    color: var(--color-foreground);
+    background: none;
+  }
 }
 
 @property --assistant-citation-highlight-opacity {

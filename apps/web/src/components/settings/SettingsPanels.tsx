@@ -49,6 +49,7 @@ import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+import { WHATS_NEW_ENTRIES } from "../../whatsNew/whatsNew";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -257,6 +258,60 @@ function backgroundActivityProfileSettings(profile: BackgroundActivityProfile) {
   };
 }
 
+function ReleaseNotesSettingsRow() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <SettingsRow
+        title="Release notes"
+        description="Read what changed in earlier versions."
+        control={
+          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+            View log
+          </Button>
+        }
+      />
+      <ReleaseNotesDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+function ReleaseNotesDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Release notes</DialogTitle>
+          <DialogDescription>What changed in recent T3 Code updates.</DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="max-h-[min(28rem,70vh)] space-y-5 overflow-y-auto">
+          {WHATS_NEW_ENTRIES.map((entry) => (
+            <section key={entry.version} className="space-y-2">
+              <h3 className="text-sm font-medium">{entry.title}</h3>
+              <ul className="list-disc space-y-1 ps-5 text-sm text-muted-foreground">
+                {entry.highlights.map((highlight) => (
+                  <li key={highlight}>{highlight}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </DialogPanel>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
 function AboutVersionTitle() {
   return (
     <span className="inline-flex items-baseline gap-2">
@@ -270,6 +325,7 @@ function AboutVersionSection() {
   const updateState = useDesktopUpdateState();
   const [isChangingUpdateChannel, setIsChangingUpdateChannel] = useState(false);
   const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
 
   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
   const selectedUpdateChannel = updateState?.channel ?? "latest";
@@ -433,6 +489,16 @@ function AboutVersionSection() {
           </Tooltip>
         }
       />
+      <SettingsRow
+        title="Release notes"
+        description="Read what changed in earlier versions."
+        control={
+          <Button size="sm" variant="outline" onClick={() => setReleaseNotesOpen(true)}>
+            View log
+          </Button>
+        }
+      />
+      <ReleaseNotesDialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen} />
       {hasDesktopBridge ? (
         <SettingsRow
           title="Update track"
@@ -2966,6 +3032,7 @@ export function GeneralSettingsPanel() {
             description="Current version of the application."
           />
         )}
+        {isElectron || HOSTED_APP_CHANNEL ? null : <ReleaseNotesSettingsRow />}
         <SettingsRow
           {...searchableSetting("diagnostics")}
           description={diagnosticsDescription}

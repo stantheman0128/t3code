@@ -109,6 +109,12 @@ const GROK_API_KEY_ENV = "XAI_API_KEY";
 
 const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
+    slug: "grok-4.7",
+    name: "Grok 4.7",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
     slug: "grok-4.6",
     name: "Grok 4.6",
     isCustom: false,
@@ -123,6 +129,12 @@ const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
 ];
 
 const GROKBOT_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "grokbot/grok-4.7",
+    name: "Grok 4.7",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
   {
     slug: "grokbot/grok-4.6",
     name: "Grok 4.6",

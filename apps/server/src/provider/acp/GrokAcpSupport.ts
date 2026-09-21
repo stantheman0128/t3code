@@ -220,8 +220,8 @@ export const GROK_DEFAULT_MODEL_SLUG = "grok-build";
 
 export function resolveGrokAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
-  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-4.6";
-  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-4.6";
+  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-4.7";
+  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-4.7";
 }
 
 /** T3 product slugs that Grok ACP `session/set_model` does not accept. */
@@ -229,6 +229,7 @@ const GROK_PRODUCT_MODEL_ALIASES = new Set([
   "grok-build",
   "grok-code",
   "grok-code-fast-1",
+  "grok-4.7",
   "grok-4.6",
   "grok-4.5",
 ]);
@@ -248,6 +249,7 @@ const GROK_FAMILY_ACP_PREFIXES = [
 const GROKBOT_PICKER_BARE_IDS = new Set([
   "sand-default",
   "sand-automation",
+  "grok-4.7",
   "grok-4.6",
   "grok-4.5",
 ]);
@@ -261,7 +263,7 @@ export function isGrokBotPickerModelId(modelId: string): boolean {
   return GROKBOT_PICKER_BARE_IDS.has(grokBotPickerBareId(modelId));
 }
 
-const GROK_CLI_PICKER_BARE_IDS = new Set(["grok-4.6", "grok-4.5"]);
+const GROK_CLI_PICKER_BARE_IDS = new Set(["grok-4.7", "grok-4.6", "grok-4.5"]);
 const GROK_CLI_PICKER_PREFIXES = ["grok-cli/", "xai/", "xai-oauth/", "xai-grok-build/"] as const;
 
 export function grokCliPickerBareId(modelId: string): string {
@@ -274,7 +276,7 @@ export function grokCliPickerBareId(modelId: string): string {
   return slug;
 }
 
-/** Official Grok CLI picker: only 4.6 and 4.5. Drops grok-build, OCX, and other aliases. */
+/** Official Grok CLI picker: 4.7, 4.6, and 4.5. Drops grok-build, OCX, and other aliases. */
 export function isGrokCliPickerModelId(modelId: string): boolean {
   return GROK_CLI_PICKER_BARE_IDS.has(grokCliPickerBareId(modelId));
 }
@@ -317,7 +319,7 @@ export function availableGrokSessionModelIds(
 
 /**
  * Map a composer selection onto an id `session/set_model` will accept.
- * `grok-build` is T3's product name; live Grok ACP ids are `grok-4.6` / `grok-4.5`.
+ * `grok-build` is T3's product name; live Grok ACP ids are `grok-4.7` / `grok-4.6` / `grok-4.5`.
  */
 export function resolveGrokSessionModelId(input: {
   readonly requested: string | undefined;
@@ -599,7 +601,7 @@ export function grokReasoningEffortMenusFromSessionSetup(
 
 /**
  * Effort menu for a composer selection. `grok-build` is a product slug; live
- * ACP menus are keyed by `grok-4.6` / `grok-4.5`. Resolve the alias before
+ * ACP menus are keyed by `grok-4.7` / `grok-4.6` / `grok-4.5`. Resolve the alias before
  * reading the map so sendTurn does not treat the menu as empty.
  */
 export function advertisedGrokReasoningEffortsForModel(input: {

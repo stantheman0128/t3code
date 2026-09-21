@@ -26,6 +26,7 @@ describe("isGrokBotPickerModelId", () => {
   it("keeps the T3-usable Grok Bot ids and drops the rest", () => {
     expect(isGrokBotPickerModelId("grokbot/sand-default")).toBe(true);
     expect(isGrokBotPickerModelId("sand-automation")).toBe(true);
+    expect(isGrokBotPickerModelId("grokbot/grok-4.7")).toBe(true);
     expect(isGrokBotPickerModelId("grokbot/grok-4.5")).toBe(true);
     expect(isGrokBotPickerModelId("grokbot/grok-4.6")).toBe(true);
     expect(isGrokBotPickerModelId("grokbot/sand-cua")).toBe(false);
@@ -35,9 +36,11 @@ describe("isGrokBotPickerModelId", () => {
 });
 
 describe("isGrokCliPickerModelId", () => {
-  it("keeps Grok 4.6 and 4.5 and drops build, fill, and OCX ids", () => {
+  it("keeps Grok 4.7, 4.6 and 4.5 and drops build, fill, and OCX ids", () => {
+    expect(isGrokCliPickerModelId("grok-4.7")).toBe(true);
     expect(isGrokCliPickerModelId("grok-4.6")).toBe(true);
     expect(isGrokCliPickerModelId("grok-4.5")).toBe(true);
+    expect(isGrokCliPickerModelId("xai/grok-4.7")).toBe(true);
     expect(isGrokCliPickerModelId("xai/grok-4.6")).toBe(true);
     expect(isGrokCliPickerModelId("grok-build")).toBe(false);
     expect(isGrokCliPickerModelId("grok-fill")).toBe(false);
@@ -49,8 +52,8 @@ describe("isGrokCliPickerModelId", () => {
 
 describe("resolveGrokAcpBaseModelId", () => {
   it("normalizes empty and custom Grok model ids", () => {
-    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-4.6");
-    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-4.6");
+    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-4.7");
+    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-4.7");
     expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
   });
 });

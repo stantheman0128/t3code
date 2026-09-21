@@ -38,6 +38,16 @@ describe("T3 desktop UI/UX surfaces cited in the competitor comparison", () => {
     expect(css).toContain("transition: height 200ms linear");
   });
 
+  it("renders expandable activity-group thinking rows", () => {
+    const timeline = readWebSrc("components/chat/MessagesTimeline.tsx");
+    expect(timeline).toContain("function ActivityGroupTimelineRow");
+    expect(timeline).toContain("function ReasoningTraceBlock");
+    expect(timeline).toContain(
+      '{row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}',
+    );
+    expect(timeline).toContain("onToggleReasoning");
+  });
+
   it("spins the Working dashed circle in the sidebar and the live Working row", () => {
     const sidebar = readWebSrc("components/Sidebar.tsx");
     const timeline = readWebSrc("components/chat/MessagesTimeline.tsx");

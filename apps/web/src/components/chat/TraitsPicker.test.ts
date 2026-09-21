@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, type ProviderOptionDescriptor } from "@t3tools/contracts";
-import { buildTraitsTriggerDisplay, buildUnavailableModelOptionDescriptors } from "./TraitsPicker";
+import {
+  ProviderDriverKind,
+  type ProviderOptionDescriptor,
+  type ServerProviderModel,
+} from "@t3tools/contracts";
+import {
+  buildTraitsTriggerDisplay,
+  buildUnavailableModelOptionDescriptors,
+  shouldRenderFastModeToggle,
+  shouldRenderTraitsControls,
+} from "./TraitsPicker";
 
 function selectDescriptor(
   id: string,
@@ -68,10 +77,10 @@ describe("buildTraitsTriggerDisplay", () => {
     });
   });
 
-  it("shows the bolt instead of a text label when fast mode is on", () => {
+  it("keeps boolean Fast off the traits trigger; the composer owns the bolt", () => {
     expect(display([EFFORT, fastModeDescriptor(true), CONTEXT_WINDOW])).toEqual({
       label: "High · 1M",
-      showFastModeIcon: true,
+      showFastModeIcon: false,
     });
   });
 
@@ -117,13 +126,13 @@ describe("buildTraitsTriggerDisplay", () => {
     });
   });
 
-  it("falls back to a text label when fast mode is the only trait", () => {
+  it("leaves the traits trigger empty when Fast is the only remaining trait", () => {
     expect(display([fastModeDescriptor(true)])).toEqual({
-      label: "Fast",
+      label: "",
       showFastModeIcon: false,
     });
     expect(display([fastModeDescriptor(false)])).toEqual({
-      label: "Normal",
+      label: "",
       showFastModeIcon: false,
     });
   });
@@ -152,7 +161,61 @@ describe("buildTraitsTriggerDisplay", () => {
         primarySelectDescriptorId: "reasoningEffort",
         ultrathinkPromptControlled: true,
       }),
-    ).toEqual({ label: "Ultrathink", showFastModeIcon: true });
+    ).toEqual({ label: "Ultrathink", showFastModeIcon: false });
+  });
+});
+
+describe("shouldRenderFastModeToggle", () => {
+  const GROK = ProviderDriverKind.make("grok");
+  const models: ReadonlyArray<ServerProviderModel> = [
+    {
+      slug: "grok-4.7",
+      name: "Grok 4.7",
+      isCustom: false,
+      capabilities: {
+        optionDescriptors: [
+          {
+            id: "reasoningEffort",
+            label: "Reasoning",
+            type: "select",
+            options: [{ id: "high", label: "High", isDefault: true }],
+            currentValue: "high",
+          },
+          { id: "fastMode", label: "Fast Mode", type: "boolean", currentValue: false },
+        ],
+      },
+    },
+  ];
+  const args = {
+    provider: GROK,
+    models,
+    model: "grok-4.7",
+    prompt: "",
+    modelOptions: undefined,
+    planModeEnabled: false,
+  };
+
+  it("shows the bolt when Grok advertises Fast Mode, and still keeps Effort in the traits menu", () => {
+    expect(shouldRenderFastModeToggle(args)).toBe(true);
+    expect(shouldRenderTraitsControls(args)).toBe(true);
+  });
+
+  it("keeps the bolt when Fast is the only remaining trait", () => {
+    const fastOnly = [
+      {
+        slug: "grok-4.7",
+        name: "Grok 4.7",
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            { id: "fastMode", label: "Fast Mode", type: "boolean", currentValue: false },
+          ],
+        },
+      },
+    ];
+    const fastArgs = { ...args, models: fastOnly };
+    expect(shouldRenderFastModeToggle(fastArgs)).toBe(true);
+    expect(shouldRenderTraitsControls(fastArgs)).toBe(false);
   });
 });
 

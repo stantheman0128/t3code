@@ -239,6 +239,13 @@ function getTraitsSectionVisibility(input: {
   const showFastMode = selected.fastModeDescriptor !== null;
   const showContextWindow = selected.contextWindowDescriptor !== null;
   const showAgent = selected.agentDescriptor !== null;
+  const hasTraitsMenuControls =
+    showEffort ||
+    showThinking ||
+    showContextWindow ||
+    showAgent ||
+    (selected.modelIsUnavailable &&
+      selected.descriptors.some((descriptor) => descriptor.id !== "fastMode"));
 
   return {
     ...selected,
@@ -247,13 +254,8 @@ function getTraitsSectionVisibility(input: {
     showFastMode,
     showContextWindow,
     showAgent,
-    hasAnyControls:
-      showEffort ||
-      showThinking ||
-      showFastMode ||
-      showContextWindow ||
-      showAgent ||
-      (selected.modelIsUnavailable && selected.descriptors.length > 0),
+    hasTraitsMenuControls,
+    hasAnyControls: hasTraitsMenuControls || showFastMode,
   };
 }
 
@@ -266,7 +268,19 @@ export function shouldRenderTraitsControls(input: {
   allowPromptInjectedEffort?: boolean;
   planModeEnabled: boolean;
 }): boolean {
-  return getTraitsSectionVisibility(input).hasAnyControls;
+  return getTraitsSectionVisibility(input).hasTraitsMenuControls;
+}
+
+export function shouldRenderFastModeToggle(input: {
+  provider: ProviderDriverKind;
+  models: ReadonlyArray<ServerProviderModel>;
+  model: string | null | undefined;
+  prompt: string;
+  modelOptions: ProviderOptions | null | undefined;
+  allowPromptInjectedEffort?: boolean;
+  planModeEnabled: boolean;
+}): boolean {
+  return getTraitsSectionVisibility(input).showFastMode;
 }
 
 export interface TraitsMenuContentProps {
@@ -322,7 +336,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     primarySelectDescriptor,
     ultrathinkPromptControlled,
     ultrathinkInBodyText,
-    hasAnyControls,
+    hasTraitsMenuControls,
     modelIsUnavailable,
   } = getTraitsSectionVisibility({
     provider,
@@ -358,7 +372,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     updateDescriptors(replaceDescriptorCurrentValue(descriptors, descriptor.id, value));
   };
 
-  if (!hasAnyControls) {
+  if (!hasTraitsMenuControls) {
     return null;
   }
 
@@ -444,36 +458,38 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
           </div>
         );
       })}
-      {booleanDescriptors.map((descriptor, index) => {
-        const selectedValue = descriptor.currentValue === true ? "on" : "off";
+      {booleanDescriptors
+        .filter((descriptor) => descriptor.id !== "fastMode")
+        .map((descriptor, index) => {
+          const selectedValue = descriptor.currentValue === true ? "on" : "off";
 
-        return (
-          <div key={descriptor.id}>
-            {index > 0 || selectDescriptors.length > 0 ? <MenuDivider /> : null}
-            <MenuGroup>
-              <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-                {descriptor.label}
-              </div>
-              <MenuRadioGroup
-                value={selectedValue}
-                onValueChange={(value) => {
-                  updateDescriptors(
-                    replaceDescriptorCurrentValue(descriptors, descriptor.id, value === "on"),
-                  );
-                }}
-              >
-                {(["on", "off"] as const).map((value) => (
-                  <MenuRadioItem key={value} value={value} hideIndicator closeOnClick>
-                    <span className="flex w-full min-w-0 items-center justify-between gap-3">
-                      <span>{value === "on" ? "On" : "Off"}</span>
-                    </span>
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            </MenuGroup>
-          </div>
-        );
-      })}
+          return (
+            <div key={descriptor.id}>
+              {index > 0 || selectDescriptors.length > 0 ? <MenuDivider /> : null}
+              <MenuGroup>
+                <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+                  {descriptor.label}
+                </div>
+                <MenuRadioGroup
+                  value={selectedValue}
+                  onValueChange={(value) => {
+                    updateDescriptors(
+                      replaceDescriptorCurrentValue(descriptors, descriptor.id, value === "on"),
+                    );
+                  }}
+                >
+                  {(["on", "off"] as const).map((value) => (
+                    <MenuRadioItem key={value} value={value} hideIndicator closeOnClick>
+                      <span className="flex w-full min-w-0 items-center justify-between gap-3">
+                        <span>{value === "on" ? "On" : "Off"}</span>
+                      </span>
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuGroup>
+            </div>
+          );
+        })}
     </>
   );
 });
@@ -497,8 +513,6 @@ export function buildTraitsTriggerDisplay(input: {
   const labels: Array<string> = [];
   for (const descriptor of input.descriptors) {
     if (descriptor.id === "fastMode" && descriptor.type === "boolean") {
-      fastModeEnabled = descriptor.currentValue === true;
-      fastModeFallbackLabel = fastModeEnabled ? "Fast" : "Normal";
       continue;
     }
     if (
@@ -664,5 +678,78 @@ export const TraitsPicker = memo(function TraitsPicker({
         />
       </MenuPopup>
     </Menu>
+  );
+});
+
+export const ComposerFastModeToggle = memo(function ComposerFastModeToggle({
+  provider,
+  instanceId,
+  models,
+  model,
+  prompt,
+  modelOptions,
+  planModeEnabled,
+  size = "sm",
+  hidden = false,
+  ...persistence
+}: Omit<TraitsMenuContentProps, "onPromptChange" | "allowPromptInjectedEffort"> &
+  TraitsPersistence & {
+    prompt: string;
+    size?: ComposerControlSize;
+    hidden?: boolean;
+  }) {
+  const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
+  const selected = getSelectedTraits(
+    provider,
+    models,
+    model,
+    prompt,
+    modelOptions,
+    true,
+    planModeEnabled,
+  );
+  const descriptor = selected.fastModeDescriptor;
+  if (!descriptor) {
+    return null;
+  }
+  const enabled = descriptor.currentValue === true;
+  const updateFastMode = (next: boolean) => {
+    const nextDescriptors = replaceDescriptorCurrentValue(selected.descriptors, "fastMode", next);
+    const nextOptions = buildProviderOptionSelectionsFromDescriptors(nextDescriptors);
+    if ("onModelOptionsChange" in persistence && persistence.onModelOptionsChange) {
+      persistence.onModelOptionsChange(nextOptions);
+      return;
+    }
+    const threadTarget = persistence.threadRef ?? persistence.draftId;
+    if (!threadTarget) {
+      return;
+    }
+    setProviderModelOptions(threadTarget, provider, nextOptions, {
+      ...(instanceId ? { instanceId } : {}),
+      model,
+      persistSticky: true,
+    });
+  };
+
+  return (
+    <ComposerControl
+      type="button"
+      size={size}
+      variant="ghost"
+      aria-pressed={enabled}
+      aria-label={enabled ? "Fast mode on" : "Fast mode off"}
+      data-composer-fast-mode={enabled ? "on" : "off"}
+      className={cn(hidden && "pointer-events-none invisible", size === "xs" ? "px-1.5" : "px-2")}
+      onClick={() => updateFastMode(!enabled)}
+    >
+      <ComposerControlIcon
+        icon={ZapIcon}
+        size={size}
+        className={cn(
+          enabled ? "fill-current text-foreground opacity-90" : "text-muted-foreground/70",
+        )}
+      />
+      <span className="sr-only">{enabled ? "Fast mode on" : "Fast mode off"}</span>
+    </ComposerControl>
   );
 });

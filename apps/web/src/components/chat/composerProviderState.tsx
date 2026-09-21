@@ -20,7 +20,13 @@ import type { buttonVariants } from "../ui/button";
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
 import type { ComposerControlSize } from "./ComposerControl";
-import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "./TraitsPicker";
+import {
+  ComposerFastModeToggle,
+  shouldRenderFastModeToggle,
+  shouldRenderTraitsControls,
+  TraitsMenuContent,
+  TraitsPicker,
+} from "./TraitsPicker";
 
 export type ComposerProviderStateInput = {
   provider: ProviderDriverKind;
@@ -230,4 +236,56 @@ export function renderProviderTraitsMenuContent(input: TraitsRenderInput): React
 
 export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
   return renderTraitsControl(TraitsPicker, input);
+}
+
+export function renderProviderFastModeToggle(input: TraitsRenderInput): ReactNode {
+  const {
+    provider,
+    instanceId,
+    threadRef,
+    draftId,
+    model,
+    models,
+    modelOptions,
+    prompt,
+    planModeEnabled,
+    size,
+    hidden,
+  } = input;
+  const hasTarget = threadRef !== undefined || draftId !== undefined;
+  const { selections: resolvedModelOptions } = resolveComposerOptionSelections(
+    models,
+    model,
+    provider,
+    modelOptions,
+    planModeEnabled,
+  );
+  if (
+    !hasTarget ||
+    !shouldRenderFastModeToggle({
+      provider,
+      models,
+      model,
+      modelOptions: resolvedModelOptions,
+      prompt,
+      planModeEnabled,
+    })
+  ) {
+    return null;
+  }
+  return (
+    <ComposerFastModeToggle
+      provider={provider}
+      {...(instanceId ? { instanceId } : {})}
+      models={models}
+      {...(threadRef ? { threadRef } : {})}
+      {...(draftId ? { draftId } : {})}
+      model={model}
+      modelOptions={resolvedModelOptions}
+      prompt={prompt}
+      planModeEnabled={planModeEnabled}
+      {...(size !== undefined ? { size } : {})}
+      {...(hidden !== undefined ? { hidden } : {})}
+    />
+  );
 }

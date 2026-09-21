@@ -222,6 +222,7 @@ import {
 import {
   getComposerPromptInjectionState,
   getComposerProviderState,
+  renderProviderFastModeToggle,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
 } from "./composerProviderState";
@@ -2456,6 +2457,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isComposerOwned: true,
   } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
   const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
+  const providerFastModeToggle = renderProviderFastModeToggle(providerTraitsPickerInput);
   const {
     controlsRef: restingComposerControlsRef,
     hiddenBlockCount: restingControlsHiddenBlockCount,
@@ -4425,6 +4427,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     size: "xs",
     hidden: composerControlsHidden || restingHiddenBlockCount > 1,
   });
+  const restingProviderFastModeToggle = renderProviderFastModeToggle({
+    ...providerTraitsPickerInput,
+    size: "xs",
+    hidden: composerControlsHidden || restingHiddenBlockCount > 2,
+  });
   const restingBlockDefs = [
     ...(providerTraitsPicker
       ? [
@@ -4434,6 +4441,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <>
                 <ComposerControlSeparator size={composerControlsInStrip ? "xs" : "sm"} />
                 {composerControlsInStrip ? restingProviderTraitsPicker : providerTraitsPicker}
+              </>
+            ),
+          },
+        ]
+      : []),
+    ...(providerFastModeToggle
+      ? [
+          {
+            id: "fast",
+            content: (
+              <>
+                {providerTraitsPicker ? null : (
+                  <ComposerControlSeparator size={composerControlsInStrip ? "xs" : "sm"} />
+                )}
+                {composerControlsInStrip ? restingProviderFastModeToggle : providerFastModeToggle}
               </>
             ),
           },

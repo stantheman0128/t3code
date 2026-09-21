@@ -11,6 +11,14 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.116",
+    title: "What's new in 0.0.116",
+    highlights: [
+      "Grok 4.7 Fast is in the picker. The lightning toggle selects grok-4.7-build-fast when the CLI has it.",
+      "Slash commands added: /imagine, /imagine-video, /flush, /auto, and /dashboard.",
+    ],
+  },
+  {
     version: "0.0.115",
     title: "What's new in 0.0.115",
     highlights: [

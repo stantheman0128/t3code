@@ -250,6 +250,7 @@ const GROKBOT_PICKER_BARE_IDS = new Set([
   "sand-default",
   "sand-automation",
   "grok-4.7",
+  "grok-4.7-build-fast",
   "grok-4.6",
   "grok-4.5",
 ]);
@@ -263,7 +264,12 @@ export function isGrokBotPickerModelId(modelId: string): boolean {
   return GROKBOT_PICKER_BARE_IDS.has(grokBotPickerBareId(modelId));
 }
 
-const GROK_CLI_PICKER_BARE_IDS = new Set(["grok-4.7", "grok-4.6", "grok-4.5"]);
+const GROK_CLI_PICKER_BARE_IDS = new Set([
+  "grok-4.7",
+  "grok-4.7-build-fast",
+  "grok-4.6",
+  "grok-4.5",
+]);
 const GROK_CLI_PICKER_PREFIXES = ["grok-cli/", "xai/", "xai-oauth/", "xai-grok-build/"] as const;
 
 export function grokCliPickerBareId(modelId: string): string {
@@ -276,9 +282,37 @@ export function grokCliPickerBareId(modelId: string): string {
   return slug;
 }
 
-/** Official Grok CLI picker: 4.7, 4.6, and 4.5. Drops grok-build, OCX, and other aliases. */
+/** Official Grok CLI picker. Drops grok-build, OCX, and grok-build-0.1. */
 export function isGrokCliPickerModelId(modelId: string): boolean {
   return GROK_CLI_PICKER_BARE_IDS.has(grokCliPickerBareId(modelId));
+}
+
+const GROK_47_FAST_BARE_ID = "grok-4.7-build-fast";
+const GROK_47_BARE_ID = "grok-4.7";
+
+/** Lightning toggle selects Grok 4.7 Fast when the CLI advertises that id. */
+export function resolveGrokFastModelId(input: {
+  readonly modelId: string | undefined;
+  readonly fast: boolean | undefined;
+  readonly availableIds: ReadonlyArray<string>;
+}): string | undefined {
+  if (input.modelId === undefined || input.fast === undefined) {
+    return input.modelId;
+  }
+  const bare = grokCliPickerBareId(input.modelId);
+  if (input.fast && bare === GROK_47_BARE_ID) {
+    return (
+      input.availableIds.find((id) => grokCliPickerBareId(id) === GROK_47_FAST_BARE_ID) ??
+      input.modelId
+    );
+  }
+  if (!input.fast && bare === GROK_47_FAST_BARE_ID) {
+    return (
+      input.availableIds.find((id) => grokCliPickerBareId(id) === GROK_47_BARE_ID) ??
+      GROK_47_BARE_ID
+    );
+  }
+  return input.modelId;
 }
 
 /** True for Grok / Grok Bot ids. False for OMP's other providers (mistral/, anthropic/, ...). */
@@ -710,7 +744,7 @@ export function applyGrokAcpModelSelection<E>(input: {
   // The product slug is never sent over the wire; it keeps the session's current model.
   const requestedWithoutProductSlug =
     input.requestedModelId === GROK_DEFAULT_MODEL_SLUG ? undefined : input.requestedModelId;
-  const requestedModelId =
+  const resolvedModelId =
     input.availableModelIds !== undefined
       ? resolveGrokSessionModelId({
           requested: requestedWithoutProductSlug,
@@ -718,6 +752,11 @@ export function applyGrokAcpModelSelection<E>(input: {
           availableIds: input.availableModelIds,
         })
       : requestedWithoutProductSlug;
+  const requestedModelId = resolveGrokFastModelId({
+    modelId: resolvedModelId,
+    fast: input.requestedFastMode,
+    availableIds: input.availableModelIds ?? [],
+  });
   const modelChanged = requestedModelId !== undefined && requestedModelId !== input.currentModelId;
   const reasoningProvided = input.requestedReasoningEffort !== undefined;
   const reasoningEffort = reasoningProvided

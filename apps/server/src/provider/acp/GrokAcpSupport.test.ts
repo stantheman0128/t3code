@@ -19,6 +19,7 @@ import {
   parseGrokAcpModelMeta,
   requestedGrokFastMode,
   resolveGrokAcpBaseModelId,
+  resolveGrokFastModelId,
   withGrokCliHomeEnvironment,
 } from "./GrokAcpSupport.ts";
 
@@ -38,6 +39,8 @@ describe("isGrokBotPickerModelId", () => {
 describe("isGrokCliPickerModelId", () => {
   it("keeps Grok 4.7, 4.6 and 4.5 and drops build, fill, and OCX ids", () => {
     expect(isGrokCliPickerModelId("grok-4.7")).toBe(true);
+    expect(isGrokCliPickerModelId("grok-4.7-build-fast")).toBe(true);
+    expect(isGrokCliPickerModelId("grok-build-0.1")).toBe(false);
     expect(isGrokCliPickerModelId("grok-4.6")).toBe(true);
     expect(isGrokCliPickerModelId("grok-4.5")).toBe(true);
     expect(isGrokCliPickerModelId("xai/grok-4.7")).toBe(true);
@@ -47,6 +50,32 @@ describe("isGrokCliPickerModelId", () => {
     expect(isGrokCliPickerModelId("grok-code-fast-1")).toBe(false);
     expect(isGrokCliPickerModelId("ocx-gpt-5.5")).toBe(false);
     expect(isGrokCliPickerModelId("ocx-gpt-5-6-sol")).toBe(false);
+  });
+});
+
+describe("resolveGrokFastModelId", () => {
+  const available = ["grok-4.7", "grok-4.7-build-fast", "grok-4.6"];
+
+  it("switches Grok 4.7 to the Fast id when the bolt is on", () => {
+    expect(
+      resolveGrokFastModelId({ modelId: "grok-4.7", fast: true, availableIds: available }),
+    ).toBe("grok-4.7-build-fast");
+  });
+
+  it("switches Fast back to Grok 4.7 when the bolt is off", () => {
+    expect(
+      resolveGrokFastModelId({
+        modelId: "grok-4.7-build-fast",
+        fast: false,
+        availableIds: available,
+      }),
+    ).toBe("grok-4.7");
+  });
+
+  it("keeps Grok 4.7 when Fast is not in the catalog", () => {
+    expect(
+      resolveGrokFastModelId({ modelId: "grok-4.7", fast: true, availableIds: ["grok-4.7"] }),
+    ).toBe("grok-4.7");
   });
 });
 

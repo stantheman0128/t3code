@@ -74,6 +74,28 @@ export const GROK_SESSION_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashComma
     name: "dream",
     description: "Consolidate Grok cross-session memory",
   },
+  {
+    name: "flush",
+    description: "Write Grok conversation memory to disk now",
+  },
+  {
+    name: "imagine",
+    description: "Generate an image from a text description",
+    input: { hint: "prompt" },
+  },
+  {
+    name: "imagine-video",
+    description: "Generate a video from a text description",
+    input: { hint: "prompt" },
+  },
+  {
+    name: "auto",
+    description: "Toggle Grok auto mode",
+  },
+  {
+    name: "dashboard",
+    description: "Open the Grok agent dashboard",
+  },
 ];
 
 export const GROK_GOAL_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [

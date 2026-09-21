@@ -115,6 +115,12 @@ const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     capabilities: FALLBACK_CAPABILITIES,
   },
   {
+    slug: "grok-4.7-build-fast",
+    name: "Grok 4.7 Fast",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
     slug: "grok-4.6",
     name: "Grok 4.6",
     isCustom: false,
@@ -132,6 +138,12 @@ const GROKBOT_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "grokbot/grok-4.7",
     name: "Grok 4.7",
+    isCustom: false,
+    capabilities: FALLBACK_CAPABILITIES,
+  },
+  {
+    slug: "grokbot/grok-4.7-build-fast",
+    name: "Grok 4.7 Fast",
     isCustom: false,
     capabilities: FALLBACK_CAPABILITIES,
   },

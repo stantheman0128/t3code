@@ -589,39 +589,34 @@ html[data-performance-bar] [data-slot="toast-viewport"][data-position*="bottom"]
 
 @keyframes thinking-label-run {
   from {
-    background-position:
-      -40% 0,
-      0 0;
+    background-position: 200% 0;
   }
   to {
-    background-position:
-      140% 0,
-      0 0;
+    background-position: -200% 0;
   }
 }
 
-/* Two paint layers, same method as Cursor and Claude status text.
-   The second layer is the full letter color, so the word never drops out.
-   The first layer is a soft highlight that travels left to right. */
+/* Same sweep as Cursor's make-shine: one clipped gradient, linear, left to right.
+   Dim stops stay near 58% of the text color, so the word never drops out.
+   The bright core is wider than a hairline and slanted, which reads as a sheen. */
 .thinking-label-run {
   color: transparent;
-  background-image:
-    linear-gradient(
-      100deg,
-      transparent 0%,
-      transparent 36%,
-      color-mix(in oklab, var(--color-foreground) 92%, white) 50%,
-      transparent 64%,
-      transparent 100%
-    ),
-    linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground));
-  background-size:
-    42% 100%,
-    100% 100%;
-  background-repeat: no-repeat;
+  -webkit-text-fill-color: transparent;
+  background-image: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--color-foreground) 58%, transparent) 0%,
+    color-mix(in srgb, var(--color-foreground) 58%, transparent) 34%,
+    var(--color-foreground) 46%,
+    color-mix(in oklab, var(--color-foreground) 65%, white) 50%,
+    var(--color-foreground) 54%,
+    color-mix(in srgb, var(--color-foreground) 58%, transparent) 66%,
+    color-mix(in srgb, var(--color-foreground) 58%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat;
   -webkit-background-clip: text;
   background-clip: text;
-  animation: thinking-label-run 1.7s ease-in-out infinite;
+  animation: thinking-label-run 2s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -14,7 +14,7 @@ export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
     version: "0.0.118",
     title: "What's new in 0.0.118",
     highlights: [
-      "Thinking keeps the letters visible and sweeps a soft highlight from left to right.",
+      "Thinking sweeps a bright gradient from left to right. The letters stay readable the whole time.",
     ],
   },
   {

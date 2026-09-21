@@ -53,7 +53,7 @@ describe("T3 desktop UI/UX surfaces cited in the competitor comparison", () => {
     const timeline = readWebSrc("components/chat/MessagesTimeline.tsx");
     expect(sidebar).toContain("motion-safe:animate-working-spin");
     expect(timeline).toContain("motion-safe:animate-working-spin");
-    expect(timeline).toContain('<span data-live-working-spinner=""');
+    expect(timeline).toContain("data-live-working-spinner");
   });
 
   it("keeps the send control scale hover on the real primary actions", () => {

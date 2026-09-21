@@ -1,4 +1,5 @@
 import { compareSemverVersions } from "@t3tools/shared/semver";
+import { EARLIER_RELEASE_NOTES } from "./earlierReleaseNotes";
 
 export interface WhatsNewEntry {
   readonly version: string;
@@ -10,6 +11,16 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
+  {
+    version: "0.0.119",
+    title: "What's new in 0.0.119",
+    highlights: [
+      "The Grok picker lists Grok 4.7. The lightning bolt still turns Fast on.",
+      "Effort and the lightning bolt sit closer together.",
+      "Click the version at the bottom left to open this log. Earlier versions are listed too.",
+      "Shift+Enter after 1. or a dash continues the list, with a hanging indent.",
+    ],
+  },
   {
     version: "0.0.118",
     title: "What's new in 0.0.118",
@@ -166,6 +177,7 @@ export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
       "Native subagents stay on the current thread; spawn opens a peer T3 thread.",
     ],
   },
+  ...EARLIER_RELEASE_NOTES,
 ];
 
 export function resolveWhatsNewToShow(input: {

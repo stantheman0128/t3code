@@ -627,6 +627,12 @@ html[data-performance-bar] [data-slot="toast-viewport"][data-position*="bottom"]
   }
 }
 
+/* Numbered and dashed composer lines hang like a word-processor list. */
+.composer-tiptap .composer-list-line {
+  padding-inline-start: calc(1.35em + var(--composer-list-nest, 0em));
+  text-indent: -1.15em;
+}
+
 @property --assistant-citation-highlight-opacity {
   syntax: "<number>";
   inherits: true;

@@ -494,12 +494,7 @@ describe("Grok Bot ACP model discovery", () => {
       },
     });
 
-    expect(models.map((model) => model.slug)).toEqual([
-      "grok-4.7",
-      "grok-4.7-build-fast",
-      "grok-4.6",
-      "grok-4.5",
-    ]);
+    expect(models.map((model) => model.slug)).toEqual(["grok-4.7", "grok-4.6", "grok-4.5"]);
   });
 
   it("hides grokbot catalog rows that cannot run T3 tool turns", () => {
@@ -595,7 +590,6 @@ it.layer(NodeServices.layer)("buildInitialGrokProviderSnapshot", (it) => {
       );
       expect(snapshot.models.map((model) => model.slug)).toEqual([
         "grok-4.7",
-        "grok-4.7-build-fast",
         "grok-4.6",
         "grok-4.5",
       ]);
@@ -900,7 +894,6 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.displayName).toBe("Grok Bot");
       expect(snapshot.models.map((model) => model.slug)).toEqual([
         "grokbot/grok-4.7",
-        "grokbot/grok-4.7-build-fast",
         "grokbot/grok-4.6",
         "grokbot/grok-4.5",
         "grokbot/sand-default",

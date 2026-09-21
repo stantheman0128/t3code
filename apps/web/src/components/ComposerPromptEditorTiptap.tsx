@@ -32,6 +32,7 @@ import {
 } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 
+import { composerListLineDecorations, continueComposerListOnNewline } from "~/composer-list-line";
 import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
@@ -749,6 +750,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         ComposerCitationExtension,
         ComposerContextReferenceExtension,
         ComposerMarkersExtension,
+        ComposerListLineExtension,
         ...(richText
           ? [
               TaskList,
@@ -887,6 +889,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
                 (view.state.selection.$from.parent.content.size === 0 &&
                   instance.commands.liftListItem("taskItem")))
             ) {
+              return true;
+            }
+            if (continueComposerListOnNewline(view.state, (tr) => view.dispatch(tr))) {
               return true;
             }
             // Split the paragraph so a single newline visibly advances the caret.
@@ -1303,6 +1308,22 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
  * Newlines always become paragraph splits — never trailing hard breaks, which
  * render no visible line — so pasted text lands exactly as typed.
  */
+const ComposerListLineExtension = Extension.create({
+  name: "composerListLine",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("composerListLine"),
+        props: {
+          decorations(state) {
+            return composerListLineDecorations(state.doc);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 function insertMarkdownParagraphs(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,

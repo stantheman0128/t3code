@@ -739,7 +739,10 @@ export const ComposerFastModeToggle = memo(function ComposerFastModeToggle({
       aria-pressed={enabled}
       aria-label={enabled ? "Fast mode on" : "Fast mode off"}
       data-composer-fast-mode={enabled ? "on" : "off"}
-      className={cn(hidden && "pointer-events-none invisible", size === "xs" ? "px-1.5" : "px-2")}
+      className={cn(
+        hidden && "pointer-events-none invisible",
+        size === "xs" ? "px-1" : "-ms-2 px-1",
+      )}
       onClick={() => updateFastMode(!enabled)}
     >
       <ComposerControlIcon

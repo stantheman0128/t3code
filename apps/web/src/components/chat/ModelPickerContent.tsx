@@ -78,7 +78,16 @@ export function resolveModelPickerSelectedModel(input: {
       availableModels.find((option) => option.isDefault)
     );
   }
-  return input.options.find((option) => option.slug === input.model);
+  return input.options.find((option) => option.slug === aliasGrokFastPickerSlug(input.model));
+}
+
+/** The lightning bolt selects this id. The picker keeps showing Grok 4.7. */
+function aliasGrokFastPickerSlug(model: string): string {
+  const slash = model.lastIndexOf("/");
+  const bare = slash >= 0 ? model.slice(slash + 1) : model;
+  if (bare !== "grok-4.7-build-fast") return model;
+  const prefix = slash >= 0 ? model.slice(0, slash + 1) : "";
+  return `${prefix}grok-4.7`;
 }
 
 export function shouldIncludeModelPickerOption(input: {

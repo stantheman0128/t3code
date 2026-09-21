@@ -250,7 +250,6 @@ const GROKBOT_PICKER_BARE_IDS = new Set([
   "sand-default",
   "sand-automation",
   "grok-4.7",
-  "grok-4.7-build-fast",
   "grok-4.6",
   "grok-4.5",
 ]);
@@ -264,12 +263,7 @@ export function isGrokBotPickerModelId(modelId: string): boolean {
   return GROKBOT_PICKER_BARE_IDS.has(grokBotPickerBareId(modelId));
 }
 
-const GROK_CLI_PICKER_BARE_IDS = new Set([
-  "grok-4.7",
-  "grok-4.7-build-fast",
-  "grok-4.6",
-  "grok-4.5",
-]);
+const GROK_CLI_PICKER_BARE_IDS = new Set(["grok-4.7", "grok-4.6", "grok-4.5"]);
 const GROK_CLI_PICKER_PREFIXES = ["grok-cli/", "xai/", "xai-oauth/", "xai-grok-build/"] as const;
 
 export function grokCliPickerBareId(modelId: string): string {

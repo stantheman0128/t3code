@@ -39,7 +39,7 @@ describe("isGrokBotPickerModelId", () => {
 describe("isGrokCliPickerModelId", () => {
   it("keeps Grok 4.7, 4.6 and 4.5 and drops build, fill, and OCX ids", () => {
     expect(isGrokCliPickerModelId("grok-4.7")).toBe(true);
-    expect(isGrokCliPickerModelId("grok-4.7-build-fast")).toBe(true);
+    expect(isGrokCliPickerModelId("grok-4.7-build-fast")).toBe(false);
     expect(isGrokCliPickerModelId("grok-build-0.1")).toBe(false);
     expect(isGrokCliPickerModelId("grok-4.6")).toBe(true);
     expect(isGrokCliPickerModelId("grok-4.5")).toBe(true);

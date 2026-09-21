@@ -17,6 +17,7 @@ import {
 } from "react";
 
 import { APP_BASE_NAME, APP_STAGE_LABEL, APP_VERSION } from "../../branding";
+import { ReleaseNotesDialog } from "../../whatsNew/ReleaseNotesDialog";
 import { cn } from "~/lib/utils";
 import {
   toggleShowPerformanceBar,
@@ -222,28 +223,34 @@ export function PerformanceBar() {
     commitHeight(DEFAULT_PERFORMANCE_BAR_HEIGHT_PX);
   }, [commitHeight]);
 
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
+
   if (!visible || snapshot === null) {
     return null;
   }
 
   return (
-    <PerformanceBarView
-      snapshot={snapshot}
-      fpsMode={fpsMode}
-      heightPx={heightPx}
-      toolbarRef={toolbarRef}
-      onCycleFpsMode={() =>
-        updateClientSettings({
-          performanceBarFpsMode: fpsMode === "bars" ? "wave" : "bars",
-        })
-      }
-      onHide={toggleShowPerformanceBar}
-      onResizePointerDown={handleResizePointerDown}
-      onResizePointerMove={handleResizePointerMove}
-      onResizePointerEnd={handleResizePointerEnd}
-      onResizeKeyDown={handleResizeKeyDown}
-      onResizeDoubleClick={handleResizeDoubleClick}
-    />
+    <>
+      <PerformanceBarView
+        snapshot={snapshot}
+        fpsMode={fpsMode}
+        heightPx={heightPx}
+        toolbarRef={toolbarRef}
+        onOpenReleaseNotes={() => setReleaseNotesOpen(true)}
+        onCycleFpsMode={() =>
+          updateClientSettings({
+            performanceBarFpsMode: fpsMode === "bars" ? "wave" : "bars",
+          })
+        }
+        onHide={toggleShowPerformanceBar}
+        onResizePointerDown={handleResizePointerDown}
+        onResizePointerMove={handleResizePointerMove}
+        onResizePointerEnd={handleResizePointerEnd}
+        onResizeKeyDown={handleResizeKeyDown}
+        onResizeDoubleClick={handleResizeDoubleClick}
+      />
+      <ReleaseNotesDialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen} />
+    </>
   );
 }
 
@@ -252,6 +259,7 @@ export function PerformanceBarView(props: {
   readonly fpsMode: PerformanceBarFpsMode;
   readonly heightPx?: number;
   readonly toolbarRef?: Ref<HTMLFooterElement>;
+  readonly onOpenReleaseNotes?: () => void;
   readonly onCycleFpsMode: () => void;
   readonly onHide: () => void;
   readonly onResizePointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -302,10 +310,16 @@ export function PerformanceBarView(props: {
         onKeyDown={onResizeKeyDown}
         onDoubleClick={onResizeDoubleClick}
       />
-      <span data-performance-toolbar-brand="" className="min-w-0 truncate text-muted-foreground">
+      <button
+        type="button"
+        data-performance-toolbar-brand=""
+        className="min-w-0 truncate text-left text-muted-foreground hover:text-foreground"
+        aria-label="Release notes"
+        onClick={props.onOpenReleaseNotes}
+      >
         {APP_BASE_NAME} {APP_VERSION}
         {stage ? ` (${stage})` : ""}
-      </span>
+      </button>
       <div
         data-component="t3-dev-performance-toolbar-metrics"
         className="ml-auto flex min-w-0 items-center gap-3.5"

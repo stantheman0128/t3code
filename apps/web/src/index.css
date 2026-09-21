@@ -589,33 +589,45 @@ html[data-performance-bar] [data-slot="toast-viewport"][data-position*="bottom"]
 
 @keyframes thinking-label-run {
   from {
-    background-position: 0% 0;
+    background-position:
+      -40% 0,
+      0 0;
   }
   to {
-    background-position: 200% 0;
+    background-position:
+      140% 0,
+      0 0;
   }
 }
 
-/* Direct text sweep. Does not use --visible-animation-state, which stays paused. */
+/* Two paint layers, same method as Cursor and Claude status text.
+   The second layer is the full letter color, so the word never drops out.
+   The first layer is a soft highlight that travels left to right. */
 .thinking-label-run {
-  background-image: linear-gradient(
-    100deg,
-    color-mix(in oklab, var(--color-muted-foreground) 55%, transparent) 0%,
-    var(--color-foreground) 42%,
-    color-mix(in oklab, var(--color-muted-foreground) 55%, transparent) 84%
-  );
-  background-size: 200% 100%;
+  color: transparent;
+  background-image:
+    linear-gradient(
+      100deg,
+      transparent 0%,
+      transparent 36%,
+      color-mix(in oklab, var(--color-foreground) 92%, white) 50%,
+      transparent 64%,
+      transparent 100%
+    ),
+    linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground));
+  background-size:
+    42% 100%,
+    100% 100%;
   background-repeat: no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
-  animation: thinking-label-run 1.15s linear infinite;
+  animation: thinking-label-run 1.7s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .thinking-label-run {
     animation: none;
-    color: var(--color-foreground);
+    color: var(--color-muted-foreground);
     background: none;
   }
 }

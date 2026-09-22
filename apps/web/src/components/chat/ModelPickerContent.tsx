@@ -81,6 +81,14 @@ export function resolveModelPickerSelectedModel(input: {
   return input.options.find((option) => option.slug === aliasGrokFastPickerSlug(input.model));
 }
 
+/** The lightning bolt selects this id. It must not appear as its own picker row. */
+function isHiddenGrokFastPickerModel(option: ModelEsque): boolean {
+  const slug = option.slug.trim().toLowerCase();
+  const bare = slug.includes("/") ? slug.slice(slug.lastIndexOf("/") + 1) : slug;
+  if (bare === "grok-4.7-build-fast") return true;
+  return option.name.trim().toLowerCase() === "grok 4.7 fast";
+}
+
 /** The lightning bolt selects this id. The picker keeps showing Grok 4.7. */
 function aliasGrokFastPickerSlug(model: string): string {
   const slash = model.lastIndexOf("/");
@@ -96,6 +104,7 @@ export function shouldIncludeModelPickerOption(input: {
   readonly activeInstanceId: ProviderInstanceId;
   readonly activeModel: string;
 }): boolean {
+  if (isHiddenGrokFastPickerModel(input.option)) return false;
   if (input.entry.driverKind === "antigravity" && input.option.slug === ANTIGRAVITY_DEFAULT_MODEL) {
     return false;
   }

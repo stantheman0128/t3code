@@ -12,6 +12,13 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.120",
+    title: "What's new in 0.0.120",
+    highlights: [
+      "Grok 4.7 Fast is removed from the model picker. The lightning bolt still turns Fast on.",
+    ],
+  },
+  {
     version: "0.0.119",
     title: "What's new in 0.0.119",
     highlights: [

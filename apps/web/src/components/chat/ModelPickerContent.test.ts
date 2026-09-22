@@ -33,6 +33,26 @@ function entry(status: ServerProvider["status"], driver = "opencode") {
 }
 
 describe("shouldIncludeModelPickerOption", () => {
+  it("hides Grok 4.7 Fast even when the server snapshot still lists it", () => {
+    const providerEntry = entry("ready", "grok");
+    expect(
+      shouldIncludeModelPickerOption({
+        entry: providerEntry,
+        option: { slug: "grok-4.7-build-fast", name: "Grok 4.7 Fast" },
+        activeInstanceId: providerEntry.instanceId,
+        activeModel: "grok-4.7",
+      }),
+    ).toBe(false);
+    expect(
+      shouldIncludeModelPickerOption({
+        entry: providerEntry,
+        option: { slug: "grok-4.7", name: "Grok 4.7" },
+        activeInstanceId: providerEntry.instanceId,
+        activeModel: "grok-4.7",
+      }),
+    ).toBe(true);
+  });
+
   it.each(["ready", "error"] as const)(
     "never offers the internal Antigravity default marker as a model when %s",
     (status) => {

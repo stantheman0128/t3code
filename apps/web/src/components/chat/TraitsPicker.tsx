@@ -15,7 +15,7 @@ import {
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import type { VariantProps } from "class-variance-authority";
 import { ZapIcon } from "lucide-react";
 import { buttonVariants } from "../ui/button";
@@ -39,9 +39,27 @@ import {
   type ComposerControlSize,
 } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
+import { EffortSlider } from "./EffortSlider";
+import {
+  readEffortControlStyle,
+  writeEffortControlStyle,
+  type EffortControlStyle,
+} from "./effortControlStyle";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 type ProviderOptions = ReadonlyArray<ProviderOptionSelection>;
+
+function useEffortControlStyle(): readonly [
+  EffortControlStyle,
+  (next: EffortControlStyle) => void,
+] {
+  const [style, setStyle] = useState<EffortControlStyle>(() => readEffortControlStyle());
+  const update = useCallback((next: EffortControlStyle) => {
+    writeEffortControlStyle(next);
+    setStyle(next);
+  }, []);
+  return [style, update];
+}
 
 const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
   agent: "Agent",
@@ -350,6 +368,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   const updateDescriptors = (nextDescriptors: ReadonlyArray<ProviderOptionDescriptor>) => {
     updateModelOptions(buildProviderOptionSelectionsFromDescriptors(nextDescriptors));
   };
+  const [effortControlStyle, setEffortControlStyle] = useEffortControlStyle();
 
   const handleSelectChange = (
     descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
@@ -406,54 +425,85 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
             ? "ultrathink"
             : (getDescriptorStringValue(descriptor) ?? "");
 
+        const isPrimaryEffort = descriptor.id === primarySelectDescriptor?.id;
+        const effortLocked = ultrathinkInBodyText && isPrimaryEffort;
+        const showEffortSlider =
+          isPrimaryEffort &&
+          effortControlStyle === "slider" &&
+          !effortLocked &&
+          descriptor.options.length > 1;
+
         return (
           <div key={descriptor.id}>
             {index > 0 ? <MenuDivider /> : null}
             <MenuGroup>
-              <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">
-                {descriptor.label}
+              <div className="flex items-center justify-between gap-2 px-2 pt-1.5 pb-1">
+                <div className="font-medium text-muted-foreground text-xs">{descriptor.label}</div>
+                {isPrimaryEffort && descriptor.options.length > 1 ? (
+                  <button
+                    type="button"
+                    className="rounded px-1 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    onClick={() =>
+                      setEffortControlStyle(effortControlStyle === "slider" ? "menu" : "slider")
+                    }
+                  >
+                    {effortControlStyle === "slider" ? "List" : "Slider"}
+                  </button>
+                ) : null}
               </div>
-              {ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id ? (
+              {effortLocked ? (
                 <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
                   Your prompt contains &quot;ultrathink&quot; in the text. Remove it to change this
                   option.
                 </div>
               ) : null}
-              <MenuRadioGroup
-                value={selectedValue}
-                onValueChange={(value) => handleSelectChange(descriptor, value)}
-              >
-                {descriptor.options.map((option) => (
-                  <MenuRadioItem
-                    key={option.id}
-                    value={option.id}
-                    hideIndicator
-                    // Base UI keeps radio menus open by default. Close on pick so
-                    // the traits menu behaves like the model picker.
-                    closeOnClick
-                    disabled={ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id}
-                  >
-                    <span className="flex w-full min-w-0 flex-col">
-                      <span className="flex w-full min-w-0 items-center justify-between gap-3">
-                        <span className="min-w-0 truncate">
-                          {option.label}
-                          {option.isDefault ? (
-                            <>
-                              {" "}
-                              <DefaultBadge />
-                            </>
-                          ) : null}
+              {showEffortSlider ? (
+                <EffortSlider
+                  provider={provider}
+                  options={descriptor.options}
+                  value={selectedValue}
+                  disabled={effortLocked}
+                  onValueChange={(value) => handleSelectChange(descriptor, value)}
+                />
+              ) : (
+                <MenuRadioGroup
+                  value={selectedValue}
+                  onValueChange={(value) => handleSelectChange(descriptor, value)}
+                >
+                  {descriptor.options.map((option) => (
+                    <MenuRadioItem
+                      key={option.id}
+                      value={option.id}
+                      hideIndicator
+                      // Base UI keeps radio menus open by default. Close on pick so
+                      // the traits menu behaves like the model picker.
+                      closeOnClick
+                      disabled={
+                        ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id
+                      }
+                    >
+                      <span className="flex w-full min-w-0 flex-col">
+                        <span className="flex w-full min-w-0 items-center justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            {option.label}
+                            {option.isDefault ? (
+                              <>
+                                {" "}
+                                <DefaultBadge />
+                              </>
+                            ) : null}
+                          </span>
                         </span>
+                        {option.description ? (
+                          <span className="max-w-56 text-pretty text-muted-foreground/80 text-xs">
+                            {option.description}
+                          </span>
+                        ) : null}
                       </span>
-                      {option.description ? (
-                        <span className="max-w-56 text-pretty text-muted-foreground/80 text-xs">
-                          {option.description}
-                        </span>
-                      ) : null}
-                    </span>
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              )}
             </MenuGroup>
           </div>
         );

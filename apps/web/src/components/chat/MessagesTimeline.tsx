@@ -28,6 +28,11 @@ const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
+const NOOP_SUBMIT_EDITED_USER_MESSAGE = (
+  _messageId: MessageId,
+  _text: string,
+  _revertTurnCount: number | undefined,
+) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -186,6 +191,12 @@ import {
   formatInlineTerminalContextLabel,
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
+import { isUserMessageEditIgnoredTarget, shouldBeginUserMessageEdit } from "./userMessageEdit";
+import {
+  UserMessageEditPanel,
+  UserMessageEditTraits,
+  type UserMessageEditSession,
+} from "./UserMessageEditPanel";
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
 import { SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
@@ -215,6 +226,17 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertToTurnCount: (targetTurnCount: number) => void;
+  editingUserMessageId: MessageId | null;
+  editingUserMessageDraft: string;
+  onEditingUserMessageDraftChange: (draft: string) => void;
+  onBeginUserMessageEdit: (messageId: MessageId, text: string) => void;
+  onCancelUserMessageEdit: () => void;
+  onSubmitEditedUserMessage: (
+    messageId: MessageId,
+    text: string,
+    revertTurnCount: number | undefined,
+  ) => void;
+  userMessageEditSession: UserMessageEditSession | null;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
@@ -329,6 +351,12 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   supportsConversationRollback: boolean;
   onRevertToTurnCount: (targetTurnCount: number) => void;
+  onSubmitEditedUserMessage?: (
+    messageId: MessageId,
+    text: string,
+    revertTurnCount: number | undefined,
+  ) => void;
+  userMessageEditSession?: UserMessageEditSession | null;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -387,6 +415,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   supportsConversationRollback,
   onRevertToTurnCount,
+  onSubmitEditedUserMessage = NOOP_SUBMIT_EDITED_USER_MESSAGE,
+  userMessageEditSession = null,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   isRevertingCheckpoint,
   onImageExpand,
@@ -758,6 +788,23 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     };
   }, [timelineViewportElement, rows.length, reportContentOverflow]);
 
+  const [editingUserMessage, setEditingUserMessage] = useState<{
+    id: MessageId;
+    draft: string;
+  } | null>(null);
+  useEffect(() => {
+    setEditingUserMessage(null);
+  }, [routeThreadKey]);
+  const onBeginUserMessageEdit = useCallback((messageId: MessageId, text: string) => {
+    setEditingUserMessage({ id: messageId, draft: text });
+  }, []);
+  const onCancelUserMessageEdit = useCallback(() => {
+    setEditingUserMessage(null);
+  }, []);
+  const onEditingUserMessageDraftChange = useCallback((draft: string) => {
+    setEditingUserMessage((current) => (current ? { ...current, draft } : current));
+  }, []);
+
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
       citationRequest: readyCitationRequest,
@@ -772,6 +819,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertToTurnCount,
+      editingUserMessageId: editingUserMessage?.id ?? null,
+      editingUserMessageDraft: editingUserMessage?.draft ?? "",
+      onEditingUserMessageDraftChange,
+      onBeginUserMessageEdit,
+      onCancelUserMessageEdit,
+      onSubmitEditedUserMessage,
+      userMessageEditSession,
       onUseArtifactTemplate,
       onImageExpand,
       onFileOpen,
@@ -798,6 +852,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertToTurnCount,
+      editingUserMessage,
+      onEditingUserMessageDraftChange,
+      onBeginUserMessageEdit,
+      onCancelUserMessageEdit,
+      onSubmitEditedUserMessage,
+      userMessageEditSession,
       onUseArtifactTemplate,
       onImageExpand,
       onFileOpen,
@@ -1458,12 +1518,43 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
+  const editableText = elementContextState.promptText;
+  const editing = ctx.editingUserMessageId === row.message.id;
+  const activity = use(TimelineRowActivityCtx);
+  const canSendEditedMessage = !activity.isWorking && !activity.isRevertingCheckpoint;
+  const sendDisabledReason = activity.isWorking
+    ? "Interrupt the current turn before editing this message."
+    : typeof revertTurnCount === "number"
+      ? null
+      : "No rewind checkpoint. Send will post this as a new message.";
+  const beginEdit = () => {
+    ctx.onBeginUserMessageEdit(row.message.id, editableText);
+  };
 
   return (
-    <div className="group flex flex-col items-end gap-1">
+    <div className={cn("group flex flex-col gap-1", editing ? "items-stretch" : "items-end")}>
       <div
         data-user-bubble=""
-        className="relative max-w-[var(--provider-chrome-user-max,80%)] rounded-2xl bg-message p-3 text-message-foreground"
+        data-user-bubble-editing={editing ? "true" : "false"}
+        className={cn(
+          "relative rounded-2xl p-3 text-message-foreground",
+          editing
+            ? "w-full bg-card ring-1 ring-border/80"
+            : "max-w-[var(--provider-chrome-user-max,80%)] cursor-text bg-message",
+        )}
+        onClick={(event) => {
+          if (editing) return;
+          if (
+            !shouldBeginUserMessageEdit({
+              ignored: isUserMessageEditIgnoredTarget(event.target),
+              inside: event.currentTarget.contains(event.target as Node),
+              selectionText: window.getSelection()?.toString() ?? "",
+            })
+          ) {
+            return;
+          }
+          beginEdit();
+        }}
       >
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
@@ -1612,34 +1703,86 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
-        <CollapsibleUserMessageBody
-          text={elementContextState.promptText}
-          terminalContexts={terminalContexts}
-          skills={ctx.skills}
-          markdownCwd={ctx.markdownCwd}
-        />
+        {editing ? (
+          <UserMessageEditPanel
+            draft={ctx.editingUserMessageDraft}
+            onDraftChange={ctx.onEditingUserMessageDraftChange}
+            onSubmit={() => {
+              if (!canSendEditedMessage) return;
+              ctx.onSubmitEditedUserMessage(
+                row.message.id,
+                ctx.editingUserMessageDraft,
+                revertTurnCount,
+              );
+            }}
+            onCancel={ctx.onCancelUserMessageEdit}
+            traits={
+              ctx.userMessageEditSession ? (
+                <UserMessageEditTraits
+                  prompt={ctx.editingUserMessageDraft}
+                  onPromptChange={ctx.onEditingUserMessageDraftChange}
+                  session={ctx.userMessageEditSession}
+                />
+              ) : null
+            }
+            canSend={canSendEditedMessage}
+            sendDisabledReason={sendDisabledReason}
+            isBusy={activity.isRevertingCheckpoint}
+          />
+        ) : (
+          <CollapsibleUserMessageBody
+            text={editableText}
+            terminalContexts={terminalContexts}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        )}
       </div>
-      <div className="flex w-full max-w-[var(--provider-chrome-user-max,80%)] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--provider-dur-base,200ms)] pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
-        <div className="flex shrink-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-            </TooltipPopup>
-          </Tooltip>
-          <div className="flex items-center gap-0.5">
-            {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} />
-            )}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
-            )}
+      {editing ? null : (
+        <div className="flex w-full max-w-[var(--provider-chrome-user-max,80%)] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-[var(--provider-dur-base,200ms)] pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+          <div className="flex shrink-0 items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+                {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+              </TooltipTrigger>
+              <TooltipPopup>
+                {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+              </TooltipPopup>
+            </Tooltip>
+            <div className="flex items-center gap-0.5">
+              {typeof revertTurnCount === "number" && (
+                <RevertUserMessageButton turnCount={revertTurnCount} />
+              )}
+              <EditUserMessageButton onEdit={beginEdit} />
+              {displayedUserMessage.copyText && (
+                <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
+  );
+}
+
+function EditUserMessageButton({ onEdit }: { onEdit: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={onEdit}
+            aria-label="Edit message"
+          />
+        }
+      >
+        <SquarePenIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Edit message</TooltipPopup>
+    </Tooltip>
   );
 }
 

@@ -6,6 +6,7 @@ import {
   isUsageLimitsCommand,
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
+import type { UserMessageEditSession } from "./chat/UserMessageEditPanel";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
 import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
 import {
@@ -415,6 +416,7 @@ import {
   type LocalDispatchSnapshot,
   PullRequestDialogState,
   cloneComposerImageForRetry,
+  composerImagesFromTimelineAttachments,
   deriveLockedProvider,
   readFileAsDataUrl,
   resolveFileAttachmentUrl,
@@ -1591,6 +1593,7 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const promptRef = useRef("");
+  const suppressQueueDrainRef = useRef(false);
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
@@ -6401,38 +6404,43 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThreadId, composerRef]);
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (
+      turnCount: number,
+      options?: { skipConfirm?: boolean; deferBusyReset?: boolean },
+    ): Promise<boolean> => {
       const localApi = readLocalApi();
-      if (!localApi || !activeThread || isRevertingCheckpoint) return;
+      if (!localApi || !activeThread || isRevertingCheckpoint) return false;
 
       if (!supportsConversationRollback) {
         setThreadError(
           activeThread.id,
           "This provider does not support reverting conversation history. Start a new thread instead.",
         );
-        return;
+        return false;
       }
       if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
           activeThread.id,
           `Reconnect ${activeEnvironmentUnavailableLabel} before reverting checkpoints.`,
         );
-        return;
+        return false;
       }
       if (phase === "running" || isSendBusy || isConnecting) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
-        return;
+        return false;
       }
-      const confirmed = await localApi.dialogs.confirm(
-        [
-          `Revert this thread to checkpoint ${turnCount}?`,
-          "This will discard newer messages and turn diffs in this thread.",
-          "This action cannot be undone.",
-        ].join("\n"),
-        { variant: "destructive" },
-      );
-      if (!confirmed) {
-        return;
+      if (!options?.skipConfirm) {
+        const confirmed = await localApi.dialogs.confirm(
+          [
+            `Revert this thread to checkpoint ${turnCount}?`,
+            "This will discard newer messages and turn diffs in this thread.",
+            "This action cannot be undone.",
+          ].join("\n"),
+          { variant: "destructive" },
+        );
+        if (!confirmed) {
+          return false;
+        }
       }
 
       setIsRevertingCheckpoint(true);
@@ -6457,7 +6465,7 @@ export default function ChatView(props: ChatViewProps) {
           );
         }
         setIsRevertingCheckpoint(false);
-        return;
+        return false;
       }
       const revertOutcome = await waitForCheckpointRevert(threadRef, {
         targetTurnCount: turnCount,
@@ -6470,8 +6478,13 @@ export default function ChatView(props: ChatViewProps) {
             ? "Failed to revert thread state."
             : "Timed out waiting for the thread to finish reverting.",
         );
+        setIsRevertingCheckpoint(false);
+        return false;
       }
-      setIsRevertingCheckpoint(false);
+      if (!options?.deferBusyReset) {
+        setIsRevertingCheckpoint(false);
+      }
+      return true;
     },
     [
       activeThread,
@@ -7568,7 +7581,7 @@ export default function ChatView(props: ChatViewProps) {
   onSendRef.current = onSend;
 
   useEffect(() => {
-    if (isWorking || sendInFlightRef.current) {
+    if (suppressQueueDrainRef.current || isWorking || sendInFlightRef.current) {
       return;
     }
     if (promptRef.current.trim().length > 0 || composerImagesRef.current.length > 0) {
@@ -8461,6 +8474,129 @@ export default function ChatView(props: ChatViewProps) {
   const onRevertTimelineTurn = useCallback((targetTurnCount: number) => {
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
+  const timelineMessagesRef = useRef(timelineMessages);
+  timelineMessagesRef.current = timelineMessages;
+  const onSubmitEditedUserMessage = useCallback(
+    (messageId: MessageId, text: string, revertTurnCount: number | undefined) => {
+      const localApi = readLocalApi();
+      const confirmDialog = async (message: string, variant: "destructive" | "default") => {
+        if (localApi) {
+          return localApi.dialogs.confirm(message, { variant });
+        }
+        return window.confirm(message);
+      };
+      void (async () => {
+        if (typeof revertTurnCount !== "number") {
+          const confirmed = await confirmDialog(
+            [
+              "This message has no rewind checkpoint.",
+              "Send the edited text as a new message instead?",
+            ].join("\n"),
+            "default",
+          );
+          if (!confirmed) return;
+          composerRef.current?.applyQueuedItem({
+            id: `edit-${String(messageId)}`,
+            prompt: text,
+            images: [],
+          });
+          await onSendRef.current();
+          return;
+        }
+        if (!localApi) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not send edited message",
+              description: "Desktop confirm dialogs are unavailable in this session.",
+            }),
+          );
+          return;
+        }
+        const confirmed = await localApi.dialogs.confirm(
+          [
+            "Edit this message and rewind later turns?",
+            "Newer messages and diffs in this thread will be discarded, then the edited prompt will be sent.",
+            "This action cannot be undone.",
+          ].join("\n"),
+          { variant: "destructive" },
+        );
+        if (!confirmed) return;
+
+        const sourceMessage = timelineMessagesRef.current.find(
+          (message) => message.id === messageId,
+        );
+        const resentImages = await composerImagesFromTimelineAttachments(
+          sourceMessage?.attachments?.filter(isImageAttachment),
+        );
+        suppressQueueDrainRef.current = true;
+        const reverted = await onRevertToTurnCountRef.current(revertTurnCount, {
+          skipConfirm: true,
+          deferBusyReset: true,
+        });
+        if (!reverted) {
+          suppressQueueDrainRef.current = false;
+          for (const image of resentImages) {
+            revokeBlobPreviewUrl(image.previewUrl);
+          }
+          return;
+        }
+
+        const parkedPrompt = promptRef.current.trim();
+        const parkedImages = useComposerDraftStore.getState().takeImages(composerDraftTarget);
+        if (parkedPrompt.length > 0 || parkedImages.length > 0) {
+          usePromptQueueStore.getState().enqueue(routeThreadKey, {
+            prompt: parkedPrompt,
+            images: parkedImages,
+          });
+          promptRef.current = "";
+          composerImagesRef.current = [];
+          setComposerDraftPrompt(composerDraftTarget, "");
+        }
+
+        composerRef.current?.applyQueuedItem({
+          id: `edit-${String(messageId)}`,
+          prompt: text,
+          images: resentImages.map((image) => ({
+            id: image.id,
+            name: image.name,
+            previewUrl: image.previewUrl,
+            mimeType: image.mimeType,
+            sizeBytes: image.sizeBytes,
+            file: image.file,
+          })),
+        });
+        suppressQueueDrainRef.current = false;
+        try {
+          await onSendRef.current();
+        } finally {
+          setIsRevertingCheckpoint(false);
+        }
+      })();
+    },
+    [composerDraftTarget, routeThreadKey, setComposerDraftPrompt],
+  );
+  const userMessageEditSession = useMemo<UserMessageEditSession | null>(() => {
+    if (!activeThread) return null;
+    return {
+      provider: selectedProvider,
+      providers: providerStatuses,
+      ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+      ...(routeKind === "draft" && draftId ? { draftId } : {}),
+      settings,
+      threadModelSelection: activeThread.modelSelection,
+      projectModelSelection: activeProject?.defaultModelSelection,
+    };
+  }, [
+    activeProject?.defaultModelSelection,
+    activeThread,
+    draftId,
+    providerStatuses,
+    routeKind,
+    routeThreadRef,
+    selectedProvider,
+    settings,
+  ]);
 
   // Files dropped on a sidebar row land here once the dropped-on thread is
   // actually open, then take the exact same path as a workspace drop:
@@ -8866,6 +9002,8 @@ export default function ChatView(props: ChatViewProps) {
                 onOpenTurnDiff={onOpenTurnDiff}
                 supportsConversationRollback={supportsConversationRollback}
                 onRevertToTurnCount={onRevertTimelineTurn}
+                onSubmitEditedUserMessage={onSubmitEditedUserMessage}
+                userMessageEditSession={userMessageEditSession}
                 onUseArtifactTemplate={useArtifactTemplate}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}

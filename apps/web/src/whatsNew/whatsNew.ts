@@ -12,6 +12,13 @@ export const WHATS_NEW_STORAGE_KEY = "t3code:whats-new:last-seen-version";
 /** Add an entry for each desktop version that should open What's New after install. */
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "0.0.122",
+    title: "What's new in 0.0.122",
+    highlights: [
+      "The effort slider is a thick blue-to-purple capsule. The current level sits above it.",
+    ],
+  },
+  {
     version: "0.0.121",
     title: "What's new in 0.0.121",
     highlights: [

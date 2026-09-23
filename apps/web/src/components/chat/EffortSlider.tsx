@@ -7,11 +7,19 @@ import { effortProgress, effortStopIndexFromClientX } from "./effortControlStyle
 type EffortOption = Extract<ProviderOptionDescriptor, { type: "select" }>["options"][number];
 
 /**
- * Discrete effort slider.
- * Codex uses an OpenAI-green fill with a sheen and a thumb that pulses on settle.
- * Claude uses the same motion with the coral already used for its fast bolt.
- * The thumb eases with a fast-out curve and tracks the pointer 1:1 while dragging.
+ * Discrete effort capsule.
+ * The track is the thick blue-to-purple pill from the Codex and ChatGPT composer,
+ * with the current level named above it. Dragging tracks the pointer. A settle pops the thumb.
  */
+
+const EFFORT_SPARKS = [
+  { left: "16%", top: "32%", delay: "0s" },
+  { left: "34%", top: "64%", delay: "0.35s" },
+  { left: "48%", top: "28%", delay: "0.7s" },
+  { left: "63%", top: "60%", delay: "0.15s" },
+  { left: "78%", top: "34%", delay: "1s" },
+  { left: "90%", top: "58%", delay: "0.55s" },
+] as const;
 export function EffortSlider({
   provider,
   options,
@@ -33,6 +41,7 @@ export function EffortSlider({
   const index = selectedIndex >= 0 ? selectedIndex : 0;
   const progress = effortProgress(index, options.length);
   const selected = options[index];
+  const labelColor = `color-mix(in oklab, #93c5fd ${Math.round((1 - progress) * 100)}%, #d8b4fe)`;
 
   useEffect(() => {
     return () => {
@@ -84,8 +93,12 @@ export function EffortSlider({
       data-effort-provider={provider}
       data-dragging={dragging ? "true" : "false"}
       data-settling={settling ? "true" : "false"}
-      style={{ ["--effort-progress" as string]: String(progress) }}
+      style={{
+        ["--effort-progress" as string]: String(progress),
+        ["--effort-label" as string]: labelColor,
+      }}
     >
+      <p className="effort-slider-heading">{selected?.label ?? value}</p>
       <div
         ref={trackRef}
         role="slider"
@@ -97,7 +110,7 @@ export function EffortSlider({
         aria-valuetext={selected?.label ?? value}
         aria-disabled={disabled || undefined}
         className={cn(
-          "effort-slider-track relative h-7 cursor-pointer touch-none outline-none",
+          "effort-slider-track relative h-11 cursor-pointer touch-none outline-none",
           disabled && "cursor-default opacity-50",
         )}
         onPointerDown={onPointerDown}
@@ -123,36 +136,24 @@ export function EffortSlider({
         }}
       >
         <span className="effort-slider-rail" />
-        <span className="effort-slider-fill" />
+        <span className="effort-slider-fill">
+          {EFFORT_SPARKS.map((spark) => (
+            <span
+              key={`${spark.left}-${spark.top}`}
+              className="effort-slider-spark"
+              style={{ left: spark.left, top: spark.top, animationDelay: spark.delay }}
+            />
+          ))}
+        </span>
         {options.map((option, optionIndex) => (
           <span
             key={option.id}
             className="effort-slider-tick"
-            data-active={optionIndex === index ? "true" : "false"}
-            style={{
-              left: `${effortProgress(optionIndex, options.length) * 100}%`,
-            }}
+            data-filled={optionIndex <= index ? "true" : "false"}
+            style={{ ["--tick" as string]: String(effortProgress(optionIndex, options.length)) }}
           />
         ))}
         <span className="effort-slider-thumb" />
-      </div>
-      <div
-        className="mt-1 grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
-      >
-        {options.map((option, optionIndex) => (
-          <button
-            key={option.id}
-            type="button"
-            disabled={disabled}
-            title={option.label}
-            className="effort-slider-label truncate"
-            data-active={optionIndex === index ? "true" : "false"}
-            onClick={() => selectIndex(optionIndex)}
-          >
-            {option.label}
-          </button>
-        ))}
       </div>
     </div>
   );
